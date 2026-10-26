@@ -6,6 +6,8 @@
 # goals/non_goals: optional lists, kept first, set only by the human — one distilled line each, not requirements: no IDs, no clauses.
 # roles:  optional map (kept before functional) of <role> -> who they are; names match the "As a <role>" headings.
 # yaml-language-server: $schema=./requirements.schema.json
+goals:
+  - stay in the flow with github and paseo
 functional:
   sources:
     As a developer, I can:
@@ -13,67 +15,69 @@ functional:
   attention:
     As a developer, I can:
       ATT-01: see in one place the open issues and pull requests that need me; so that I don't depend on noisy GitHub notifications.
-      ATT-02: see why each item needs me, with items grouped by that reason; so that [?] I know what to do about an item at a glance.
-      ATT-03: see an issue and the pull requests that resolve it as one item, led by the issue; so that [?] related work isn't scattered across the list.
-      ATT-04: see a stack of dependent pull requests as one item; so that [?] a stack is handled as the single change it is.
-      ATT-05: judge an item from the list without opening it; so that [?] I can decide what to do quickly.
+      ATT-02: see why each item needs me, with items grouped by that reason; so that I know what to do about an item at a glance.
+      ATT-03: see an issue and the pull requests that resolve it as one item, led by the issue; so that related work isn't scattered across the list.
+      ATT-04: see a stack of dependent pull requests as one item; so that a stack is handled as the single change it is.
+      ATT-05: judge an item from the list without opening it; so that triage is quick and I'm not visually overloaded.
       ATT-06: expand an item for more detail and options; so that the list stays minimal by default.
-      ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that [?] I don't start duplicate work.
-      ATT-08: dismiss an item until something new happens on it; so that [?] FYIs stop taking up space.
-      ATT-09: notice how many items need me from anywhere in Paseo; so that [?] I don't have to open the inbox to check.
-      ATT-10: see how much is waiting on others, assigned to me, or done this week without it taking space in the list; so that [?] I know that work is tracked.
-      ATT-11: see work that has waited on others for too long; so that [?] stalled work gets nudged.
-      ATT-12: open any item on GitHub; so that [?] I can do what the inbox doesn't cover.
+      ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that I don't start duplicate work.
+      ATT-08: dismiss an item until something new happens on it; so that FYIs stop taking up space.
+      ATT-09: notice how many items need me from anywhere in Paseo; so that I don't have to open the inbox to check.
+      ATT-10: see how much is waiting on others, assigned to me, or done this week without it taking space in the list; so that I know that work is tracked.
+      ATT-11: see work that has waited on others for too long; so that stalled work gets nudged.
+      ATT-12: open any item on GitHub; so that I can do what the inbox doesn't cover.
   mentions:
     As a developer, I can:
       MEN-01: see open threads where a person mentioned me and is still waiting for my response; so that I only hear about mentions when someone is waiting for me.
-      MEN-02: clear a mention by either replying or reacting; so that [?] acknowledging is enough.
-      MEN-03: see mentions in other people's drafts; so that [?] nobody waiting on me is hidden.
-      MEN-04: have mentions of my teams left out; so that [?] only mentions aimed at me count.
+      MEN-02: clear a mention by either replying or reacting; so that acknowledging is enough.
+      MEN-03: see mentions in other people's drafts; so that I can respond when someone asks me for an early look.
+      MEN-04: have mentions of my teams left out; so that only mentions aimed at me personally count.
       MEN-05: see threads a bot opened that I need to resolve; so that bot findings that need me are included.
       MEN-06: tell at a glance when a bot is the one waiting; so that bots are highlighted.
   reviews:
     As a developer, I can:
-      REV-01: see pull requests where my review is requested; so that [?] I don't hold up others.
+      REV-01: see pull requests where my review is requested by name; so that I don't hold up others.
   own_pull_requests:
     As a developer, I can:
-      PRS-01: see my pull requests whose checks fail; so that [?] I fix them before they block review or merge.
-      PRS-02: see my pull requests with requested changes or unresolved review comments; so that [?] reviewers aren't left waiting.
-      PRS-03: see my pull requests that are ready to merge; so that [?] finished work ships.
-      PRS-04: merge a ready pull request once its checks pass against its current base; so that [?] what merges was tested against what it merges into.
-      PRS-05: see my drafts after everything that isn't a draft; so that [?] unfinished work doesn't crowd out work others wait for.
-      PRS-06: see only my own drafts as work items; so that [?] other people's unfinished work stays out of my list.
-      PRS-07: refresh or close a draft that has gone stale; so that [?] old drafts don't linger.
+      PRS-01: see my pull requests whose checks fail; so that I fix them before they block review or merge.
+      PRS-02: see my pull requests with requested changes or unresolved review comments; so that I finish ongoing work, since I can only handle so many tasks at once.
+      PRS-03: see my pull requests that are ready to merge; so that finished work ships.
+      PRS-04: merge a ready pull request once its checks pass against its current base; so that what merges was tested against what it merges into.
+      PRS-05: see my drafts after everything that isn't a draft; so that I finish or close my drafts before picking up new work.
+      PRS-06: see only my own drafts as work items; so that other people's unfinished work stays out of my list.
+      PRS-07: refresh or close a draft that has gone stale; so that old drafts don't linger.
+      PRS-08: have my pull requests that are assigned to someone else left out; so that pull requests I've handed over don't count as mine.
   upstream:
     As a developer, I can:
       UPS-01: see my pull requests that conflict with their base; so that pull requests needing updates from upstream are easy to fix.
       UPS-02: see when a pull request in a stack no longer builds on its parent's latest version; so that pull requests needing updates from upstream are easy to fix.
       UPS-03: bring a conflict-free pull request up to date with its base in one step; so that pull requests needing updates from upstream are easy to fix.
       UPS-04: have an agent bring a pull request or a whole stack up to date, resolving conflicts; so that pull requests needing updates from upstream are easy to fix.
-      UPS-05: approve an agent's conflict resolution before it is pushed; so that [?] I stay in control of changes I didn't write.
-      UPS-06: have an update without conflicts pushed without waiting for me; so that [?] routine updates take no attention.
-      UPS-07: see that a pull request is behind its base only when that blocks or risks its merge; so that [?] the list isn't flooded by a base that moves every day.
+      UPS-05: approve an agent's conflict resolution before it is pushed; so that I stay in control of changes I didn't write.
+      UPS-06: have an update without conflicts pushed without waiting for me; so that routine updates take no attention.
+      UPS-07: see that a pull request is behind its base only when that blocks or risks its merge; so that the list isn't flooded by a base that moves every day.
   sessions:
     As a developer, I can:
-      SES-01: start a Paseo session for an item in one step, with defaults suited to why it needs me; so that [?] acting on an item takes no setup.
+      SES-01: start a Paseo session for an item in one step, with defaults suited to why it needs me; so that acting on an item takes no setup.
       SES-02: choose the workspace, agent profile, and prompt before a session starts; so that I can adjust when the defaults don't fit.
-      SES-03: continue an item's existing session instead of starting another; so that [?] work on an item stays in one place.
-      SES-04: start a session that already has the item's context, such as failing checks or unresolved comments; so that [?] the agent starts informed.
-      SES-05: start sessions in my local checkout of the item's repository without configuring paths; so that [?] new repositories work without setup.
+      SES-03: continue an item's existing session instead of starting another; so that work on an item stays in one place.
+      SES-04: start a session that already has the item's context, such as failing checks or unresolved comments; so that the agent starts informed.
+      SES-05: start sessions in my local checkout of the item's repository without configuring paths; so that new repositories work without setup.
+      SES-06: start sessions even when no agent profiles are configured; so that the inbox works before I've set anything up.
 
 non_functional:
   github_usage:
     GH-01: fetches what it needs from GitHub in as few requests as practical; so that we don't bombard GitHub's API.
   safety:
-    SAFE-01: changes nothing on GitHub unless I asked for that change; so that [?] nothing is published in my name by surprise.
+    SAFE-01: changes nothing on GitHub unless I asked for that change; so that nothing is published in my name by surprise.
   security:
-    SEC-01: uses the GitHub sign-in already on its host and stores no GitHub credentials of its own; so that [?] there is no extra secret to protect.
+    SEC-01: uses the GitHub sign-in already on its host and stores no GitHub credentials of its own; so that there is no extra secret to protect.
   privacy:
     PRIV-01: may keep a local copy of the GitHub data it shows; so that the inbox shows instantly after a restart.
   reach:
-    REACH-01: works in Paseo on both phone and desktop; so that [?] I can triage from anywhere.
+    REACH-01: works in Paseo on both phone and desktop; so that I can triage from anywhere.
   freshness:
-    FRESH-01: stays current without me refreshing it; so that [?] its count can be trusted.
+    FRESH-01: stays current without me refreshing it; so that its count can be trusted.
 
 docs:
   docs/architecture.md: how the inbox meets these requirements (sections, rules, actions, GitHub requests) — read before changing behaviour or adding a requirement.
