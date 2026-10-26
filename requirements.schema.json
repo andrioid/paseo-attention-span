@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://requirements-yaml.example/requirements.schema.json",
+  "title": "Compact requirements document",
+  "description": "Optional editor aid for a requirements.yaml in the requirements-yaml format. Structural only — it enforces no grammar and gates nothing. Authoring and review rules live in the requirements-yaml skill (SKILL.md).",
+  "markdownDescription": "Compact requirements. One line each: `<ID>: <observable capability>; so that <value>.` Grouped into `functional` (area → `As a <role>, I can:` → ID), `non_functional` (quality → ID), optional `deferred`, an optional `roles` map (role → who they are), an optional `docs` map (filename → what it is and when to read it), and project domain sections. Full rules: the **requirements-yaml** skill.",
+  "type": "object",
+  "minProperties": 1,
+  "properties": {
+    "goals": {
+      "type": "array",
+      "description": "Optional list of project goals — the vision the requirements serve. Set only by the human; agents record entries verbatim when dictated. Free one-line statements, not requirements: no IDs, no clauses. Kept first by convention.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/statement" }
+    },
+    "non_goals": {
+      "type": "array",
+      "description": "Optional list of non-goals — boundaries the project deliberately will not cross. Set only by the human; agents record entries verbatim when dictated. Distinct from `deferred` (merely not-yet); a non-goal is not-ever. Free one-line statements, not requirements.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/statement" }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Optional map of the actors named in functional role headings. Each key is a role name matching the token in an `As a <role>, I can` heading (e.g. `user`, `admin`); each value is a one-line description of who they are and their authority. Kept before `functional` by convention.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/roleDescription" },
+      "propertyNames": { "$ref": "#/$defs/roleName" }
+    },
+    "docs": {
+      "type": "object",
+      "description": "Optional map of supporting documents. Each key is a document filename (a repo-relative path or a URL); each value describes what the document is and when it should be read.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/docDescription" },
+      "propertyNames": { "$ref": "#/$defs/docPath" }
+    },
+    "functional": {
+      "type": "object",
+      "description": "Functional requirements grouped by system area, then (recommended) by story role.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/functionalArea" },
+      "propertyNames": { "$ref": "#/$defs/snakeCaseKey" }
+    },
+    "non_functional": {
+      "type": "object",
+      "description": "Non-functional requirements grouped by quality attribute.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/requirementMap" },
+      "propertyNames": { "$ref": "#/$defs/snakeCaseKey" }
+    },
+    "deferred": {
+      "type": "object",
+      "description": "Explicitly deferred / future requirements grouped by area.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/deferredRequirementMap" },
+      "propertyNames": { "$ref": "#/$defs/snakeCaseKey" }
+    }
+  },
+  "additionalProperties": { "$ref": "#/$defs/domainSection" },
+  "propertyNames": { "$ref": "#/$defs/snakeCaseKey" },
+  "$defs": {
+    "snakeCaseKey": {
+      "description": "A lower snake_case grouping key such as `accounts`, `data_policy`, or `openness_and_governance`.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "statement": {
+      "description": "A free one-line goal or non-goal statement: a distilled direction or boundary, not a requirement — no ID, no `so that` clause. Quote it when it starts with a YAML indicator.",
+      "type": "string",
+      "minLength": 1
+    },
+    "roleKey": {
+      "description": "A role heading: `As a <role>, I can`, so requirement lines can start with the capability verb.",
+      "type": "string",
+      "pattern": "^As .+, I can$"
+    },
+    "roleName": {
+      "description": "A role name matching the token used in a functional role heading — the noun after `As a`/`As an` and before `, I can` (e.g. `user`, `admin`, `first-time visitor`). Lowercase words, optionally hyphen- or space-separated.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[ -][a-z0-9]+)*$"
+    },
+    "roleDescription": {
+      "description": "One line describing who a role is and the authority they hold — not a requirement: no ID, no clauses.",
+      "type": "string",
+      "minLength": 1
+    },
+    "requirementId": {
+      "description": "A stable requirement ID: uppercase area prefix plus a zero-padded number.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*-[0-9]{2,}$"
+    },
+    "deferredRequirementId": {
+      "description": "A stable future-scope ID: the normal ID prefixed with `[deferred] `.",
+      "type": "string",
+      "pattern": "^\\[deferred\\] [A-Z][A-Z0-9]*-[0-9]{2,}$"
+    },
+    "requirementText": {
+      "description": "One requirement line. Recommended: `<observable capability>; so that <value>.` The capability carries its own limits, so it doubles as the acceptance criterion. Under a role heading, start with the verb. Quote only if a clause contains `: ` or the value starts with a YAML indicator.",
+      "type": "string",
+      "minLength": 1
+    },
+    "docPath": {
+      "description": "A supporting document's filename: a repo-relative path (e.g. `docs/glossary.md`) or a URL.",
+      "type": "string",
+      "minLength": 1
+    },
+    "docDescription": {
+      "description": "What the document is and, importantly, when it should be read — e.g. `the ubiquitous language — read before naming anything in a requirement`.",
+      "type": "string",
+      "minLength": 1
+    },
+    "requirementMap": {
+      "description": "A map of requirement IDs to one-line requirement text.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/requirementText" },
+      "propertyNames": { "$ref": "#/$defs/requirementId" }
+    },
+    "deferredRequirementMap": {
+      "description": "A map of deferred requirement IDs to one-line requirement text. Used only under `deferred`.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/requirementText" },
+      "propertyNames": { "$ref": "#/$defs/deferredRequirementId" }
+    },
+    "functionalArea": {
+      "description": "A system-area section: group by role heading (`As a <role>, I can`) whose value is a requirement map, or put a requirement map directly if roles are not used.",
+      "type": "object",
+      "minProperties": 1,
+      "anyOf": [
+        {
+          "additionalProperties": { "$ref": "#/$defs/requirementMap" },
+          "propertyNames": { "$ref": "#/$defs/roleKey" }
+        },
+        { "$ref": "#/$defs/requirementMap" }
+      ]
+    },
+    "domainSection": {
+      "description": "A project-specific top-level section: snake_case subgroups whose values are requirement maps, like `non_functional`.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/requirementMap" },
+      "propertyNames": { "$ref": "#/$defs/snakeCaseKey" }
+    }
+  }
+}

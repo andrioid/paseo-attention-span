@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "requirements-yaml": {
+      "source": "andrioid/requirements-yaml",
+      "sourceType": "github",
+      "skillPath": "skills/requirements-yaml/SKILL.md",
+      "computedHash": "4f9c1d1da26392e0883592a06a2ab94f314a1a5e658e47e27b4001cc9f59c16d"
+    }
+  }
+}
