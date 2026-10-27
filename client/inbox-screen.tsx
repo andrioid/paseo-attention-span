@@ -317,19 +317,22 @@ function stateIcon(item: Item, c: ReturnType<typeof useStyles>["c"]): { name: Ic
 }
 
 // A card that works collapsed: primary action with ▾ options, GitHub and Dismiss inline [ATT-05, ATT-06].
+const isRed = (chips: Chip[]) => chips.some((chip) => chip.tone === "bad");
+
 function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions: Actions }) {
   const styles = useStyles();
-  const [expanded, setExpanded] = useState(false);
+  const agent = actions.agents[item.key];
+  const chips = agent ? [...item.chips, agentSignal(agent)] : item.chips;
+  // Anything important enough to be red is important enough to show in full.
+  const [expanded, setExpanded] = useState(() => isRed(chips) || item.children.some((child) => isRed(child.chips)));
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
   const [optionsFor, setOptionsFor] = useState<SessionKind | null>(null);
   const [comment, setComment] = useState("");
-  const agent = actions.agents[item.key];
   const sessionAction = item.actions.find((action) => ACTION_SESSION[action]);
   const sessionKind = sessionAction ? ACTION_SESSION[sessionAction] : undefined;
   const inDoing = !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed";
   const facts = [`#${item.number}`, ...(actions.showRepo ? [item.repo.split("/")[1]] : [])];
-  const chips = agent ? [...item.chips, agentSignal(agent)] : item.chips;
-  const children = expanded ? item.children : item.children.filter((child) => child.attention);
+  const children = expanded ? item.children : item.children.filter((child) => child.attention || isRed(child.chips));
   const icon = stateIcon(item, styles.c);
 
   // At the far right on desktop, so it lines up down the list; after the title on phones.
