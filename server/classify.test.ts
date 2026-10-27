@@ -1,184 +1,83 @@
 import { describe, expect, it } from "vitest";
 import { InboxConfig } from "../shared/config";
+import type { Item } from "../shared/inbox";
 import { classify } from "./classify";
-import type { Comment, IssueNode, MentionNode, PullRequestNode, SearchResult } from "./github-types";
+import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
 import { searchVariables } from "./queries";
 
-const NOW = new Date("2026-10-26T12:00:00Z");
+const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = InboxConfig.parse({ orgs: ["acme"] });
-const me = { __typename: "User", login: "me" };
-const alice = { __typename: "User", login: "alice" };
-const bot = { __typename: "Bot", login: "reviewbot" };
-const REPO = "acme/app";
-
-function daysAgo(days: number): string {
-  return new Date(NOW.getTime() - days * 86_400_000).toISOString();
-}
-
-function pr(number: number, overrides: Partial<PullRequestNode> = {}, ci: string | null = "SUCCESS"): PullRequestNode {
-  return {
-    id: `PR_${number}`,
-    number,
-    title: `PR ${number}`,
-    url: `https://github.com/${REPO}/pull/${number}`,
-    isDraft: false,
-    createdAt: daysAgo(2),
-    updatedAt: daysAgo(1),
-    author: me,
-    repository: { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "master" } },
-    baseRefName: "master",
-    headRefName: `branch-${number}`,
-    headRefOid: `oid${number}`,
-    mergeable: "MERGEABLE",
-    reviewDecision: "REVIEW_REQUIRED",
-    assignees: { nodes: [] },
-    closingIssuesReferences: { nodes: [] },
-    commits: {
-      nodes: [{ commit: { oid: `oid${number}`, committedDate: daysAgo(1), statusCheckRollup: ci ? { state: ci as never } : null } }],
-    },
-    reviewRequests: { nodes: [] },
-    latestReviews: { nodes: [] },
-    reviewThreads: { nodes: [] },
-    comments: { nodes: [] },
-    ...overrides,
-  };
-}
-
-function comment(author: typeof me, body: string, createdAt: string, extra: Partial<Comment> = {}): Comment {
-  return { author, body, createdAt, url: `https://github.com/c/${body.length}`, reactionGroups: [], ...extra };
-}
-
-function mention(number: number, comments: Comment[], overrides: Partial<MentionNode> = {}): MentionNode {
-  return {
-    __typename: "Issue",
-    number,
-    title: `Issue ${number}`,
-    url: `https://github.com/${REPO}/issues/${number}`,
-    createdAt: daysAgo(5),
-    updatedAt: daysAgo(1),
-    author: alice,
-    body: "no mention here",
-    repository: { nameWithOwner: REPO },
-    comments: { nodes: comments },
-    ...overrides,
-  };
-}
-
-function issue(number: number, comments: Comment[] = []): IssueNode {
-  return {
-    number,
-    title: `Issue ${number}`,
-    url: `https://github.com/${REPO}/issues/${number}`,
-    updatedAt: daysAgo(1),
-    repository: { nameWithOwner: REPO },
-    comments: { nodes: comments },
-  };
-}
-
-function data(overrides: Partial<{ [K in keyof SearchResult]: SearchResult[K] extends { nodes: infer N } ? N : never }>): SearchResult {
-  return {
-    viewer: { login: "me" },
-    mine: { nodes: overrides.mine ?? [] },
-    reviews: { nodes: overrides.reviews ?? [] },
-    mentions: { nodes: overrides.mentions ?? [] },
-    assigned: { nodes: overrides.assigned ?? [] },
-    commented: { nodes: overrides.commented ?? [] },
-    merged: { nodes: overrides.merged ?? [] },
-  } as SearchResult;
-}
-
-function run(input: Parameters<typeof data>[0], behind: Record<string, number> = {}) {
-  return classify({ data: data(input), behind, config, now: NOW });
-}
-
+const { daysAgo, commit, thread, pr, comment, mention, issue, pickable, search } = builders(NOW);
 const key = (n: number) => `${REPO}#${n}`;
+const chips = (item: { chips: { text: string }[] }) => item.chips.map((chip) => chip.text);
+const sections = (items: Item[]) => items.map((item) => [item.number, item.section]);
 
-describe("sections", () => {
+function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: InboxConfig; fieldOptions?: Record<string, string[]> } = {}) {
+  return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
+}
+const doing = (inbox: ReturnType<typeof run>) => inbox.items.filter((item) => !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed");
+
+describe("doing", () => {
   it("ATT-02: puts each item once, under its most urgent reason, in section order", () => {
+    const changes = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(0.5) }] };
     const inbox = run({
-      mine: [
-        pr(1, { reviewDecision: "APPROVED" }),
-        pr(2, {}, "FAILURE"),
-        pr(3, { reviewDecision: "CHANGES_REQUESTED", latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(0.5) }] } }, "FAILURE"),
-      ],
+      mine: [pr(1, { reviewDecision: "APPROVED" }), pr(2, {}, "FAILURE"), pr(3, { reviewDecision: "CHANGES_REQUESTED", latestReviews: changes }, "FAILURE")],
       reviews: [pr(9, { author: alice })],
     });
-    expect(inbox.items.map((item) => [item.number, item.section])).toEqual([
-      [9, "review"],
-      [3, "ci"], // newest activity by others first
-      [2, "ci"],
-      [1, "ready"],
-    ]);
+    // Newest activity by others first within a section.
+    expect(sections(inbox.items)).toEqual([[9, "review"], [3, "ci"], [2, "ci"], [1, "ready"]]);
   });
 
-  it("REV-01: lists PRs requesting my review with a Review action", () => {
+  it("REV-01: lists PRs requesting my review, showing the author", () => {
     const [item] = run({ reviews: [pr(9, { author: alice })] }).items;
-    expect(item).toMatchObject({ section: "review", actions: ["review"] });
+    expect(item).toMatchObject({ section: "review", actions: ["review"], person: { login: "alice", avatarUrl: alice.avatarUrl } });
   });
 
   it("PRS-01: lists my PRs with failing checks with a Fix action", () => {
     const [item] = run({ mine: [pr(2, {}, "ERROR")] }).items;
     expect(item).toMatchObject({ section: "ci", actions: ["fix"] });
+    expect(item.chips).toContainEqual({ text: "CI failing", tone: "bad" });
   });
 
-  it("PRS-02: lists requested changes and unresolved threads waiting on me", () => {
-    const thread = { isResolved: false, comments: { nodes: [comment(alice, "", daysAgo(1))] } };
-    const [item] = run({ mine: [pr(3, { reviewThreads: { nodes: [thread] } })] }).items;
-    expect(item).toMatchObject({ section: "changes", actions: ["address"] });
+  it("PRS-02: lists unresolved threads waiting on me; a thread I answered waits on the reviewer", () => {
+    expect(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(alice, 1)] } })] }).items[0]).toMatchObject({ section: "changes", actions: ["address"] });
+    expect(sections(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(me, 1)] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
   });
 
-  it("PRS-02: a thread I answered last waits on the reviewer instead", () => {
-    const thread = { isResolved: false, comments: { nodes: [comment(me, "", daysAgo(1))] } };
-    const inbox = run({ mine: [pr(3, { reviewThreads: { nodes: [thread] } })] });
-    expect(inbox.items).toEqual([]);
-    expect(inbox.footer.waitingOnOthers[0].detail).toMatch(/you replied/);
-  });
-
-  it("PRS-02: requested changes followed by a new push wait on the reviewer", () => {
-    const reviewed = pr(3, {
-      reviewDecision: "CHANGES_REQUESTED",
-      latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(1.5) }] },
-    });
-    const inbox = run({ mine: [reviewed] });
-    expect(inbox.items).toEqual([]);
-    expect(inbox.footer.waitingOnOthers).toHaveLength(1);
+  it("PRS-02: requested changes followed by a new push wait on that reviewer", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(1.5) }] };
+    const [item] = run({ mine: [pr(3, { reviewDecision: "CHANGES_REQUESTED", latestReviews })] }).items;
+    expect(item).toMatchObject({ section: "wait_reviewer", person: { login: "alice" } });
   });
 });
 
 describe("ready to merge and behind base", () => {
   it("PRS-03, PRS-04: offers Merge only when CI passed against the current base", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { [key(1)]: 0 }).items;
-    expect(item).toMatchObject({ section: "ready", actions: ["merge"], detail: "approved · ✓ CI" });
-    expect(item.target.mergeMethod).toBe("squash");
+    expect(item).toMatchObject({ section: "ready", actions: ["merge"], target: { mergeMethod: "squash" } });
+    expect(chips(item)).toEqual(["approved", "CI passed"]);
   });
 
   it("UPS-03, PRS-04: a ready PR behind its base offers Update instead of Merge", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { [key(1)]: 1 }).items;
     expect(item.actions).toEqual(["update"]);
-    expect(item.detail).toBe("approved · ✓ CI on old master · 1 behind master");
+    expect(chips(item)).toEqual(["approved", "CI on old main", "1 behind main"]);
   });
 
-  it("UPS-07: being behind alone never puts a PR on the list", () => {
-    const inbox = run({ mine: [pr(1)] }, { [key(1)]: 400 });
-    expect(inbox.items).toEqual([]);
-    expect(inbox.footer.waitingOnOthers).toHaveLength(1);
+  it("UPS-07: being behind alone never puts a PR in Doing", () => {
+    expect(sections(run({ mine: [pr(1)] }, { [key(1)]: 400 }).items)).toEqual([[1, "wait_review"]]);
   });
 
   it("UPS-01: a PR that conflicts with its base needs upstream, with Rebase", () => {
     const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { [key(1)]: 139 }).items;
     expect(item).toMatchObject({ section: "upstream", actions: ["rebase"] });
-    expect(item.detail).toContain("✗ conflicts · 139 behind master");
+    expect(chips(item)).toEqual(["conflicts", "139 behind main"]);
   });
 
   it("PRS-04: uses the merge method from config, else the first the repo allows", () => {
-    const merge = pr(1, { reviewDecision: "APPROVED", repository: { nameWithOwner: REPO, squashMergeAllowed: false, mergeCommitAllowed: true } });
-    expect(run({ mine: [merge] }).items[0].target.mergeMethod).toBe("merge");
-    const configured = classify({
-      data: data({ mine: [pr(1, { reviewDecision: "APPROVED" })] }),
-      behind: {},
-      config: InboxConfig.parse({ mergeMethods: { [REPO]: "rebase" } }),
-      now: NOW,
-    });
+    const noSquash = pr(1, { reviewDecision: "APPROVED", repository: { nameWithOwner: REPO, squashMergeAllowed: false, mergeCommitAllowed: true } });
+    expect(run({ mine: [noSquash] }).items[0].target.mergeMethod).toBe("merge");
+    const configured = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, {}, { config: InboxConfig.parse({ mergeMethods: { [REPO]: "rebase" } }) });
     expect(configured.items[0].target.mergeMethod).toBe("rebase");
   });
 });
@@ -193,41 +92,42 @@ describe("stacks", () => {
     expect(inbox.items).toHaveLength(1);
     const [item] = inbox.items;
     expect(item.number).toBe(10);
-    expect(item.children.map((child) => [child.number, child.detail])).toEqual([
-      [11, "draft · 2/3 · approved · 279 behind 10"],
-      [12, "draft · 3/3"],
+    expect(item.children.map((child) => [child.number, child.draft, chips(child)])).toEqual([
+      [11, true, ["2/3", "approved", "279 behind #10"]],
+      [12, true, ["3/3"]],
     ]);
-    expect(item.target.stack).toEqual([key(10), key(11), key(12)]);
+    expect(item.target.stack).toEqual([
+      { number: 10, head: "a", base: "main" },
+      { number: 11, head: "b", base: "a" },
+      { number: 12, head: "c", base: "b" },
+    ]);
   });
 
   it("UPS-02, UPS-04: a stacked PR behind its parent puts the stack under Needs upstream with Rebase", () => {
     const [item] = run({ mine: [bottom, middle, top] }, { [key(11)]: 3 }).items;
     expect(item).toMatchObject({ section: "upstream", actions: ["rebase"] });
-    expect(item.detail).toContain("stack of 3");
+    expect(chips(item)).toContain("stack of 3");
   });
 
   it("UPS-03: a stacked ready PR behind its base gets Rebase, not Update", () => {
-    const ready = pr(10, { headRefName: "a", reviewDecision: "APPROVED" });
-    const [item] = run({ mine: [ready, middle] }, { [key(10)]: 2 }).items;
+    const [item] = run({ mine: [pr(10, { headRefName: "a", reviewDecision: "APPROVED" }), middle] }, { [key(10)]: 2 }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["rebase"] });
   });
 });
 
 describe("drafts", () => {
   it("PRS-05: lists my drafts after everything that isn't a draft", () => {
-    const inbox = run({ mine: [pr(1, { isDraft: true }), pr(2, {}, "FAILURE")] });
-    expect(inbox.items.map((item) => item.section)).toEqual(["ci", "drafts"]);
+    expect(run({ mine: [pr(1, { isDraft: true }), pr(2, {}, "FAILURE")] }).items.map((item) => item.section)).toEqual(["ci", "drafts"]);
   });
 
   it("PRS-06: other people's drafts are not work items", () => {
-    const theirs = mention(90, [comment(alice, "wip", daysAgo(1))], { __typename: "PullRequest", isDraft: true });
-    expect(run({ mentions: [theirs] }).items).toEqual([]);
+    expect(run({ mentions: [mention(90, [comment(alice, "wip", 1)], { __typename: "PullRequest" })] }).items).toEqual([]);
   });
 
   it("PRS-07: a draft untouched for 30 days offers Refresh and Close", () => {
     const [item] = run({ mine: [pr(1, { isDraft: true, updatedAt: daysAgo(60), mergeable: "CONFLICTING" })] }).items;
-    expect(item.actions).toEqual(["refresh", "close"]);
-    expect(item.detail).toContain("untouched for 2 months");
+    expect(item).toMatchObject({ draft: true, actions: ["refresh", "close"] });
+    expect(chips(item)).toContain("untouched 2 months");
   });
 
   it("PRS-08: leaves out my PRs assigned to someone else", () => {
@@ -242,103 +142,158 @@ describe("issues", () => {
     const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
     const inbox = run({
       mine: [pr(1, { closingIssuesReferences: closes }, "FAILURE"), pr(2, { closingIssuesReferences: closes, reviewDecision: "APPROVED" })],
-      assigned: [issue(50)],
+      assigned: [pickable(50, {})],
     });
     expect(inbox.items).toHaveLength(1);
-    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "ci", actions: ["fix"] });
-    expect(inbox.items[0].target.number).toBe(1);
+    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "ci", actions: ["fix"], target: { number: 1 } });
     expect(inbox.items[0].children.map((child) => child.number)).toEqual([1, 2]);
-    expect(inbox.footer.toDo).toEqual([]);
-  });
-
-  it("ATT-10: assigned issues and merged PRs are footer counts", () => {
-    const inbox = run({
-      assigned: [issue(60)],
-      merged: [{ number: 7, title: "x", url: "u", mergedAt: daysAgo(1), repository: { nameWithOwner: REPO } }],
-    });
-    expect(inbox.items).toEqual([]);
-    expect(inbox.footer.toDo.map((entry) => entry.number)).toEqual([60]);
-    expect(inbox.footer.doneThisWeek.map((entry) => entry.number)).toEqual([7]);
+    expect(inbox.assigned).toEqual([]); // already in progress
   });
 });
 
-describe("waiting on others", () => {
-  it("ATT-10: my PRs waiting for review or CI stay in the footer", () => {
-    const inbox = run({ mine: [pr(1), pr(2, {}, "PENDING")] });
-    expect(inbox.items).toEqual([]);
-    expect(inbox.footer.waitingOnOthers.map((entry) => entry.detail.split(" · ")[0])).toEqual([
-      "waiting for review",
-      "CI running",
+describe("waiting", () => {
+  it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
+    const inbox = run({
+      mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: bob }] } }), pr(2, {}, "PENDING")],
+      commented: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
+    });
+    expect(sections(inbox.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
+    expect(inbox.items[0]).toMatchObject({ person: { login: "bob", avatarUrl: bob.avatarUrl }, chips: [{ text: "1d" }] });
+  });
+
+  it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
+    const inbox = run({ mine: [pr(1, { commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
+    expect(sections(inbox.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
+    expect(chips(inbox.items[0])).toEqual(["waiting for review · 4d"]);
+  });
+});
+
+describe("history", () => {
+  it("HIS-01: lists closed issues with the PRs that closed them, and lone merged PRs", () => {
+    const inbox = run({
+      closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository: { nameWithOwner: REPO } }],
+      merged: [
+        { number: 61, title: "Verify backups", url: "u", mergedAt: daysAgo(1), repository: { nameWithOwner: REPO }, closingIssuesReferences: { nodes: [{ number: 60, repository: { nameWithOwner: REPO } }] } },
+        { number: 62, title: "Fix VAT", url: "u", mergedAt: daysAgo(2), repository: { nameWithOwner: REPO }, closingIssuesReferences: { nodes: [] } },
+      ],
+    });
+    expect(inbox.items.map((item) => [item.number, item.section, item.closedAt, item.children.map((c) => c.number)])).toEqual([
+      [60, "done", daysAgo(1), [61]],
+      [62, "done", daysAgo(2), []],
     ]);
   });
 
-  it("ATT-11: moves work waiting more than 3 days into Waiting too long", () => {
-    const old = pr(1, { commits: { nodes: [{ commit: { oid: "x", committedDate: daysAgo(4), statusCheckRollup: { state: "SUCCESS" } } }] } });
-    const [item] = run({ mine: [old] }).items;
-    expect(item).toMatchObject({ section: "too_long", detail: "waiting for review for 4d" });
+  it("HIS-02: lists PRs I reviewed apart from my own work, with their author", () => {
+    const inbox = run({ reviewed: [{ number: 63, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository: { nameWithOwner: REPO }, author: alice }] });
+    expect(inbox.items[0]).toMatchObject({ section: "reviewed", person: { login: "alice" } });
   });
 
-  it("ATT-10, ATT-11: issues where I commented last wait on others, then too long", () => {
-    const inbox = run({ commented: [issue(70, [comment(me, "", daysAgo(1))]), issue(71, [comment(me, "", daysAgo(5))]), issue(72, [comment(alice, "", daysAgo(5))])] });
-    expect(inbox.footer.waitingOnOthers.map((entry) => entry.number)).toEqual([70]);
-    expect(inbox.items.map((item) => [item.number, item.section])).toEqual([[71, "too_long"]]);
+  it("HIS-01: searches whole weeks back from Monday", () => {
+    expect(searchVariables(config, NOW).merged).toContain("merged:>=2026-10-05"); // 4 weeks: Oct 5, 12, 19, 26
   });
 });
 
 describe("mentions", () => {
   it("MEN-01: lists a thread where a person mentioned me and is waiting", () => {
-    const [item] = run({ mentions: [mention(80, [comment(alice, "hey @me can you check the login flow?", daysAgo(3))])] }).items;
-    expect(item).toMatchObject({ section: "reply", actions: ["reply"], detail: "alice · 3d", bot: false });
-    expect(item.snippet).toContain("@me can you check");
+    const [item] = run({ mentions: [mention(80, [comment(alice, "hey @me can you check the login flow?", 3)])] }).items;
+    expect(item).toMatchObject({ section: "reply", actions: ["reply"], person: { login: "alice", avatarUrl: alice.avatarUrl, bot: false } });
+    expect(item.person?.snippet).toContain("@me can you check");
   });
 
-  it("MEN-02: replying or reacting clears a mention", () => {
-    const replied = mention(80, [comment(alice, "@me ?", daysAgo(3)), comment(me, "done", daysAgo(2))]);
-    const reacted = mention(81, [comment(alice, "@me ?", daysAgo(3), { reactionGroups: [{ viewerHasReacted: true }] })]);
-    expect(run({ mentions: [replied, reacted] }).items).toEqual([]);
+  it("MEN-02: replying, reacting or submitting a review clears a mention", () => {
+    const replied = mention(80, [comment(alice, "@me ?", 3), comment(me, "done", 2)]);
+    const reacted = mention(81, [comment(alice, "@me ?", 3, { reactionGroups: [{ viewerHasReacted: true }] })]);
+    const reviewed = mention(82, [comment(alice, "@me anything harmful here?", 3)], { __typename: "PullRequest", reviews: { nodes: [{ author: me, submittedAt: daysAgo(1) }] } });
+    expect(run({ mentions: [replied, reacted, reviewed] }).items).toEqual([]);
+  });
+
+  it("MEN-02: a review before the mention doesn't clear it", () => {
+    const earlier = mention(83, [comment(alice, "@me one more thing", 1)], { __typename: "PullRequest", reviews: { nodes: [{ author: me, submittedAt: daysAgo(3) }] } });
+    expect(run({ mentions: [earlier] }).items).toHaveLength(1);
   });
 
   it("MEN-03: counts mentions in other people's drafts", () => {
-    const draft = mention(82, [comment(alice, "early look please @me", daysAgo(1))], { __typename: "PullRequest", isDraft: true });
-    expect(run({ mentions: [draft] }).items.map((item) => item.number)).toEqual([82]);
+    expect(run({ mentions: [mention(82, [comment(alice, "early look please @me", 1)], { __typename: "PullRequest" })] }).items.map((item) => item.number)).toEqual([82]);
   });
 
   it("MEN-04: ignores team mentions and quoted mentions", () => {
-    const team = mention(83, [comment(alice, "@acme/me please look", daysAgo(1)), comment(alice, "> @me said\nok", daysAgo(1))]);
-    expect(run({ mentions: [team] }).items).toEqual([]);
+    expect(run({ mentions: [mention(83, [comment(alice, "@acme/me please look", 1), comment(alice, "> @me said\nok", 1)])] }).items).toEqual([]);
   });
 
   it("MEN-05, MEN-06: a bot counts only when it opened an unresolved thread, marked as a bot", () => {
-    const botComment = comment(bot, "@me this leaks a token", daysAgo(1));
-    const opened = mention(84, [comment(bot, "@me deploy finished", daysAgo(1))], {
+    const opened = mention(84, [comment(bot, "@me deploy finished", 1)], {
       __typename: "PullRequest",
-      reviewThreads: { nodes: [{ isResolved: false, comments: { nodes: [botComment] } }] },
+      reviewThreads: { nodes: [{ isResolved: false, comments: { nodes: [comment(bot, "@me this leaks a token", 1)] } }] },
     });
     const [item] = run({ mentions: [opened] }).items;
-    expect(item).toMatchObject({ number: 84, bot: true });
-    expect(item.detail.startsWith("🤖")).toBe(true);
-    expect(item.snippet).toContain("leaks a token");
+    expect(item).toMatchObject({ number: 84, person: { bot: true, login: "reviewbot" } });
+    expect(item.person?.snippet).toContain("leaks a token");
   });
 
   it("MEN-01: a mention on my own PR makes it a reply", () => {
-    const thread = mention(1, [comment(alice, "@me why?", daysAgo(1))], { __typename: "PullRequest" });
-    const inbox = run({ mine: [pr(1, {}, "FAILURE")], mentions: [thread] });
+    const inbox = run({ mine: [pr(1, {}, "FAILURE")], mentions: [mention(1, [comment(alice, "@me why?", 1)], { __typename: "PullRequest" })] });
     expect(inbox.items).toHaveLength(1);
     expect(inbox.items[0]).toMatchObject({ section: "reply", actions: ["reply"] });
+  });
+});
+
+describe("next up", () => {
+  const nextUp = { priority: { field: "Priority" }, effort: { field: "Effort", order: ["Tiny", "Small", "Medium", "Large"] }, scope: { field: "Scope", mine: ["Backend"] } };
+  const fieldOptions = { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] };
+
+  it("NXT-01, NXT-02: orders unclaimed issues by priority, then effort, then age", () => {
+    const inbox = run(
+      {
+        unclaimed: [
+          pickable(1, { Priority: "🏝 P3 Low", Effort: "🦑 Large (1-2w)" }, 50),
+          pickable(2, { Priority: "🏝 P3 Low", Effort: "🐇 Small (0.5-2d)" }, 5),
+          pickable(3, { Priority: "🏝 P3 Low", Effort: "🐇 Small (0.5-2d)" }, 20),
+          pickable(4, { Priority: "🏔 P1 High", Effort: "🦑 Large (1-2w)" }),
+          pickable(5, {}),
+        ],
+      },
+      {},
+      { config: InboxConfig.parse({ nextUp }), fieldOptions },
+    );
+    expect(inbox.unclaimed.map((issue) => issue.number)).toEqual([4, 3, 2, 1, 5]);
+    expect(inbox.unclaimed[0]).toMatchObject({ type: "Bug", priority: "🏔 P1 High", effort: "🦑 Large (1-2w)", defaultBranch: "main" });
+  });
+
+  it("NXT-06: lists issues assigned to me, ranked the same way", () => {
+    const inbox = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, {}, { config: InboxConfig.parse({ nextUp }) });
+    expect(inbox.assigned.map((issue) => issue.number)).toEqual([8, 7]);
+  });
+
+  it("NXT-04: reads only the configured fields and repositories", () => {
+    const inbox = run({ unclaimed: [pickable(1, { Scope: "🔙 Backend", Other: "x" })] }, {}, { config: InboxConfig.parse({ nextUp }) });
+    expect(inbox.unclaimed[0]).toMatchObject({ scope: "🔙 Backend", priority: undefined });
+    const variables = searchVariables(InboxConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), NOW);
+    expect(variables.unclaimed).toBe("is:issue is:open no:assignee repo:acme/shop archived:false");
   });
 });
 
 describe("GitHub requests", () => {
   it("SRC-01, GH-01: scopes every search to the configured orgs and repos", () => {
     const variables = searchVariables(InboxConfig.parse({ orgs: ["acme"], repos: ["acme/web"] }), NOW);
-    for (const query of Object.values(variables)) expect(query).toContain("org:acme repo:acme/web");
+    for (const [alias, query] of Object.entries(variables)) if (alias !== "unclaimed") expect(query).toContain("org:acme repo:acme/web");
     expect(variables.reviews).toContain("user-review-requested:@me");
-    expect(variables.merged).toContain("merged:>=2026-10-26");
+  });
+
+  it("GH-01: refreshes hourly by default; the screen never forces a fetch", () => {
+    expect(config.refreshMinutes).toBe(60);
   });
 
   it("ATT-08: records the latest activity by others for dismissals", () => {
-    const thread = { isResolved: false, comments: { nodes: [comment(alice, "", daysAgo(0.25))] } };
-    const [item] = run({ mine: [pr(1, { reviewThreads: { nodes: [thread] }, comments: { nodes: [comment(me, "", daysAgo(0.1))] } })] }).items;
+    const [item] = run({ mine: [pr(1, { reviewThreads: { nodes: [thread(alice, 0.25)] }, comments: { nodes: [comment(me, "", 0.1)] } })] }).items;
     expect(item.othersActivityAt).toBe(daysAgo(0.25));
   });
+
+  it("covers every section with the preview fixture", () => {
+    const { data, details } = fixture(NOW);
+    const inbox = classify({ data, details, config, now: NOW });
+    expect(new Set(inbox.items.map((item) => item.section)).size).toBe(14);
+    expect(doing(inbox).length).toBeGreaterThan(5);
+    expect([inbox.assigned.length, inbox.unclaimed.length]).toEqual([1, 6]);
+  });
 });
+

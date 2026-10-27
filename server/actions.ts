@@ -1,5 +1,5 @@
 import type { Target } from "../shared/inbox";
-import { graphql } from "./gh";
+import { graphql, runGh } from "./gh";
 
 // Each action runs only from an explicit tap in the inbox [SAFE-01].
 
@@ -38,4 +38,10 @@ export async function closePullRequest(target: Target, comment?: string): Promis
     });
   }
   await graphql(`mutation($id: ID!) { closePullRequest(input: { pullRequestId: $id }) { clientMutationId } }`, { id });
+}
+
+// Assign me, so teammates see the issue is taken [NXT-05].
+export async function claimIssue(target: Target): Promise<void> {
+  const { code, stderr } = await runGh(["issue", "edit", String(target.number), "--repo", target.repo, "--add-assignee", "@me"]);
+  if (code !== 0) throw new Error(stderr.trim() || "Claiming the issue failed");
 }

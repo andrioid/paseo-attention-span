@@ -1,9 +1,10 @@
 import { InboxConfig } from "../shared/config";
 import type { InboxView } from "../shared/inbox";
 import { classify } from "./classify";
-import { graphql } from "./gh";
-import type { BehindCounts, SearchResult } from "./github-types";
-import { compareQuery, SEARCH_QUERY, searchVariables } from "./queries";
+import { FIXTURE, graphql } from "./gh";
+import { fixture } from "./fixture";
+import type { Details, SearchResult } from "./github-types";
+import { detailsQuery, SEARCH_QUERY, searchVariables } from "./queries";
 import { loadConfig, loadState, saveState, type State } from "./store";
 import { buildView } from "./view";
 
@@ -30,8 +31,8 @@ export class InboxService {
   }
 
   async get(maxAgeSeconds?: number): Promise<InboxView> {
-    // ⟳ (maxAgeSeconds 0) always fetches; anything else retries a failure at most once a minute.
-    const retryOk = maxAgeSeconds === 0 || Date.now() - this.lastAttemptAt >= 60_000;
+    // ⟳ (maxAgeSeconds 0) always fetches; anything else retries a failure at most every 5 minutes.
+    const retryOk = maxAgeSeconds === 0 || Date.now() - this.lastAttemptAt >= 5 * 60_000;
     if (retryOk && this.isOlderThan(maxAgeSeconds ?? this.config.refreshMinutes * 60)) await this.refresh().catch(() => {});
     return this.view();
   }
@@ -62,9 +63,8 @@ export class InboxService {
     try {
       await this.reloadConfig();
       const now = new Date();
-      const data = await graphql<SearchResult>(SEARCH_QUERY, searchVariables(this.config, now));
-      const behind = await this.behindCounts(data);
-      const inbox = classify({ data, behind, config: this.config, now });
+      const { data, details } = FIXTURE ? fixture(now) : await this.fetchGitHub(now);
+      const inbox = classify({ data, details, config: this.config, now });
       // Forget dismissals of items that are gone.
       const keys = new Set(inbox.items.map((item) => item.key));
       for (const key of Object.keys(this.state.dismissed)) if (!keys.has(key)) delete this.state.dismissed[key];
@@ -78,19 +78,29 @@ export class InboxService {
     }
   }
 
-  // Second request: how far my PRs are behind their bases [GH-01, UPS-07].
-  private async behindCounts(data: SearchResult): Promise<BehindCounts> {
-    const prs = data.mine.nodes.filter((pr) => pr && pr.headRefName && !pr.isCrossRepository);
-    if (prs.length === 0) return {};
-    const { query, aliases } = compareQuery(prs);
-    type Compare = { ref: { compare: { behindBy: number } | null } | null } | null;
-    const result = await graphql<Record<string, Compare>>(query);
-    const behind: BehindCounts = {};
-    for (const [alias, key] of Object.entries(aliases)) {
-      const behindBy = result[alias]?.ref?.compare?.behindBy;
-      if (typeof behindBy === "number") behind[key] = behindBy;
+  private async fetchGitHub(now: Date): Promise<{ data: SearchResult; details: Details }> {
+    const data = await graphql<SearchResult>(SEARCH_QUERY, searchVariables(this.config, now));
+    return { data, details: await this.details(data) };
+  }
+
+  // Second request: behind counts [UPS-07] and issue field option order [NXT-02].
+  private async details(data: SearchResult): Promise<Details> {
+    const prs = data.mine.nodes.filter((pr) => pr?.headRefName && !pr.isCrossRepository);
+    const { priority, effort } = this.config.nextUp;
+    const needsOptions = [priority, effort].some((field) => field && !field.order);
+    const issues = [...data.unclaimed.nodes, ...data.assigned.nodes];
+    const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
+    const details: Details = { behind: {}, fieldOptions: {} };
+    if (prs.length === 0 && orgs.length === 0) return details;
+    const { query, compares } = detailsQuery(prs, orgs as string[]);
+    type Result = { ref?: { compare: { behindBy: number } | null } | null; issueFields?: { nodes: { name?: string; options?: { name: string }[] }[] } } | null;
+    const result = await graphql<Record<string, Result>>(query);
+    for (const [alias, value] of Object.entries(result)) {
+      const behindBy = value?.ref?.compare?.behindBy;
+      if (typeof behindBy === "number") details.behind[compares[alias]] = behindBy;
+      for (const field of value?.issueFields?.nodes ?? []) if (field.name && field.options) details.fieldOptions[field.name] ??= field.options.map((o) => o.name);
     }
-    return behind;
+    return details;
   }
 
   private async reloadConfig(): Promise<void> {

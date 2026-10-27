@@ -6,14 +6,13 @@ import { getInbox } from "../shared/rpc";
 
 export const INBOX_QUERY_KEY = ["github-inbox", "inbox"] as const;
 
-// The server owns the GitHub refresh schedule; the app only reads its cache [FRESH-01].
-// The screen asks for data at most a minute old when it opens.
-export function useInbox(options: { onOpenMaxAgeSeconds?: number } = {}) {
+// The server owns the GitHub refresh schedule; the app only reads its cache [FRESH-01, GH-01].
+export function useInbox() {
   const fetchInbox = useRpc(getInbox);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: INBOX_QUERY_KEY,
-    queryFn: () => fetchInbox({ maxAgeSeconds: options.onOpenMaxAgeSeconds }),
+    queryFn: () => fetchInbox({}),
     refetchInterval: 60_000,
   });
   const setView = useCallback((view: InboxView) => queryClient.setQueryData(INBOX_QUERY_KEY, view), [queryClient]);

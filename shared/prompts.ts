@@ -70,7 +70,7 @@ export function renderPrompt(
     url: target.url,
     head: target.headRefName ?? "",
     base: target.baseRefName ?? target.defaultBranch ?? "",
-    stack: (target.stack ?? [`${target.repo}#${target.number}`]).join(" → "),
+    stack: (target.stack ?? [{ number: target.number }]).map((pr) => `#${pr.number}`).join(" → "),
     context: context.trim(),
   };
   return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => values[name] ?? match).trim();

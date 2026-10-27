@@ -1,116 +1,83 @@
 import type { InboxConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import type { ActionId, FooterEntry, Inbox, Item, SectionId, SubRow, Target } from "../shared/inbox";
-import { SectionId as Sections } from "../shared/inbox";
-import type {
-  Actor,
-  BehindCounts,
-  Comment,
-  MentionNode,
-  PullRequestNode,
-  SearchResult,
-} from "./github-types";
+import { type ActionId, type Chip, type Inbox, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/inbox";
+import type { Actor, Comment, Details, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 import { prKey } from "./queries";
 
 // Turns one refresh worth of GitHub data into the inbox. Pure, so every rule is testable.
 
 export interface ClassifyInput {
   data: SearchResult;
-  behind: BehindCounts;
+  details: Details;
   config: InboxConfig;
   now: Date;
 }
 
 const EPOCH = "1970-01-01T00:00:00Z";
-const URGENCY: readonly SectionId[] = Sections.options;
+const rank = (section: SectionId) => SECTION_ORDER.indexOf(section);
+const latest = (...dates: (string | null | undefined)[]) => dates.reduce<string>((max, date) => (date && date > max ? date : max), EPOCH);
+const chip = (text: string, tone: Chip["tone"] = "neutral"): Chip => ({ text, tone });
+const person = (actor: Actor | null | undefined, since: string): Person | undefined =>
+  actor ? { login: actor.login, avatarUrl: actor.avatarUrl, bot: actor.__typename === "Bot", since } : undefined;
 
-function mostUrgent(sections: SectionId[]): SectionId | null {
-  let best: SectionId | null = null;
-  for (const section of sections) {
-    if (best === null || URGENCY.indexOf(section) < URGENCY.indexOf(best)) best = section;
-  }
-  return best;
-}
+// Search returns empty objects for result types a fragment doesn't cover.
+const compact = <T>(nodes: (T | null | undefined)[]) => nodes.filter((node): node is T => !!node && Object.keys(node).length > 0);
 
-function latest(...dates: (string | null | undefined)[]): string {
-  let best = EPOCH;
-  for (const date of dates) if (date && date > best) best = date;
-  return best;
-}
-
-export function classify({ data, behind, config, now }: ClassifyInput): Inbox {
+export function classify({ data, details, config, now }: ClassifyInput): Inbox {
   const me = data.viewer.login.toLowerCase();
-  const isMe = (actor: Actor | { login: string } | null | undefined) => actor?.login.toLowerCase() === me;
-  const isBot = (actor: Actor | null | undefined) => actor?.__typename === "Bot";
-  const isOther = (actor: Actor | null | undefined) => !!actor && !isMe(actor);
+  const isMe = (actor: { login: string } | null | undefined) => actor?.login.toLowerCase() === me;
+  const isOther = (actor: { login: string } | null | undefined) => !!actor && !isMe(actor);
 
-  // ---- Mentions still waiting on me [MEN-01..06] ----
-  const mentions = new Map<string, Mention>();
+  const mentions = new Map<string, Person>();
   for (const node of compact(data.mentions.nodes)) {
-    const mention = waitingMention(node, me);
-    if (mention) mentions.set(prKey(node), mention);
+    const waiting = waitingMention(node, me);
+    if (waiting) mentions.set(prKey(node), waiting);
   }
 
-  // ---- My pull requests, minus handed-over ones [PRS-08] ----
-  const mine = compact(data.mine.nodes).filter(
-    (pr) => pr.assignees.nodes.length === 0 || pr.assignees.nodes.some(isMe),
-  );
+  // My PRs, minus those handed over to someone else [PRS-08].
+  const mine = compact(data.mine.nodes).filter((pr) => pr.assignees.nodes.length === 0 || pr.assignees.nodes.some(isMe));
 
-  // ---- Stacks: followed through base/head branch names [ATT-04] ----
+  // Stacks, followed through base/head branch names [ATT-04].
   const byHead = new Map(mine.map((pr) => [`${pr.repository.nameWithOwner}\0${pr.headRefName}`, pr]));
-  const parentOf = (pr: PullRequestNode) => byHead.get(`${pr.repository.nameWithOwner}\0${pr.baseRefName}`);
-  const childrenOf = new Map<PullRequestNode, PullRequestNode[]>();
-  for (const pr of mine) {
-    const parent = parentOf(pr);
-    if (parent && parent !== pr) childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), pr]);
-  }
+  const parentOf = (pr: PullRequestNode) => {
+    const parent = byHead.get(`${pr.repository.nameWithOwner}\0${pr.baseRefName}`);
+    return parent === pr ? undefined : parent;
+  };
   const stacks: PullRequestNode[][] = [];
   const seen = new Set<PullRequestNode>();
-  const walk = (pr: PullRequestNode, into: PullRequestNode[]) => {
+  const walk = (pr: PullRequestNode, stack: PullRequestNode[]) => {
     if (seen.has(pr)) return;
     seen.add(pr);
-    into.push(pr);
-    for (const child of (childrenOf.get(pr) ?? []).sort((a, b) => a.number - b.number)) walk(child, into);
+    stack.push(pr);
+    for (const child of mine.filter((candidate) => parentOf(candidate) === pr)) walk(child, stack);
   };
-  for (const pr of [...mine].sort((a, b) => a.number - b.number)) {
-    if (!parentOf(pr) || parentOf(pr) === pr) {
-      const stack: PullRequestNode[] = [];
-      walk(pr, stack);
-      stacks.push(stack);
-    }
-  }
-  for (const pr of mine) if (!seen.has(pr)) stacks.push([pr]); // cycles, in theory
+  const byNumber = [...mine].sort((a, b) => a.number - b.number);
+  for (const pr of byNumber) if (!parentOf(pr)) stacks.push([]), walk(pr, stacks[stacks.length - 1]);
+  for (const pr of byNumber) if (!seen.has(pr)) stacks.push([pr]); // cycles, in theory
 
-  // ---- PR state ----
-  const state = (pr: PullRequestNode): PrState => {
+  const state = (pr: PullRequestNode) => {
     const commit = pr.commits.nodes[0]?.commit;
-    const ci = commit?.statusCheckRollup?.state ?? null;
+    const ci = commit?.statusCheckRollup?.state;
     const unresolved = pr.reviewThreads.nodes.filter((thread) => !thread.isResolved);
-    const lastIn = (thread: (typeof unresolved)[number]) => thread.comments.nodes[thread.comments.nodes.length - 1];
-    const threadsOnMe = unresolved.filter((thread) => !isMe(lastIn(thread)?.author));
-    const myReplies = unresolved.filter((thread) => isMe(lastIn(thread)?.author));
-    const changesRequestedAt = latest(
-      ...pr.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.submittedAt),
-    );
+    const last = (thread: (typeof unresolved)[number]) => thread.comments.nodes.at(-1);
+    const onMe = unresolved.filter((thread) => !isMe(last(thread)?.author));
     const lastCommitAt = commit?.committedDate ?? pr.createdAt;
-    const changesPending = pr.reviewDecision === "CHANGES_REQUESTED" && !(lastCommitAt > changesRequestedAt);
-    const behindBy = behind[prKey(pr)];
-    const parent = parentOf(pr);
+    const changesRequestedAt = latest(...pr.latestReviews.nodes.filter((r) => r.state === "CHANGES_REQUESTED").map((r) => r.submittedAt));
+    const behindBy = details.behind[prKey(pr)] ?? 0;
     return {
-      ci,
       ciFailing: ci === "FAILURE" || ci === "ERROR",
       ciPending: ci === "PENDING" || ci === "EXPECTED",
       conflicts: pr.mergeable === "CONFLICTING",
       approved: pr.reviewDecision === "APPROVED",
-      threadsOnMe: threadsOnMe.length,
-      botThreadsOnly:
-        threadsOnMe.length > 0 && threadsOnMe.every((thread) => isBot((thread.opener?.nodes[0] ?? lastIn(thread))?.author)),
-      changes: threadsOnMe.length > 0 || changesPending,
-      repliedAt: latest(...myReplies.map((thread) => lastIn(thread)?.createdAt)),
+      threadsOnMe: onMe.length,
+      botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
+      // Requested changes stay mine until I push after them.
+      changes: onMe.length > 0 || (pr.reviewDecision === "CHANGES_REQUESTED" && !(lastCommitAt > changesRequestedAt)),
+      repliedAt: latest(...unresolved.filter((thread) => isMe(last(thread)?.author)).map((thread) => last(thread)?.createdAt)),
       lastCommitAt,
       behindBy,
       // A stacked PR no longer builds on its parent's latest version [UPS-02].
-      outOfSync: !!parent && (behindBy ?? 0) > 0,
+      outOfSync: !!parentOf(pr) && behindBy > 0,
       stale: daysSince(pr.updatedAt, now) >= config.staleDraftDays,
       othersActivityAt: latest(
         ...pr.comments.nodes.filter((c) => isOther(c.author)).map((c) => c.createdAt),
@@ -121,341 +88,89 @@ export function classify({ data, behind, config, now }: ClassifyInput): Inbox {
   };
 
   const items: Item[] = [];
-  const footer: Inbox["footer"] = { waitingOnOthers: [], toDo: [], doneThisWeek: [] };
   const listed = new Set<string>();
 
-  // ---- One unit per stack (or single PR) of mine ----
-  interface Unit {
-    stack: PullRequestNode[];
-    section: SectionId | null; // null: waiting on others, inside the threshold
-    actions: ActionId[];
-    detail: string;
-    mention?: Mention;
-    bot: boolean;
-    waitingDetail: string;
-    othersActivityAt: string;
-  }
-  const units: Unit[] = stacks.map((stack) => {
+  // One unit per stack (or single PR) of mine.
+  const units = stacks.map((stack) => {
     const bottom = stack[0];
     const s = state(bottom);
-    const states = stack.map(state);
-    const stacked = stack.length > 1;
-    const stackOutOfSync = states.slice(1).some((child) => child.outOfSync || child.conflicts);
-    const mention = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
+    const outOfSync = stack.slice(1).some((pr) => state(pr).outOfSync || state(pr).conflicts);
+    const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
     const base = bottom.baseRefName;
 
     const reasons: SectionId[] = [];
-    if (mention) reasons.push("reply");
-    if (bottom.isDraft) {
-      reasons.push("drafts");
-    } else {
+    if (waiting) reasons.push("reply");
+    if (bottom.isDraft) reasons.push("drafts");
+    else {
       if (s.ciFailing) reasons.push("ci");
       if (s.changes) reasons.push("changes");
       if (s.approved && !s.conflicts && !s.ciFailing && !s.changes) reasons.push("ready");
-      if (s.conflicts || stackOutOfSync) reasons.push("upstream");
+      if (s.conflicts || outOfSync) reasons.push("upstream");
     }
-
-    // Waiting on others [ATT-10, ATT-11]: review, my replies, or CI.
-    let waitingDetail = "";
-    let waitingSince = latest(s.lastCommitAt, s.repliedAt);
-    if (!bottom.isDraft && reasons.length === 0) {
-      if (s.ciPending) waitingDetail = "CI running";
-      else if (s.repliedAt > EPOCH || (bottom.reviewDecision === "CHANGES_REQUESTED" && !s.changes))
-        waitingDetail = "you replied, waiting for the reviewer";
-      else waitingDetail = "waiting for review";
-      if (daysSince(waitingSince, now) >= config.waitingTooLongDays) reasons.push("too_long");
-    }
-    const section = mostUrgent(reasons);
+    // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01].
+    const waitingSince = latest(s.lastCommitAt, s.repliedAt);
+    const replied = s.repliedAt > EPOCH || bottom.reviewDecision === "CHANGES_REQUESTED";
+    const waitingFor: SectionId = s.ciPending ? "wait_ci" : replied ? "wait_reviewer" : "wait_review";
+    const waitingLabel = { wait_ci: "CI running", wait_reviewer: "waiting for the reviewer", wait_review: "waiting for review" }[waitingFor as "wait_ci"];
+    // After too long it's mine to nudge [ATT-11].
+    if (!bottom.isDraft && reasons.length === 0) reasons.push(daysSince(waitingSince, now) >= config.waitingTooLongDays ? "too_long" : waitingFor);
+    const section = reasons.sort((a, b) => rank(a) - rank(b))[0];
+    const reviewer = replied
+      ? bottom.latestReviews.nodes.find((review) => review.state === "CHANGES_REQUESTED")?.author
+      : bottom.reviewRequests.nodes.find((request) => request.requestedReviewer?.login)?.requestedReviewer;
 
     const actions: ActionId[] = [];
-    const canUpdate = !stacked && !s.conflicts;
-    switch (section) {
-      case "reply":
-        actions.push("reply");
-        break;
-      case "ci":
-        actions.push("fix");
-        break;
-      case "changes":
-        actions.push("address");
-        break;
-      case "ready":
-        // Merge only once CI passed against the current base [PRS-04, UPS-07].
-        if ((s.behindBy ?? 0) > 0) actions.push(canUpdate ? "update" : "rebase");
-        else if (!s.ciPending) actions.push("merge");
-        break;
-      case "upstream":
-        actions.push("rebase");
-        break;
-      case "drafts":
-        // A stale draft offers Refresh and Close instead of Rebase [PRS-07].
-        if (s.stale) actions.push("refresh", "close");
-        else if (s.conflicts || stackOutOfSync) actions.push("rebase");
-        else if (s.ciFailing) actions.push("fix");
-        break;
-    }
+    if (section === "reply") actions.push("reply");
+    if (section === "ci") actions.push("fix");
+    if (section === "changes") actions.push("address");
+    // Merge only once CI passed against the current base [PRS-04, UPS-07].
+    if (section === "ready") actions.push(...(s.behindBy > 0 ? [stack.length === 1 ? "update" : "rebase"] : s.ciPending ? [] : ["merge"]) as ActionId[]);
+    if (section === "upstream") actions.push("rebase");
+    // A stale draft offers Refresh and Close instead of Rebase [PRS-07].
+    if (section === "drafts") actions.push(...(s.stale ? ["refresh", "close"] : s.conflicts || outOfSync ? ["rebase"] : s.ciFailing ? ["fix"] : []) as ActionId[]);
 
-    const parts: string[] = [];
-    if (mention) parts.push(mention.who, ago(mention.since, now));
-    else {
-      if (bottom.isDraft) parts.push("draft");
-      if (s.stale && bottom.isDraft) parts.push(`untouched for ${ago(bottom.updatedAt, now)}`);
-      if (section === "too_long") parts.push(`${waitingDetail} for ${ago(waitingSince, now)}`);
-      if (s.approved && !bottom.isDraft) parts.push("approved");
-      if (bottom.reviewDecision === "CHANGES_REQUESTED") parts.push("changes requested");
-      if (s.threadsOnMe > 0) parts.push(`${s.threadsOnMe} unresolved`);
-      if (s.ciFailing) parts.push("✗ CI failing");
-      else if (s.ciPending) parts.push("CI running");
-      else if (section === "ready") parts.push((s.behindBy ?? 0) > 0 ? `✓ CI on old ${base}` : "✓ CI");
-      if (s.conflicts) parts.push("✗ conflicts");
-      // Behind is shown on rows that appear anyway, never a reason by itself [UPS-07].
-      if ((s.behindBy ?? 0) > 0) parts.push(`${s.behindBy} behind ${base}`);
-      if (stacked) parts.push(`stack of ${stack.length}`);
-    }
+    const chips: Chip[] = [];
+    if (section === "too_long") chips.push(chip(`${waitingLabel} · ${ago(waitingSince, now)}`, "warn"));
+    else if (SECTION_ORDER.indexOf(section) >= rank("wait_review")) chips.push(chip(ago(waitingSince, now)));
+    if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
+    if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
+    if (bottom.reviewDecision === "CHANGES_REQUESTED") chips.push(chip("changes requested", "warn"));
+    if (s.threadsOnMe > 0) chips.push(chip(`${s.threadsOnMe} unresolved`, "warn"));
+    if (s.ciFailing) chips.push(chip("CI failing", "bad"));
+    else if (s.ciPending) chips.push(chip("CI running", "warn"));
+    else if (section === "ready") chips.push(chip(s.behindBy > 0 ? `CI on old ${base}` : "CI passed", s.behindBy > 0 ? "warn" : "good"));
+    if (s.conflicts) chips.push(chip("conflicts", "bad"));
+    // Behind is shown on rows that appear anyway, never a reason by itself [UPS-07].
+    if (s.behindBy > 0) chips.push(chip(`${s.behindBy} behind ${base}`));
+    if (stack.length > 1) chips.push(chip(`stack of ${stack.length}`));
 
     return {
       stack,
       section,
       actions,
-      detail: parts.join(" · "),
-      mention,
-      bot: mention ? mention.bot : section === "changes" && s.botThreadsOnly,
-      waitingDetail: `${waitingDetail} · ${ago(waitingSince, now)}`,
-      othersActivityAt: latest(...states.map((st) => st.othersActivityAt), mention?.since),
+      chips,
+      person:
+        waiting ??
+        (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
+        (section === "too_long" || section.startsWith("wait_") ? person(reviewer, waitingSince) : undefined),
+      othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since),
     };
   });
+  type Unit = (typeof units)[number];
 
   const subRow = (pr: PullRequestNode, index: number, stack: PullRequestNode[]): SubRow => {
     const s = state(pr);
     const parent = parentOf(pr);
-    const parts: string[] = [];
-    if (pr.isDraft) parts.push("draft");
-    if (stack.length > 1) parts.push(`${index + 1}/${stack.length}`);
-    if (s.approved) parts.push("approved");
-    if (s.ciFailing) parts.push("✗ CI failing");
-    if (s.conflicts) parts.push("✗ conflicts");
-    if ((s.behindBy ?? 0) > 0) parts.push(`${s.behindBy} behind ${parent ? parent.number : pr.baseRefName}`);
-    return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, detail: parts.join(" · ") };
+    const chips: Chip[] = [];
+    if (stack.length > 1) chips.push(chip(`${index + 1}/${stack.length}`));
+    if (s.approved) chips.push(chip("approved", "good"));
+    if (s.ciFailing) chips.push(chip("CI failing", "bad"));
+    if (s.conflicts) chips.push(chip("conflicts", "bad"));
+    if (s.behindBy > 0) chips.push(chip(`${s.behindBy} behind ${parent ? `#${parent.number}` : pr.baseRefName}`));
+    return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, chips };
   };
 
-  // ---- One item per issue: PRs grouped under the issue they close [ATT-03] ----
-  const byIssue = new Map<string, { issue: PullRequestNode["closingIssuesReferences"]["nodes"][number]; units: Unit[] }>();
-  const loose: Unit[] = [];
-  for (const unit of units) {
-    const issue = unit.stack[0].closingIssuesReferences.nodes[0];
-    if (!issue) {
-      loose.push(unit);
-      continue;
-    }
-    const key = `${issue.repository.nameWithOwner}#${issue.number}`;
-    byIssue.set(key, { issue, units: [...(byIssue.get(key)?.units ?? []), unit] });
-  }
-
-  const pushUnitItem = (unit: Unit, lead?: { key: string; number: number; title: string; url: string; repo: string }, others: Unit[] = []) => {
-    const bottom = unit.stack[0];
-    const all = [unit, ...others];
-    for (const u of all) for (const pr of u.stack) listed.add(prKey(pr));
-    if (lead) listed.add(lead.key);
-    const section = mostUrgent(all.map((u) => u.section).filter((s): s is SectionId => s !== null));
-    if (section === null) {
-      // Waiting on others, inside the threshold: footer only [ATT-10].
-      for (const u of all) {
-        const pr = u.stack[0];
-        footer.waitingOnOthers.push({
-          key: prKey(pr),
-          repo: pr.repository.nameWithOwner,
-          number: pr.number,
-          title: pr.title,
-          url: pr.url,
-          detail: u.waitingDetail,
-        });
-      }
-      return;
-    }
-    const children = lead
-      ? all.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack)))
-      : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack));
-    const leadUnit = all.find((u) => u.section === section) ?? unit;
-    const leadPr = leadUnit.stack[0];
-    items.push({
-      key: lead?.key ?? prKey(bottom),
-      section,
-      kind: lead ? "issue" : "pr",
-      repo: lead?.repo ?? bottom.repository.nameWithOwner,
-      number: lead?.number ?? bottom.number,
-      title: lead?.title ?? bottom.title,
-      url: lead?.url ?? bottom.url,
-      detail: lead ? `PR ${leadPr.number} · ${leadUnit.detail}` : leadUnit.detail,
-      snippet: leadUnit.mention?.snippet,
-      replyUrl: leadUnit.mention?.url,
-      bot: leadUnit.bot,
-      actions: leadUnit.actions,
-      children,
-      target: prTarget(leadPr, leadUnit.stack, config),
-      othersActivityAt: latest(...all.map((u) => u.othersActivityAt)),
-    });
-  };
-
-  for (const unit of loose) pushUnitItem(unit);
-  for (const [key, { issue, units: grouped }] of byIssue) {
-    const [first, ...rest] = grouped;
-    pushUnitItem(first, { key, number: issue.number, title: issue.title, url: issue.url, repo: issue.repository.nameWithOwner }, rest);
-    // A mention on the issue itself makes the whole item a reply.
-    const mention = mentions.get(key);
-    const item = items.find((candidate) => candidate.key === key);
-    if (mention && item) {
-      Object.assign(item, mentionFields(mention, now), { section: "reply", actions: ["reply"] });
-      item.othersActivityAt = latest(item.othersActivityAt, mention.since);
-    }
-  }
-
-  // ---- Review requests [REV-01] ----
-  for (const pr of compact(data.reviews.nodes)) {
-    const key = prKey(pr);
-    if (listed.has(key)) continue;
-    listed.add(key);
-    const mention = mentions.get(key);
-    const s = state(pr);
-    const parts = [pr.author?.login ?? "ghost", ago(pr.updatedAt, now)];
-    if (pr.isDraft) parts.push("draft");
-    if (s.ciFailing) parts.push("✗ CI failing");
-    items.push({
-      key,
-      section: mention ? "reply" : "review",
-      kind: "pr",
-      repo: pr.repository.nameWithOwner,
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      detail: parts.join(" · "),
-      bot: false,
-      actions: mention ? ["reply", "review"] : ["review"],
-      children: [],
-      target: prTarget(pr, [pr], config),
-      othersActivityAt: latest(s.othersActivityAt, s.lastCommitAt, mention?.since),
-      ...(mention ? mentionFields(mention, now) : {}),
-    });
-  }
-
-  // ---- Remaining mentions, including other people's drafts [MEN-03] ----
-  for (const node of compact(data.mentions.nodes)) {
-    const key = prKey(node);
-    const mention = mentions.get(key);
-    if (!mention || listed.has(key)) continue;
-    listed.add(key);
-    const kind = node.__typename === "PullRequest" ? "pr" : "issue";
-    items.push({
-      key,
-      section: "reply",
-      kind,
-      repo: node.repository.nameWithOwner,
-      number: node.number,
-      title: node.title,
-      url: node.url,
-      actions: ["reply"],
-      children: [],
-      target: { kind, repo: node.repository.nameWithOwner, number: node.number, title: node.title, url: node.url },
-      othersActivityAt: mention.since,
-      ...mentionFields(mention, now),
-    });
-  }
-
-  // ---- Issues where I commented last and nobody answered [ATT-10, ATT-11] ----
-  for (const issue of compact(data.commented.nodes)) {
-    const key = prKey(issue);
-    const last = issue.comments.nodes[issue.comments.nodes.length - 1];
-    if (listed.has(key) || !last || !isMe(last.author)) continue;
-    listed.add(key);
-    const entry = issueEntry(issue, `waiting for an answer · ${ago(last.createdAt, now)}`);
-    if (daysSince(last.createdAt, now) >= config.waitingTooLongDays) {
-      items.push({
-        ...entry,
-        section: "too_long",
-        kind: "issue",
-        detail: `waiting for an answer for ${ago(last.createdAt, now)}`,
-        bot: false,
-        actions: [],
-        children: [],
-        target: { kind: "issue", repo: entry.repo, number: entry.number, title: entry.title, url: entry.url },
-        othersActivityAt: EPOCH,
-      });
-    } else footer.waitingOnOthers.push(entry);
-  }
-
-  // ---- Assigned issues and merged PRs: footer counts [ATT-10] ----
-  for (const issue of compact(data.assigned.nodes)) {
-    if (listed.has(prKey(issue))) continue;
-    footer.toDo.push(issueEntry(issue, `updated ${ago(issue.updatedAt, now)} ago`));
-  }
-  for (const pr of compact(data.merged.nodes)) {
-    footer.doneThisWeek.push(issueEntry(pr, `merged ${ago(pr.mergedAt, now)} ago`));
-  }
-
-  items.sort(
-    (a, b) => URGENCY.indexOf(a.section) - URGENCY.indexOf(b.section) || b.othersActivityAt.localeCompare(a.othersActivityAt),
-  );
-  return { login: data.viewer.login, items, footer };
-}
-
-// ---------------------------------------------------------------------------
-
-interface PrState {
-  ci: string | null;
-  ciFailing: boolean;
-  ciPending: boolean;
-  conflicts: boolean;
-  approved: boolean;
-  threadsOnMe: number;
-  botThreadsOnly: boolean;
-  changes: boolean;
-  repliedAt: string;
-  lastCommitAt: string;
-  behindBy: number | undefined;
-  outOfSync: boolean;
-  stale: boolean;
-  othersActivityAt: string;
-}
-
-interface Mention {
-  who: string;
-  since: string;
-  snippet: string;
-  url: string;
-  bot: boolean;
-}
-
-function mentionFields(mention: Mention, now: Date) {
-  return {
-    detail: `${mention.bot ? "🤖 " : ""}${mention.who} · ${ago(mention.since, now)}`,
-    snippet: mention.snippet,
-    replyUrl: mention.url,
-    bot: mention.bot,
-  };
-}
-
-function compact<T>(nodes: (T | null | undefined)[]): T[] {
-  // Search returns empty objects for result types a fragment doesn't cover.
-  return nodes.filter((node): node is T => !!node && Object.keys(node as object).length > 0);
-}
-
-function issueEntry(
-  node: { repository: { nameWithOwner: string }; number: number; title: string; url: string },
-  detail: string,
-): FooterEntry {
-  return { key: prKey(node), repo: node.repository.nameWithOwner, number: node.number, title: node.title, url: node.url, detail };
-}
-
-export function mergeMethodFor(pr: PullRequestNode, config: InboxConfig): MergeMethod {
-  const configured = config.mergeMethods[pr.repository.nameWithOwner];
-  if (configured) return configured;
-  // The first the repository allows of squash, merge, rebase [PRS-04].
-  if (pr.repository.squashMergeAllowed !== false) return "squash";
-  if (pr.repository.mergeCommitAllowed) return "merge";
-  return "rebase";
-}
-
-function prTarget(pr: PullRequestNode, stack: PullRequestNode[], config: InboxConfig): Target {
-  return {
+  const target = (pr: PullRequestNode, stack: PullRequestNode[]): Target => ({
     kind: "pr",
     repo: pr.repository.nameWithOwner,
     number: pr.number,
@@ -467,24 +182,199 @@ function prTarget(pr: PullRequestNode, stack: PullRequestNode[], config: InboxCo
     headRefOid: pr.headRefOid,
     defaultBranch: pr.repository.defaultBranchRef?.name,
     mergeMethod: mergeMethodFor(pr, config),
-    stack: stack.map(prKey),
+    stack: stack.map((p) => ({ number: p.number, head: p.headRefName, base: p.baseRefName })),
+  });
+
+  // One item per issue: PRs grouped under the issue they close [ATT-03]. Otherwise one per unit.
+  const groups = new Map<string, { lead?: PullRequestNode["closingIssuesReferences"]["nodes"][number]; units: Unit[] }>();
+  for (const unit of units) {
+    const issue = unit.stack[0].closingIssuesReferences.nodes[0];
+    const key = issue ? `${issue.repository.nameWithOwner}#${issue.number}` : prKey(unit.stack[0]);
+    groups.set(key, { lead: issue, units: [...(groups.get(key)?.units ?? []), unit] });
+  }
+  for (const [key, { lead, units: grouped }] of groups) {
+    for (const unit of grouped) for (const pr of unit.stack) listed.add(prKey(pr));
+    listed.add(key);
+    const issueWaiting = lead ? mentions.get(key) : undefined;
+    const sections = grouped.map((unit) => unit.section);
+    if (issueWaiting) sections.push("reply");
+    const section = sections.sort((a, b) => rank(a) - rank(b))[0];
+    const unit = grouped.find((candidate) => candidate.section === section) ?? grouped[0];
+    const bottom = unit.stack[0];
+    items.push({
+      key,
+      section,
+      kind: lead ? "issue" : "pr",
+      draft: !lead && bottom.isDraft,
+      repo: lead?.repository.nameWithOwner ?? bottom.repository.nameWithOwner,
+      number: lead?.number ?? bottom.number,
+      title: lead?.title ?? bottom.title,
+      url: lead?.url ?? bottom.url,
+      chips: lead ? [chip(`PR #${bottom.number}`), ...unit.chips] : unit.chips,
+      person: issueWaiting ?? unit.person,
+      actions: issueWaiting ? ["reply"] : unit.actions,
+      children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
+      target: target(bottom, unit.stack),
+      othersActivityAt: latest(...grouped.map((u) => u.othersActivityAt), issueWaiting?.since),
+    });
+  }
+
+  // Review requests [REV-01].
+  for (const pr of compact(data.reviews.nodes)) {
+    const key = prKey(pr);
+    if (listed.has(key)) continue;
+    listed.add(key);
+    const s = state(pr);
+    const waiting = mentions.get(key);
+    items.push({
+      key,
+      section: waiting ? "reply" : "review",
+      kind: "pr",
+      draft: pr.isDraft,
+      repo: pr.repository.nameWithOwner,
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      chips: s.ciFailing ? [chip("CI failing", "bad")] : [],
+      person: waiting ?? person(pr.author, s.lastCommitAt),
+      actions: waiting ? ["reply", "review"] : ["review"],
+      children: [],
+      target: target(pr, [pr]),
+      othersActivityAt: latest(s.othersActivityAt, s.lastCommitAt, waiting?.since),
+    });
+  }
+
+  // Remaining mentions, including other people's drafts [MEN-03].
+  for (const node of compact(data.mentions.nodes)) {
+    const key = prKey(node);
+    const waiting = mentions.get(key);
+    if (!waiting || listed.has(key)) continue;
+    listed.add(key);
+    const kind = node.__typename === "PullRequest" ? "pr" : "issue";
+    const repo = node.repository.nameWithOwner;
+    items.push({
+      key,
+      section: "reply",
+      kind,
+      draft: false,
+      repo,
+      number: node.number,
+      title: node.title,
+      url: node.url,
+      chips: [],
+      person: waiting,
+      actions: ["reply"],
+      children: [],
+      target: { kind, repo, number: node.number, title: node.title, url: node.url },
+      othersActivityAt: waiting.since,
+    });
+  }
+
+  // Issues where I commented last and nobody answered: waiting, then mine to nudge [WAI-01, ATT-11].
+  for (const issue of compact(data.commented.nodes)) {
+    const key = prKey(issue);
+    const last = issue.comments.nodes.at(-1);
+    if (listed.has(key) || !last || !isMe(last.author)) continue;
+    listed.add(key);
+    const tooLong = daysSince(last.createdAt, now) >= config.waitingTooLongDays;
+    items.push({
+      ...plain(issue, "issue", tooLong ? "too_long" : "wait_answer"),
+      chips: [chip(tooLong ? `waiting for an answer · ${ago(last.createdAt, now)}` : ago(last.createdAt, now), tooLong ? "warn" : "neutral")],
+    });
+  }
+
+  // History: my merged PRs under the issues they closed, closed issues, and reviews [HIS-01, HIS-02].
+  const closed = new Map<string, Item>();
+  for (const issue of compact(data.closed.nodes)) {
+    const notPlanned = issue.stateReason === "NOT_PLANNED";
+    const item = { ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: notPlanned ? [chip("not planned")] : [] };
+    closed.set(prKey(issue), item);
+    items.push(item);
+  }
+  for (const pr of compact(data.merged.nodes)) {
+    const issue = closed.get(pr.closingIssuesReferences.nodes.map(prKey).find((key) => closed.has(key)) ?? "");
+    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [] });
+    else items.push({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt });
+  }
+  for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });
+
+  items.sort((a, b) => rank(a.section) - rank(b.section) || (b.closedAt ?? b.othersActivityAt).localeCompare(a.closedAt ?? a.othersActivityAt));
+  return {
+    login: data.viewer.login,
+    items,
+    // Assigned issues not already in progress come before unclaimed ones [NXT-06].
+    assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
+    unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
   };
 }
 
-// ---- Mentions [MEN-01..06] ----
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// An item with nothing to act on: waiting, history.
+function plain(node: { repository: { nameWithOwner: string }; number: number; title: string; url: string }, kind: "pr" | "issue", section: SectionId): Item {
+  const repo = node.repository.nameWithOwner;
+  return {
+    key: prKey(node),
+    section,
+    kind,
+    draft: false,
+    repo,
+    number: node.number,
+    title: node.title,
+    url: node.url,
+    chips: [],
+    actions: [],
+    children: [],
+    target: { kind, repo, number: node.number, title: node.title, url: node.url },
+    othersActivityAt: EPOCH,
+  };
 }
+
+export function mergeMethodFor(pr: PullRequestNode, config: InboxConfig): MergeMethod {
+  // The configured method, else the first the repository allows of squash, merge, rebase [PRS-04].
+  return config.mergeMethods[pr.repository.nameWithOwner] ?? (pr.repository.squashMergeAllowed !== false ? "squash" : pr.repository.mergeCommitAllowed ? "merge" : "rebase");
+}
+
+// ---- Next up: issues by priority, effort, then age [NXT-02] ----
+
+function rankIssues(nodes: PickableNode[], details: Details, config: InboxConfig): NextUpIssue[] {
+  const { priority, effort, scope } = config.nextUp;
+  const valueOf = (node: PickableNode, field: string | undefined) =>
+    field ? node.issueFieldValues.nodes.find((value) => value.field?.name === field)?.name : undefined;
+  // Position in the configured order (matched by name), else in the field's own options; missing goes last.
+  const position = (value: string | undefined, ranked: { field: string; order?: string[] } | undefined) => {
+    if (!value || !ranked) return Infinity;
+    const order = ranked.order ?? details.fieldOptions[ranked.field] ?? [];
+    const index = order.findIndex((name) => value.toLowerCase().includes(name.toLowerCase()));
+    return index < 0 ? Infinity : index;
+  };
+  return nodes
+    .map((node) => ({
+      key: prKey(node),
+      repo: node.repository.nameWithOwner,
+      number: node.number,
+      title: node.title,
+      url: node.url,
+      createdAt: node.createdAt,
+      type: node.issueType?.name,
+      priority: valueOf(node, priority?.field),
+      effort: valueOf(node, effort?.field),
+      scope: valueOf(node, scope?.field),
+      defaultBranch: node.repository.defaultBranchRef?.name,
+    }))
+    .sort(
+      (a, b) =>
+        position(a.priority, priority) - position(b.priority, priority) ||
+        position(a.effort, effort) - position(b.effort, effort) ||
+        a.createdAt.localeCompare(b.createdAt),
+    );
+}
+
+// ---- Mentions still waiting on me [MEN-01..06] ----
 
 function mentionsMe(body: string | undefined, me: string): number {
   if (!body) return -1;
   // Ignore quoted replies; a team mention (@org/team) never matches a login [MEN-04].
-  const text = body
-    .split("\n")
-    .map((line) => (line.trimStart().startsWith(">") ? "" : line))
-    .join("\n");
-  const match = new RegExp(`(^|[^\\w/@-])@${escapeRegExp(me)}(?![\\w/-])`, "i").exec(text);
+  const text = body.replace(/^\s*>.*$/gm, "");
+  const match = new RegExp(`(^|[^\\w/@-])@${me.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/-])`, "i").exec(text);
   return match ? match.index + match[1].length : -1;
 }
 
@@ -492,36 +382,42 @@ function snippetAround(body: string, index: number): string {
   const flat = body.replace(/\s+/g, " ");
   const at = body.slice(0, index).replace(/\s+/g, " ").length;
   const start = Math.max(0, at - 40);
-  const end = Math.min(flat.length, at + 60);
+  const end = Math.min(flat.length, at + 80);
   return `${start > 0 ? "…" : ""}${flat.slice(start, end).trim()}${end < flat.length ? "…" : ""}`;
 }
 
-export function waitingMention(node: MentionNode, me: string): Mention | null {
+export function waitingMention(node: MentionNode, me: string): Person | null {
   const isMe = (actor: Actor | null) => actor?.login.toLowerCase() === me;
-  const opened: Comment = { author: node.author, body: node.body, createdAt: node.createdAt, url: node.url };
   const threads = node.reviewThreads?.nodes ?? [];
-  const everything: Comment[] = [opened, ...node.comments.nodes, ...threads.flatMap((t) => t.comments.nodes)];
-  const myLastAt = everything.filter((c) => isMe(c.author)).reduce((max, c) => (c.createdAt > max ? c.createdAt : max), EPOCH);
-
+  const opened: Comment = { author: node.author, body: node.body, createdAt: node.createdAt, url: node.url };
+  const everything = [opened, ...node.comments.nodes, ...threads.flatMap((thread) => thread.comments.nodes)];
+  // Replying clears it, and so does any review I submit afterwards [MEN-02].
+  const myLastAt = latest(
+    ...everything.filter((c) => isMe(c.author)).map((c) => c.createdAt),
+    ...(node.reviews?.nodes ?? []).filter((r) => isMe(r.author)).map((r) => r.submittedAt),
+  );
   // A bot counts only when it opened a thread I need to resolve [MEN-05].
-  const botOpeners = new Set(threads.filter((t) => !t.isResolved).map((t) => t.comments.nodes[0]).filter(Boolean));
+  const botOpeners = new Set(threads.filter((thread) => !thread.isResolved).map((thread) => thread.comments.nodes[0]));
 
-  const waiting = everything.filter((comment) => {
-    if (!comment.author || isMe(comment.author)) return false;
-    if (comment.author.__typename === "Bot" && !botOpeners.has(comment)) return false;
-    if (mentionsMe(comment.body, me) < 0) return false;
-    // Replying or reacting clears it [MEN-02].
-    if (comment.reactionGroups?.some((group) => group.viewerHasReacted)) return false;
-    return comment.createdAt > myLastAt;
-  });
-  if (waiting.length === 0) return null;
-  waiting.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const last = waiting[waiting.length - 1];
+  const waiting = everything
+    .filter(
+      (c) =>
+        c.author &&
+        !isMe(c.author) &&
+        (c.author.__typename !== "Bot" || botOpeners.has(c)) &&
+        mentionsMe(c.body, me) >= 0 &&
+        !c.reactionGroups?.some((group) => group.viewerHasReacted) && // so does reacting [MEN-02]
+        c.createdAt > myLastAt,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const last = waiting.at(-1);
+  if (!last?.author) return null;
   return {
-    who: last.author!.login,
+    login: last.author.login,
+    avatarUrl: last.author.avatarUrl,
+    bot: waiting.every((c) => c.author?.__typename === "Bot"),
     since: waiting[0].createdAt,
     snippet: snippetAround(last.body ?? "", mentionsMe(last.body, me)),
     url: last.url ?? node.url,
-    bot: waiting.every((comment) => comment.author!.__typename === "Bot"),
   };
 }

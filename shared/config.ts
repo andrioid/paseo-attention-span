@@ -7,6 +7,13 @@ export type SessionKind = z.infer<typeof SessionKind>;
 export const MergeMethod = z.enum(["squash", "merge", "rebase"]);
 export type MergeMethod = z.infer<typeof MergeMethod>;
 
+// An org issue field and how its values rank; values match by name, so "Small" matches "🐇 Small (0.5-2d)".
+const RankedField = z.object({
+  field: z.string(),
+  // Best first. Without it, the field's own option order applies.
+  order: z.array(z.string()).optional(),
+});
+
 // ~/.config/paseo-github-inbox/config.json, edited by hand [SRC-01].
 export const InboxConfig = z.object({
   // GitHub orgs and "owner/name" repos to cover. Both empty means everything involving me.
@@ -23,8 +30,20 @@ export const InboxConfig = z.object({
   // Merge method per "owner/name" [PRS-04].
   mergeMethods: z.record(z.string(), MergeMethod).default({}),
   waitingTooLongDays: z.number().positive().default(3),
-  refreshMinutes: z.number().min(1).default(30),
+  // A digest, not a live view: GitHub is asked at most this often unless I press ⟳ [GH-01].
+  refreshMinutes: z.number().min(5).default(60),
   staleDraftDays: z.number().positive().default(30),
   mentionDays: z.number().positive().default(30),
+  // How many weeks History shows [HIS-01].
+  historyWeeks: z.number().int().positive().default(4),
+  // Unclaimed issues to pick from [NXT-04]. Repos default to the inbox's orgs and repos.
+  nextUp: z
+    .object({
+      repos: z.array(z.string()).optional(),
+      priority: RankedField.optional(),
+      effort: RankedField.optional(),
+      scope: z.object({ field: z.string(), mine: z.array(z.string()).default([]) }).optional(),
+    })
+    .default({}),
 });
 export type InboxConfig = z.infer<typeof InboxConfig>;

@@ -31,12 +31,24 @@ flowchart LR
   - `config.json`, edited by hand:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
-    - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 30) [FRESH-01]
+    - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 60) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
+    - `nextUp`: repos and the org issue fields for priority, effort and scope [NXT-04]
   - `state.json`: dismissals [ATT-08] and the last fetched result, so the inbox shows instantly after a restart [PRIV-01].
 
-## Sections
+## Tabs
+
+The tabs tell the story of my work, left to right: what I finished, what needs me, what waits on others, what's next. The screen opens on **Doing**, and the sidebar entry "GitHub attention" shows Doing's count [ATT-09]. On phones only the active tab shows its label.
+
+| Tab | Shows |
+|---|---|
+| History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. |
+| Doing | The sections below |
+| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (with the requested reviewer), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where I commented last) |
+| Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
+
+### Doing
 
 Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
@@ -48,22 +60,14 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 | Changes requested | My PRs with requested changes or unresolved threads [PRS-02] |
 | Ready to merge | My approved, mergeable PRs [PRS-03] |
 | Needs upstream | My PRs with conflicts or an out-of-sync stack [UPS-01, UPS-02] |
+| Waiting too long | Waiting items older than `waitingTooLongDays` (default 3); it's mine to nudge [ATT-11] |
 | My drafts | My drafts, with their own state tags [PRS-05, PRS-06] |
-| Footer | Expandable counts: waiting on others, to do (assigned issues), done this week [ATT-10] |
-
-**Waiting on others** is:
-- my PRs waiting for review,
-- my PRs where I replied to a review and the reviewer hasn't come back,
-- my PRs waiting on CI,
-- issues where I commented last and nobody has answered.
-
-It stays in the footer until it has waited `waitingTooLongDays` (one value, default 3), then appears as "Waiting too long" [ATT-11].
 
 ## Rules
 
 - **One item per issue** [ATT-03]: PRs are grouped under the issues they close (`closingIssuesReferences`, works across repos). A PR without a linked issue is its own item.
 - **One item per stack** [ATT-04]: a stack is followed through base/head branch names. Its section is decided by the bottom PR; the PRs above it are listed beneath.
-- **Mentions** [MEN-01..06]: a thread counts when a person @-mentioned me after my last comment or reaction there. Team mentions are ignored. A bot counts only when it opened a thread I need to resolve, and is marked with 🤖.
+- **Mentions** [MEN-01..06]: a thread counts when a person @-mentioned me after my last comment, review or reaction there. Team mentions are ignored. A bot counts only when it opened a thread I need to resolve, and is marked with 🤖.
 - **Handed over** [PRS-08]: my PRs assigned to someone else, and not to me, are left out. Mentions of me on them still count.
 - **Dismiss** [ATT-08] hides an item until someone other than me comments, reviews or pushes, or its reason changes. My own actions and CI reruns don't bring it back.
 - **Behind base** [UPS-07] only matters when:
@@ -72,6 +76,10 @@ It stays in the footer until it has waited `waitingTooLongDays` (one value, defa
   3. it is ready to merge (CI ran against an old base).
   Otherwise the behind count is shown on rows that appear anyway, but never puts an item on the list by itself.
 - **Stale draft** [PRS-07]: a draft untouched for 30 days offers Refresh and Close instead of Rebase.
+
+## Next up
+
+A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list, starting from `nextUp.scope.mine` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05].
 
 ## Actions
 
@@ -92,7 +100,7 @@ A tap starts with defaults. Expanding the row offers workspace, profile, and pro
 - **Repo to checkout** [SES-05]: match the PR's or issue's repository against the git remotes of registered Paseo projects. Repos without a project can only open GitHub.
 - **Workspace**: a worktree with `checkout-pr` for PRs, or `branch-off` from the default branch for issues.
 - **Profile**: looked up per reason in `config.json`, then materialised into `create_agent` from `list_profiles`. A missing `review` profile falls back to `default`; a missing `default` starts the agent with Paseo's defaults. Options ▾ still offers provider and model [SES-06].
-- **Prompt**: a built-in template per session type, filled with the item's context. A template in `config.json` replaces the built-in one [SES-04].
+- **Prompt**: a built-in template per session type, filled with the item's context. A template in `config.json` replaces the built-in one [SES-04]. The context is fetched when the session starts, mostly from `gh`'s JSON output: `gh pr checks` and `gh run view --log-failed` for Fix, `gh pr view`/`gh issue view` for Review and Start, one GraphQL query for unresolved threads for Address. Rebase uses the stack already in the item.
 
 ## GitHub requests
 
@@ -104,10 +112,11 @@ Fewest requests practical [GH-01]. A refresh is two GraphQL requests.
    - `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, and `viewerHasReacted`)
    - `is:issue is:open assignee:@me`
    - `is:issue is:open commenter:@me` (for issues waiting on others)
-   - `is:pr is:merged author:@me merged:>=<monday>`
+   - `is:issue is:open no:assignee` (Next up, with issue type and field values)
+   - History: `is:pr is:merged author:@me`, `is:pr is:merged reviewed-by:@me -author:@me`, `is:issue is:closed assignee:@me`, each from the Monday `historyWeeks` back
 
-   Each is scoped to the configured orgs and repos. With comment bodies for the mention rule, the query costs about 50 of 5,000 points per hour.
-2. **One batched `Ref.compare` query** for behind counts, only for stacked and ready-to-merge PRs.
+   Each is scoped to the configured orgs and repos. With comment bodies for the mention rule and Next up, the query costs about 65 of 5,000 points per hour.
+2. **One batched details query**: `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it.
 
-Refresh happens when the screen opens, on ⟳, and every `refreshMinutes` (default 30) for the count [FRESH-01]: about 4 requests and 120 points an hour in the background. Actions use GraphQL mutations. The only other call is fetching a failing CI log, and only when a Fix session starts.
+It's a digest, not a live view. GitHub is asked every `refreshMinutes` (default 60, at least 5) in the background [FRESH-01], after my own actions, and on ⟳. Opening the screen shows the cache. A failed refresh is retried at most every 5 minutes. That's about 2 requests and 75 points an hour. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts.
 
