@@ -43,7 +43,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    - wrong sections or counts
    - anything that differs from what the change intended
 
-4. **Report** what you looked at and what you saw. Say plainly that native iOS/Android wasn't covered.
+4. **Refresh the docs screenshots** after visible UI changes: `npm run screenshots` copies a curated set into `docs/screenshots/`. Commit them with the change.
+5. **Report** what you looked at and what you saw. Say plainly that native iOS/Android wasn't covered.
 
 ## How it works
 

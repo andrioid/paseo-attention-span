@@ -48,6 +48,12 @@ The tabs tell the story of my work, left to right: what I finished, what needs m
 | Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (with the requested reviewer), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where I commented last) |
 | Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
 
+Screenshots, from the preview's made-up data, are in [screenshots/](screenshots/). Refresh them with `npm run screenshots`.
+
+| Doing | History | Next up (phone) |
+|---|---|---|
+| ![Doing](screenshots/desktop-dark-doing.png) | ![History](screenshots/desktop-dark-history.png) | ![Next up](screenshots/phone-light-next-up.png) |
+
 ### Doing
 
 Top to bottom. Each item appears once, under its most urgent reason [ATT-02].

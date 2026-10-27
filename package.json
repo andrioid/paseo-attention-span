@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && node .claude/skills/requirements-yaml/scripts/check.mjs",
-    "preview": "sh preview/run.sh"
+    "preview": "sh preview/run.sh",
+    "screenshots": "sh preview/screenshots.sh"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.13.0",

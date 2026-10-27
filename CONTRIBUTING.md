@@ -18,6 +18,8 @@ npm run preview            # every layout
 npm run preview -- phone   # only names containing "phone"
 ```
 
+`npm run screenshots` does the same, then copies a curated set into `docs/screenshots/`. Rerun it after visible UI changes, and commit the images.
+
 This builds a Docker image and runs the plugin in a throwaway Paseo daemon that serves its own web app, then saves screenshots of every tab to `preview/out/`: desktop and phone width, dark and light.
 
 It's isolated on purpose. Agents must never connect tooling to the Paseo daemon that runs them.

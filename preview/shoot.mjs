@@ -19,7 +19,17 @@ for (const layout of layouts) {
     const prefix = `${layout.name}-${colorScheme}`;
     if (filter && !prefix.includes(filter)) continue;
     const page = await browser.newPage({ viewport: layout.viewport, isMobile: layout.isMobile, hasTouch: layout.isMobile, colorScheme });
-    const shot = (name) => page.screenshot({ path: `/out/${prefix}-${name}.png` });
+    // Clip to where the plugin's scrolled content ends, so tall viewports don't leave empty space.
+    const shot = async (name) => {
+      const bottom = await page.evaluate(() => {
+        let node = document.querySelector('[role="tab"]');
+        while (node && !/(auto|scroll)/.test(getComputedStyle(node).overflowY)) node = node.parentElement;
+        return node?.firstElementChild?.getBoundingClientRect().bottom ?? 0;
+      });
+      const { width, height } = page.viewportSize();
+      const clip = bottom > 0 ? { x: 0, y: 0, width, height: Math.min(height, Math.ceil(bottom) + 16) } : undefined;
+      await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip });
+    };
     try {
       // The container's daemon serves the web app and is the only host it knows.
       await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
