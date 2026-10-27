@@ -62,6 +62,17 @@ describe("prompts", () => {
     expect(prompt).toContain("Branches: feature");
   });
 
+  it("SES-04: review sweeps the browser only if equipped and reports a verdict; address applies only trivial fixes", () => {
+    const review = renderPrompt("review", target, "", config);
+    expect(review).toMatch(/Browser sweep, only if you're equipped/);
+    expect(review).toContain("Verdict");
+    expect(review).toContain("Do not post anything to GitHub.");
+    const address = renderPrompt("address", target, "", config);
+    expect(address).toContain("Trivial means no behavior change");
+    expect(address).toContain("Commit, but don't push.");
+    expect(address).toContain("Do not reply on GitHub.");
+  });
+
   it("SES-04: a template in config.json replaces the built-in one", () => {
     const custom = InboxConfig.parse({ prompts: { fix: "Fix {{repo}}#{{number}} on {{head}}: {{context}}" } });
     expect(renderPrompt("fix", target, "log", custom)).toBe("Fix o/r#7 on feature: log");

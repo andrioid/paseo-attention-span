@@ -4,9 +4,17 @@ import type { ActionId, Target } from "./inbox";
 // Built-in prompt templates [SES-04]. A template in config.json replaces one.
 // Placeholders: {{repo}} {{number}} {{title}} {{url}} {{head}} {{base}} {{stack}} {{context}}
 export const PROMPT_TEMPLATES: Record<SessionKind, string> = {
-  review: `Review pull request {{repo}}#{{number}}: "{{title}}" ({{url}}).
+  review: `Review pull request {{repo}}#{{number}}: "{{title}}" ({{url}}). You are in a checkout of the PR branch.
 
-You are in a checkout of the PR branch. Read the description and the diff against {{base}}, then report correctness bugs, risky changes and missing tests, most important first. Do not post anything to GitHub.
+1. Review: read the description and the diff against {{base}}.
+2. Investigate: dig into anything risky or unclear in the code it touches.
+3. Browser sweep, only if you're equipped to (you can run this repo's app and have browser tools): work out which pages and screens the change affects and check each one. If you can't, skip this and say so. Don't spend the session getting the app to run.
+4. Report back:
+   - Findings, most important first.
+   - Verdict: approve, request changes or comment, with a one-line reason.
+   - Draft review comments, ready to paste, each with file:line.
+
+Do not post anything to GitHub.
 
 {{context}}`,
 
@@ -16,9 +24,13 @@ Find the cause and fix it on branch {{head}}. Run the relevant checks locally. C
 
 {{context}}`,
 
-  address: `Pull request {{repo}}#{{number}} "{{title}}" ({{url}}) has requested changes or unresolved review comments.
+  address: `Pull request {{repo}}#{{number}} "{{title}}" ({{url}}) has review comments. You are on branch {{head}}.
 
-Address each one on branch {{head}}. Commit, but do not push and do not reply on GitHub: summarise what you did for each comment and wait for me.
+Evaluate each comment: is it right, and what would fixing it take?
+- If the fix is trivial, apply it. Trivial means no behavior change: typos, naming, comments, formatting, or a small refactor the reviewer spelled out. Commit, but don't push.
+- Anything that changes behavior or needs a judgment call: don't apply it.
+
+Then report back on every comment: what you changed, and for the rest, your evaluation and what you propose. Do not reply on GitHub.
 
 {{context}}`,
 
