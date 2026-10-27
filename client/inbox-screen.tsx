@@ -6,13 +6,13 @@ import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { InboxConfig, SessionKind } from "../shared/config";
 import { ago } from "../shared/format";
-import type { ActionId, Item, NextUpIssue, Section, SectionId, SubRow, TabId, Target } from "../shared/inbox";
+import type { ActionId, AgentSummary, Item, NextUpIssue, Section, SectionId, SubRow, TabId, Target } from "../shared/inbox";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { useInbox } from "./data";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
-import { type AgentSummary, branchWorkspaces, findProject, inboxAgents, listProfiles, resolveAgentConfig, startSession } from "./sessions";
+import { branchWorkspaces, findProject, inboxAgents, listProfiles, resolveAgentConfig, startSession } from "./sessions";
 import { Avatar, Button, Chip, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
 const ACTIONS: Record<ActionId, { label: string; icon: IconName }> = {
@@ -111,7 +111,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
 
   // One tap: continue the item's session, or start one with defaults [SES-01, SES-03].
   async function startWithDefaults(itemKey: string, kind: SessionKind, target: Target, before?: () => Promise<unknown>) {
-    const existing = agents.data?.[itemKey];
+    const existing = (view?.fixtureAgents ?? agents.data)?.[itemKey];
     if (existing) return openAgent(existing.id);
     if (!view) return;
     await run(itemKey, "Starting the session", async () => {
@@ -139,7 +139,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   };
 
   const actions: Actions = {
-    agents: agents.data ?? {},
+    agents: view.fixtureAgents ?? agents.data ?? {},
     busy,
     config: view.config,
     fetchContext,
@@ -488,7 +488,8 @@ function SessionOptions({ item, kind, actions }: { item: Item; kind: SessionKind
         actions.fetchContext({ kind, target }),
         listProfiles(paseo),
         findProject(paseo, target.repo),
-        resolveAgentConfig(paseo, kind, actions.config),
+        // Without a ready provider, still show the options; starting reports the error.
+        resolveAgentConfig(paseo, kind, actions.config).catch(() => ({ label: "No agent provider is ready" })),
       ]);
       const workspaces = project ? await branchWorkspaces(paseo, project.projectId, target.headRefName) : [];
       return { prompt: renderPrompt(kind, target, context, actions.config), profiles, project, workspaces, defaultLabel: defaults.label };

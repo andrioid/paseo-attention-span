@@ -1,3 +1,4 @@
+import type { AgentSummary } from "../shared/inbox";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_ATTENTION_FIXTURE=1).
@@ -135,9 +136,16 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(111, { title: "Faster product search", reviewRequests: { nodes: [{ requestedReviewer: bob }] }, commits: commit("SUCCESS", 0.3) }),
       pr(112, { title: "Translate the checkout emails", reviewDecision: "CHANGES_REQUESTED", latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] }, commits: commit("SUCCESS", 1) }),
       pr(113, { title: "Upgrade the payment SDK" }, "PENDING"),
+      pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED" }),
+      pr(115, { title: "Split the settings page into tabs", isDraft: true, mergeable: "CONFLICTING" }),
+      pr(116, { title: "Try a faster PDF renderer", isDraft: true }, "FAILURE"),
+      pr(117, { title: "Harden the upload endpoint", reviewThreads: { nodes: [thread(bot, 1)] } }),
+      pr(118, { title: "Send reminders for unpaid invoices", closingIssuesReferences: closes(95, "Customers forget unpaid invoices") }),
     ],
-    reviews: [pr(120, { title: "Add a status page", author: bob })],
+    reviews: [pr(120, { title: "Add a status page", author: bob }), pr(121, { title: "Rework the cart totals", author: alice })],
     mentions: [
+      mention(95, [comment(bob, "@me should reminders go out on weekends too, or only on workdays?", 0.5)], { title: "Customers forget unpaid invoices", author: bob }),
+      mention(121, [comment(alice, "@me could you look at the rounding in totals.ts first? That's the risky part.", 0.2)], { __typename: "PullRequest", title: "Rework the cart totals" }),
       mention(130, [comment(alice, "Can we make it easy to get in touch? @me do you see anything harmful here?", 3)], { __typename: "PullRequest", title: "Publish security.txt" }),
       mention(131, [], {
         __typename: "PullRequest",
@@ -163,5 +171,16 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     ],
     closed: [closed(171, "Backups are never verified", 1), closed(174, "Order list takes 8 seconds", 9), closed(176, "Dark mode for the admin", 10, "NOT_PLANNED")],
   });
-  return { data, details: { behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307 }, fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] } } };
+  return { data, details: { behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 }, fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] } } };
 }
+
+// Sessions the preview shows as started from items: working, needs me, failed, idle.
+const agent = (id: string, status: string, requiresAttention = false): AgentSummary => ({ id, status, requiresAttention, title: `Fixture session ${id}`, workspaceId: null });
+export const FIXTURE_AGENTS: Record<string, AgentSummary> = {
+  [`${REPO}#101`]: agent("agent-101", "running"),
+  [`${REPO}#102`]: agent("agent-102", "idle", true),
+  [`${REPO}#108`]: agent("agent-108", "error"),
+  [`${REPO}#150`]: agent("agent-150", "idle"),
+};
+
+export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";

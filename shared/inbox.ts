@@ -119,6 +119,15 @@ export interface Section {
   items: Item[];
 }
 
+// A Paseo session started from an item [ATT-07].
+export interface AgentSummary {
+  id: string;
+  status: string;
+  requiresAttention: boolean;
+  title: string | null;
+  workspaceId: string | null;
+}
+
 // What the client renders: dismissed items removed, grouped per tab.
 export interface InboxView {
   fetchedAt: string | null;
@@ -134,4 +143,6 @@ export interface InboxView {
   unclaimed: NextUpIssue[];
   dismissedCount: number;
   config: InboxConfig;
+  // Fixture mode only: made-up sessions, since the preview daemon has no agents.
+  fixtureAgents?: Record<string, AgentSummary>;
 }

@@ -143,6 +143,13 @@ describe("drafts", () => {
 });
 
 describe("issues", () => {
+  it("ATT-03: a mention on the issue makes it a reply, without the waiting PR's duration chip", () => {
+    const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
+    const inbox = run({ mine: [pr(1, { closingIssuesReferences: closes })], mentions: [mention(50, [comment(bob, "@me weekends too?", 0.5)])] });
+    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "reply", person: { login: "bob" } });
+    expect(chips(inbox.items[0])).toEqual(["PR #1"]);
+  });
+
   it("ATT-03: groups PRs under the issue they close, led by the issue", () => {
     const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
     const inbox = run({

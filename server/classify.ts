@@ -133,7 +133,6 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
 
     const chips: Chip[] = [];
     if (section === "too_long") chips.push(chip(`${waitingLabel} · ${ago(waitingSince, now)}`, "warn"));
-    else if (SECTION_ORDER.indexOf(section) >= rank("wait_review")) chips.push(chip(ago(waitingSince, now)));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
     if (bottom.reviewDecision === "CHANGES_REQUESTED") chips.push(chip("changes requested", "warn"));
@@ -150,6 +149,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       section,
       actions,
       chips,
+      // How long it has waited, shown only while it sits in a Waiting section.
+      waited: section.startsWith("wait_") ? chip(ago(waitingSince, now)) : undefined,
       person:
         waiting ??
         (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
@@ -211,7 +212,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       number: lead?.number ?? bottom.number,
       title: lead?.title ?? bottom.title,
       url: lead?.url ?? bottom.url,
-      chips: lead ? [chip(`PR #${bottom.number}`), ...unit.chips] : unit.chips,
+      chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips, ...(unit.section === section && unit.waited ? [unit.waited] : [])],
       person: issueWaiting ?? unit.person,
       actions: issueWaiting ? ["reply"] : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),

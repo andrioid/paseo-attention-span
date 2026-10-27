@@ -3,9 +3,8 @@ import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { InboxConfig } from "../shared/config";
 import { ago } from "../shared/format";
-import type { NextUpIssue } from "../shared/inbox";
+import type { AgentSummary, NextUpIssue } from "../shared/inbox";
 import type { IconName } from "./icons";
-import type { AgentSummary } from "./sessions";
 import { Button, Chip, SectionHeader, TablerIcon, Toggle, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };

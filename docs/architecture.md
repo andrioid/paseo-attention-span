@@ -52,7 +52,7 @@ Screenshots, from the preview's made-up data, are in [screenshots/](screenshots/
 
 | Doing | History | Next up (phone) |
 |---|---|---|
-| ![Doing](screenshots/desktop-dark-doing.png) | ![History](screenshots/desktop-dark-history.png) | ![Next up](screenshots/phone-light-next-up.png) |
+| ![Doing](screenshots/desktop-dark-doing.png) | ![History](screenshots/desktop-dark-history-reviewed.png) | ![Next up](screenshots/phone-light-next-up-all.png) |
 
 ### Doing
 

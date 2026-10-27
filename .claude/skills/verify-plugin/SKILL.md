@@ -32,11 +32,16 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    |---|---|
    | `<layout>-doing.png` | Doing tab, every section |
    | `<layout>-doing-expanded.png` | Doing with "Retry webhook deliveries with backoff" expanded (Dismiss, GitHub, Options) |
+   | `<layout>-doing-options.png` | The same row's Options panel: workspace, profile, prompt |
+   | `<layout>-doing-merge-confirm.png` | The Merge confirmation on "Dialog focus returns to the trigger" |
+   | `<layout>-doing-dismissed.png` | After dismissing "Publish security.txt": the "dismissed · show them again" hint |
    | `<layout>-history.png` | History by week, with Reviewed toggles |
+   | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint |
-   | `<layout>-next-up.png` | Assigned, then Unclaimed with scope chips |
+   | `<layout>-next-up.png` | Assigned, then Unclaimed filtered to my scopes |
+   | `<layout>-next-up-all.png` | Unclaimed with the "All" filter |
 
-   Viewports are tall (desktop 1280×2000, phone 390×2400) because the plugin screen scrolls inside its own view, so the bottom of an image is often empty. Look for:
+   Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Look for:
    - text that's unreadable in either theme
    - chips or buttons that overflow on the phone
    - missing icons (an unknown icon renders nothing)
@@ -54,7 +59,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 | Starts a daemon with `--home /tmp/paseo-home`, sets `pluginsEnabled`, `features.webUi.enabled` (the daemon serves the web app itself), dictation and voice off, then installs `/plugin` and runs the shooter | `preview/entrypoint.sh` |
 | Opens `http://127.0.0.1:6767/` inside the container, clicks the "GitHub attention" sidebar entry, then each tab by its accessibility label | `preview/shoot.mjs` |
 | Plugin config inside the container (fields for Next up) | `preview/plugin-config.json` |
-| The fake GitHub data | `server/fixture.ts` → `fixture(now)` |
+| The fake GitHub data, plus fake sessions (`FIXTURE_AGENTS`) and session context | `server/fixture.ts` |
+| A local repo with the `acme/shop` remote registered as a project, with a worktree workspace on `branch-102`, so Options has a project and a workspace to offer | `preview/entrypoint.sh` |
 
 - **Mounts:** Paseo from the host install, read-only (`readlink -f $(command -v paseo)`, three levels up). The repo, read-only. `preview/out`, writable.
 - **Not available inside:** `~/.paseo`, `gh`, the host loopback. Relay is off. The only outside traffic is GitHub avatar images.
@@ -62,7 +68,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 
 ## Keeping it useful
 
-- **New screen states:** when you add a section, chip or row state, add a case to `fixture()` in `server/fixture.ts` so the preview shows it. The test "covers every section with the preview fixture" in `server/classify.test.ts` counts the sections; update its number.
+- **New screen states:** when you add a section, chip, action or row state, add a case to `fixture()` in `server/fixture.ts` so the preview shows it. Session states come from `FIXTURE_AGENTS`. The test "covers every section with the preview fixture" in `server/classify.test.ts` counts the sections; update its number.
 - **New interactions:** to screenshot one (a modal, Options, a confirm bar), add a step to `shoot.mjs` after the tab loop. Find elements by visible text or accessibility label, and only press things that don't call GitHub.
 - **Tabs on phones are icon-only,** so the shooter finds them by `accessibilityLabel` ("Doing, 11"). Keep that label on the `Tab` component.
 

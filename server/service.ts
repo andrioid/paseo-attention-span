@@ -2,7 +2,7 @@ import { InboxConfig } from "../shared/config";
 import type { InboxView } from "../shared/inbox";
 import { classify } from "./classify";
 import { FIXTURE, graphql } from "./gh";
-import { fixture } from "./fixture";
+import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, SearchResult } from "./github-types";
 import { detailsQuery, SEARCH_QUERY, searchVariables } from "./queries";
 import { loadConfig, loadState, saveState, type State } from "./store";
@@ -130,6 +130,7 @@ export class InboxService {
       refreshing: this.inFlight !== null,
       error: this.error,
       config: this.config,
+      ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),
     });
   }
 }

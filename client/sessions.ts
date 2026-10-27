@@ -1,6 +1,6 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
 import type { InboxConfig, SessionKind } from "../shared/config";
-import type { Target } from "../shared/inbox";
+import type { AgentSummary, Target } from "../shared/inbox";
 
 type Paseo = ReturnType<typeof usePaseo>;
 
@@ -10,14 +10,6 @@ export const ITEM_LABEL = "github-attention-item";
 // Sessions started before the plugin was renamed from "GitHub inbox".
 const OLD_LABEL = "github-inbox";
 const OLD_ITEM_LABEL = "github-inbox-item";
-
-export interface AgentSummary {
-  id: string;
-  status: string;
-  requiresAttention: boolean;
-  title: string | null;
-  workspaceId: string | null;
-}
 
 // Agents started from the inbox, keyed by item.
 export async function inboxAgents(paseo: Paseo): Promise<Record<string, AgentSummary>> {

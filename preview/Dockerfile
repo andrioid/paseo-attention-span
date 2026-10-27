@@ -3,7 +3,7 @@
 FROM node:24-bookworm-slim
 # Chromium brings the libraries the Paseo (Electron) binary needs too.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium fonts-noto-color-emoji fonts-dejavu-core ca-certificates \
+  && apt-get install -y --no-install-recommends chromium fonts-noto-color-emoji fonts-dejavu-core ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /preview
 RUN npm init -y >/dev/null && npm install --no-audit --no-fund playwright-core@1.56.1
