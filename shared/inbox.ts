@@ -3,6 +3,10 @@ import type { InboxConfig, MergeMethod } from "./config";
 // Tabs tell the story of my work: what I finished, what needs me, what waits on others, what's next.
 export type TabId = "history" | "doing" | "waiting" | "next";
 
+// Each tab's data comes from one feed, fetched from GitHub on its own schedule. History changes only when I finish something.
+export type FeedId = "live" | "history";
+export const TAB_FEED: Record<TabId, FeedId> = { history: "history", doing: "live", waiting: "live", next: "live" };
+
 // Within a tab, top to bottom; an item appears once, under its most urgent reason [ATT-02].
 export const SECTIONS = {
   reply: { tab: "doing", title: "Waiting for your reply" },
@@ -130,11 +134,15 @@ export interface AgentSummary {
   workspaceId: string | null;
 }
 
-// What the client renders: dismissed items removed, grouped per tab.
-export interface InboxView {
+export interface FeedStatus {
   fetchedAt: string | null;
   refreshing: boolean;
   error: string | null;
+}
+
+// What the client renders: dismissed items removed, grouped per tab.
+export interface InboxView {
+  feeds: Record<FeedId, FeedStatus>;
   login: string | null;
   // Items in Doing; the sidebar shows it [ATT-09].
   count: number;

@@ -8,9 +8,8 @@ const view = z.custom<InboxView>();
 const target = z.custom<Target>();
 const done = z.object({ ok: z.literal(true) });
 
-// The cached inbox, refreshed from GitHub first when older than maxAgeSeconds
-// (default: the configured refresh interval).
-export const getInbox = defineRpc({ name: "inbox.get", input: z.object({ maxAgeSeconds: z.number().min(0).optional() }), output: view });
+// The cached inbox. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳).
+export const getInbox = defineRpc({ name: "inbox.get", input: z.object({ refresh: z.enum(["live", "history"]).optional() }), output: view });
 export const dismissItem = defineRpc({ name: "inbox.dismiss", input: z.object({ key: z.string() }), output: view });
 // Undo one dismissal [ATT-08].
 export const undismissItem = defineRpc({ name: "inbox.undismiss", input: z.object({ key: z.string() }), output: view });

@@ -81,7 +81,7 @@ functional:
 
 non_functional:
   github_usage:
-    GH-01: fetches what it needs from GitHub in as few requests as practical; so that we don't bombard GitHub's API.
+    GH-01: keeps its load on GitHub's API light; so that we don't bombard GitHub's API.
   safety:
     SAFE-01: changes nothing on GitHub unless I asked for that change; so that nothing is published in my name by surprise.
   security:

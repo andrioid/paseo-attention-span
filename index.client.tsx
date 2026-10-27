@@ -17,7 +17,7 @@ function InboxItem({ theme, currentScreen, openScreen }: PluginSidebarItemProps)
       onPress={() => openScreen({ screenId: "inbox" })}
       trailing={
         count > 0 ? (
-          <Text style={{ color: data?.error ? theme.colors.statusDanger : theme.colors.foregroundMuted, fontSize: 12 }}>{count}</Text>
+          <Text style={{ color: data?.feeds.live.error ? theme.colors.statusDanger : theme.colors.foregroundMuted, fontSize: 12 }}>{count}</Text>
         ) : undefined
       }
     />

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { InboxConfig } from "../shared/config";
 import type { Item } from "../shared/inbox";
-import { classify } from "./classify";
+import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
-import { searchVariables } from "./queries";
+import { HISTORY_SEARCHES, LIVE_SEARCHES, searchQuery, searchVariables } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = InboxConfig.parse({ orgs: ["acme"] });
@@ -15,7 +15,7 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: InboxConfig; fieldOptions?: Record<string, string[]> } = {}) {
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
-const doing = (inbox: ReturnType<typeof run>) => inbox.items.filter((item) => !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed");
+const doing = (inbox: ReturnType<typeof run>) => inbox.items.filter((item) => !item.section.startsWith("wait_"));
 
 describe("doing", () => {
   it("ATT-02: puts each item once, under its most urgent reason, in section order", () => {
@@ -184,22 +184,22 @@ describe("waiting", () => {
 
 describe("history", () => {
   it("HIS-01: lists closed issues with the PRs that closed them, and lone merged PRs", () => {
-    const inbox = run({
+    const items = classifyHistory(search({
       closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository: { nameWithOwner: REPO } }],
       merged: [
         { number: 61, title: "Verify backups", url: "u", mergedAt: daysAgo(1), repository: { nameWithOwner: REPO }, closingIssuesReferences: { nodes: [{ number: 60, repository: { nameWithOwner: REPO } }] } },
         { number: 62, title: "Fix VAT", url: "u", mergedAt: daysAgo(2), repository: { nameWithOwner: REPO }, closingIssuesReferences: { nodes: [] } },
       ],
-    });
-    expect(inbox.items.map((item) => [item.number, item.section, item.closedAt, item.children.map((c) => c.number)])).toEqual([
+    }));
+    expect(items.map((item) => [item.number, item.section, item.closedAt, item.children.map((c) => c.number)])).toEqual([
       [60, "done", daysAgo(1), [61]],
       [62, "done", daysAgo(2), []],
     ]);
   });
 
   it("HIS-02: lists PRs I reviewed apart from my own work, with their author", () => {
-    const inbox = run({ reviewed: [{ number: 63, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository: { nameWithOwner: REPO }, author: alice }] });
-    expect(inbox.items[0]).toMatchObject({ section: "reviewed", person: { login: "alice" } });
+    const [item] = classifyHistory(search({ reviewed: [{ number: 63, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository: { nameWithOwner: REPO }, author: alice }] }));
+    expect(item).toMatchObject({ section: "reviewed", person: { login: "alice" } });
   });
 
   it("HIS-01: searches whole weeks back from Monday", () => {
@@ -293,6 +293,14 @@ describe("GitHub requests", () => {
     expect(variables.reviews).toContain("user-review-requested:@me");
   });
 
+  it("GH-01: sends each live search as its own request, and History as one, with only the fragments each uses", () => {
+    expect(searchQuery(["mine"], true)).toMatch(/^query Inbox\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
+    expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
+    expect(searchQuery(["commented"])).not.toContain("fragment");
+    expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
+    expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].sort());
+  });
+
   it("GH-01: refreshes hourly by default; the screen never forces a fetch", () => {
     expect(config.refreshMinutes).toBe(60);
   });
@@ -305,7 +313,7 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const inbox = classify({ data, details, config, now: NOW });
-    expect(new Set(inbox.items.map((item) => item.section)).size).toBe(14);
+    expect(new Set([...inbox.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(14);
     expect(doing(inbox).length).toBeGreaterThan(5);
     expect([inbox.assigned.length, inbox.unclaimed.length]).toEqual([1, 6]);
   });

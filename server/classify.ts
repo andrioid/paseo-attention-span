@@ -1,13 +1,13 @@
 import type { InboxConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import { type ActionId, type Chip, type Inbox, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/inbox";
-import type { Actor, Comment, Details, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
+import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode } from "./github-types";
 import { prKey } from "./queries";
 
 // Turns one refresh worth of GitHub data into the inbox. Pure, so every rule is testable.
 
 export interface ClassifyInput {
-  data: SearchResult;
+  data: LiveResult;
   details: Details;
   config: InboxConfig;
   now: Date;
@@ -15,6 +15,8 @@ export interface ClassifyInput {
 
 const EPOCH = "1970-01-01T00:00:00Z";
 const rank = (section: SectionId) => SECTION_ORDER.indexOf(section);
+// Section order, then newest first.
+const order = (a: Item, b: Item) => rank(a.section) - rank(b.section) || (b.closedAt ?? b.othersActivityAt).localeCompare(a.closedAt ?? a.othersActivityAt);
 const latest = (...dates: (string | null | undefined)[]) => dates.reduce<string>((max, date) => (date && date > max ? date : max), EPOCH);
 const chip = (text: string, tone: Chip["tone"] = "neutral"): Chip => ({ text, tone });
 // Behind is shown on rows that appear anyway, neutral and never a reason by itself; conflicts are what's flagged [UPS-07].
@@ -285,7 +287,19 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
     });
   }
 
-  // History: my merged PRs under the issues they closed, closed issues, and reviews [HIS-01, HIS-02].
+  items.sort(order);
+  return {
+    login: data.viewer.login,
+    items,
+    // Assigned issues not already in progress come before unclaimed ones [NXT-06].
+    assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
+    unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
+  };
+}
+
+// My merged PRs under the issues they closed, closed issues, and reviews [HIS-01, HIS-02].
+export function classifyHistory(data: HistoryResult): Item[] {
+  const items: Item[] = [];
   const closed = new Map<string, Item>();
   for (const issue of compact(data.closed.nodes)) {
     const notPlanned = issue.stateReason === "NOT_PLANNED";
@@ -299,15 +313,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
     else items.push({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt });
   }
   for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });
-
-  items.sort((a, b) => rank(a.section) - rank(b.section) || (b.closedAt ?? b.othersActivityAt).localeCompare(a.closedAt ?? a.othersActivityAt));
-  return {
-    login: data.viewer.login,
-    items,
-    // Assigned issues not already in progress come before unclaimed ones [NXT-06].
-    assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
-    unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
-  };
+  return items.sort(order);
 }
 
 // An item with nothing to act on: waiting, history.

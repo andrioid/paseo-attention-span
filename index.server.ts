@@ -4,6 +4,7 @@ import { sessionContext } from "./server/context";
 import { FIXTURE_CONTEXT } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { InboxService } from "./server/service";
+import type { FeedId } from "./shared/inbox";
 import * as rpc from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
@@ -11,19 +12,19 @@ export default function contribute(server: PluginServerContext) {
   const started = inbox.start().catch((error) => console.error("Inbox failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
 
-  // After a change on GitHub, refresh in the background so the list catches up.
-  const thenRefresh = async (work: Promise<void>) => {
+  // After a change on GitHub, refresh in the background so the list catches up. Only a merge changes History.
+  const thenRefresh = async (work: Promise<void>, feeds: FeedId[] = ["live"]) => {
     await work;
-    void inbox.refresh().catch(() => {});
+    for (const feed of feeds) void inbox.refresh(feed).catch(() => {});
     return { ok: true as const };
   };
 
-  server.handle(rpc.getInbox, ({ maxAgeSeconds }) => ready(() => inbox.get(maxAgeSeconds)));
+  server.handle(rpc.getInbox, ({ refresh }) => ready(() => inbox.get(refresh)));
   server.handle(rpc.dismissItem, ({ key }) => ready(() => inbox.dismiss(key)));
   server.handle(rpc.undismissItem, ({ key }) => ready(() => inbox.undismiss(key)));
   server.handle(rpc.restoreDismissed, () => ready(() => inbox.restoreDismissed()));
   server.handle(rpc.updateBranch, ({ target }) => thenRefresh(updateBranch(target)));
-  server.handle(rpc.mergePullRequest, ({ target }) => thenRefresh(mergePullRequest(target)));
+  server.handle(rpc.mergePullRequest, ({ target }) => thenRefresh(mergePullRequest(target), ["live", "history"]));
   server.handle(rpc.closePullRequest, ({ target, comment }) => thenRefresh(closePullRequest(target, comment)));
   server.handle(rpc.claimIssue, ({ target }) => thenRefresh(claimIssue(target)));
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: FIXTURE ? FIXTURE_CONTEXT : await sessionContext(kind, target) }));

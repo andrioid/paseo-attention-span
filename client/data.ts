@@ -1,7 +1,7 @@
 import { useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import type { InboxView } from "../shared/inbox";
+import type { FeedId, InboxView } from "../shared/inbox";
 import { getInbox } from "../shared/rpc";
 
 export const INBOX_QUERY_KEY = ["github-attention", "inbox"] as const;
@@ -16,6 +16,7 @@ export function useInbox() {
     refetchInterval: 60_000,
   });
   const setView = useCallback((view: InboxView) => queryClient.setQueryData(INBOX_QUERY_KEY, view), [queryClient]);
-  const refreshNow = useCallback(async () => setView(await fetchInbox({ maxAgeSeconds: 0 })), [fetchInbox, setView]);
+  // ⟳ fetches only the feed behind the tab I'm on.
+  const refreshNow = useCallback(async (feed: FeedId) => setView(await fetchInbox({ refresh: feed })), [fetchInbox, setView]);
   return { ...query, setView, refreshNow };
 }

@@ -81,7 +81,8 @@ export interface PickableNode {
   issueFieldValues: Nodes<{ name?: string; field?: { name: string } }>;
 }
 
-export interface SearchResult {
+// One request per search, merged [GH-01].
+export interface LiveResult {
   viewer: { login: string; id: string };
   mine: Nodes<PullRequestNode>;
   reviews: Nodes<PullRequestNode>;
@@ -89,12 +90,18 @@ export interface SearchResult {
   commented: Nodes<IssueNode>;
   assigned: Nodes<PickableNode>;
   unclaimed: Nodes<PickableNode>;
+}
+
+// One request for all three [HIS-01, HIS-02].
+export interface HistoryResult {
   merged: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> }>;
   reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; author: Actor | null }>;
   closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo }>;
 }
 
-// From the second request.
+export type SearchResult = LiveResult & HistoryResult;
+
+// From the request after my PRs and Next up's issues.
 export interface Details {
   // "owner/name#number" -> commits the head is behind its base.
   behind: Record<string, number>;

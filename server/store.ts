@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { InboxConfig } from "../shared/config";
-import type { Inbox, SectionId } from "../shared/inbox";
+import type { Inbox, Item, SectionId } from "../shared/inbox";
 
 // Local files in ~/.config/paseo-github-attention/ [PRIV-01].
 export const DIR = process.env.PASEO_GITHUB_ATTENTION_DIR ?? join(homedir(), ".config", "paseo-github-attention");
@@ -13,8 +13,9 @@ const STATE = join(DIR, "state.json");
 export const State = z.object({
   // Item key -> others' activity and section when dismissed [ATT-08].
   dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>() })).default({}),
-  // A cache from an older version is dropped rather than shown wrong.
-  last: z.object({ fetchedAt: z.string(), inbox: z.custom<Inbox>((value) => Array.isArray((value as Inbox)?.unclaimed)) }).nullable().default(null),
+  // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
+  live: z.object({ fetchedAt: z.string(), inbox: z.custom<Inbox>((value) => Array.isArray((value as Inbox)?.unclaimed)) }).nullable().default(null),
+  history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().default(null),
 });
 export type State = z.infer<typeof State>;
 

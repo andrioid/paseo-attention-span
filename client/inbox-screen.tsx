@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { InboxConfig, SessionKind } from "../shared/config";
 import { ago } from "../shared/format";
-import type { ActionId, AgentSummary, Chip, Item, NextUpIssue, Section, SectionId, SubRow, TabId, Target } from "../shared/inbox";
+import { type ActionId, type AgentSummary, type Chip, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/inbox";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { useInbox } from "./data";
@@ -160,6 +160,8 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
     );
   }
 
+  // Each tab shows how fresh its own feed is.
+  const feed = view.feeds[TAB_FEED[tab]];
   const tooLong = view.doing.find((section) => section.id === "too_long")?.items.length ?? 0;
   const counts: Record<TabId, number> = {
     history: view.history.filter((item) => item.section === "done").length,
@@ -193,7 +195,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
         if (action === "merge") await merge({ target: item.target });
         else await close({ target: item.target, comment });
         toast.show(`PR ${item.target.number} ${action === "merge" ? "merged" : "closed"}`, { variant: "success" });
-        await inbox.refreshNow();
+        await inbox.refreshNow("live");
       }),
     dismiss: (item) =>
       void run(item.key, "Dismiss", async () => {
@@ -215,12 +217,12 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
             <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} onPress={() => switchTab(id)} />
           ))}
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void inbox.refreshNow().catch(() => {})}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void inbox.refreshNow(TAB_FEED[tab]).catch(() => {})}>
           <TablerIcon name="update" size={14} />
-          <Text style={styles.muted}>{view.refreshing || inbox.isFetching ? "refreshing…" : view.fetchedAt ? `${ago(view.fetchedAt)} ago` : "never"}</Text>
+          <Text style={styles.muted}>{feed.refreshing || inbox.isFetching ? "refreshing…" : feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
         </Pressable>
       </View>
-      {view.error ? <Text style={styles.danger}>{view.error}</Text> : null}
+      {feed.error ? <Text style={styles.danger}>{feed.error}</Text> : null}
 
       {tab === "history" ? <History items={view.history} actions={actions} /> : null}
       {tab === "doing" ? (

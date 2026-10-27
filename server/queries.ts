@@ -1,55 +1,51 @@
 import type { InboxConfig } from "../shared/config";
 import type { PullRequestNode } from "./github-types";
 
-// One query with search aliases covers everything the inbox shows [GH-01].
-export const SEARCH_QUERY = `
-query Inbox(
-  $mine: String!, $reviews: String!, $mentions: String!, $assigned: String!, $commented: String!,
-  $unclaimed: String!, $merged: String!, $reviewed: String!, $closed: String!
-) {
-  viewer { login id }
-  mine: search(type: ISSUE, query: $mine, first: 50) { nodes { ...pr } }
-  reviews: search(type: ISSUE, query: $reviews, first: 30) { nodes { ...pr } }
-  mentions: search(type: ISSUE, query: $mentions, first: 30) {
-    nodes {
-      __typename
+// Each search with how many results it asks for and what it reads of each.
+const SEARCHES = {
+  mine: { first: 50, nodes: "...pr" },
+  reviews: { first: 30, nodes: "...pr" },
+  mentions: {
+    first: 30,
+    nodes: `__typename
       ... on Issue { number title url createdAt body author { ...author } repository { nameWithOwner } comments(last: 30) { nodes { ...comment } } }
       ... on PullRequest {
         number title url createdAt body author { ...author } repository { nameWithOwner } comments(last: 30) { nodes { ...comment } }
         reviews(last: 20) { nodes { author { login } submittedAt } }
         reviewThreads(last: 30) { nodes { isResolved comments(first: 20) { nodes { ...comment } } } }
-      }
-    }
-  }
-  commented: search(type: ISSUE, query: $commented, first: 30) {
-    nodes { ... on Issue { number title url repository { nameWithOwner } comments(last: 1) { nodes { author { login } createdAt } } } }
-  }
-  assigned: search(type: ISSUE, query: $assigned, first: 50) { nodes { ...pickable } }
-  unclaimed: search(type: ISSUE, query: $unclaimed, first: 100) { nodes { ...pickable } }
-  merged: search(type: ISSUE, query: $merged, first: 100) {
-    nodes { ... on PullRequest { number title url mergedAt repository { nameWithOwner } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } } }
-  }
-  reviewed: search(type: ISSUE, query: $reviewed, first: 100) {
-    nodes { ... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } } }
-  }
-  closed: search(type: ISSUE, query: $closed, first: 100) {
-    nodes { ... on Issue { number title url closedAt stateReason repository { nameWithOwner } } }
-  }
-}
-fragment author on Actor { __typename login avatarUrl(size: 64) }
-fragment comment on Comment {
+      }`,
+  },
+  commented: { first: 30, nodes: "... on Issue { number title url repository { nameWithOwner } comments(last: 1) { nodes { author { login } createdAt } } }" },
+  assigned: { first: 50, nodes: "...pickable" },
+  unclaimed: { first: 100, nodes: "...pickable" },
+  merged: {
+    first: 100,
+    nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
+  },
+  reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } }" },
+  closed: { first: 100, nodes: "... on Issue { number title url closedAt stateReason repository { nameWithOwner } }" },
+};
+export type SearchName = keyof typeof SEARCHES;
+
+// Doing, Waiting and Next up. History has its own, slower schedule.
+export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "commented", "assigned", "unclaimed"] as const;
+export const HISTORY_SEARCHES = ["merged", "reviewed", "closed"] as const;
+
+const FRAGMENTS: Record<string, string> = {
+  author: "fragment author on Actor { __typename login avatarUrl(size: 64) }",
+  comment: `fragment comment on Comment {
   body createdAt
   author { ...author }
   ... on IssueComment { url reactionGroups { viewerHasReacted } }
   ... on PullRequestReviewComment { url reactionGroups { viewerHasReacted } }
-}
-fragment pickable on Issue {
+}`,
+  pickable: `fragment pickable on Issue {
   number title url createdAt
   repository { nameWithOwner defaultBranchRef { name } }
   issueType { name }
   issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } } } }
-}
-fragment pr on PullRequest {
+}`,
+  pr: `fragment pr on PullRequest {
   id number title url isDraft createdAt updatedAt
   author { ...author }
   repository { nameWithOwner squashMergeAllowed mergeCommitAllowed defaultBranchRef { name } }
@@ -67,7 +63,25 @@ fragment pr on PullRequest {
     }
   }
   comments(last: 10) { nodes { author { login } createdAt } }
-}`;
+}`,
+};
+
+// A query for some searches, as aliases named after them, with only the fragments they use; GitHub rejects unused ones.
+// GitHub runs the searches in one request one after another, so the live ones go out as separate requests in parallel [GH-01].
+export function searchQuery(names: readonly SearchName[], withViewer = false): string {
+  const fields = names.map((name) => `  ${name}: search(type: ISSUE, query: $${name}, first: ${SEARCHES[name].first}) {\n    nodes { ${SEARCHES[name].nodes} }\n  }`);
+  const used = new Set<string>();
+  const collect = (text: string) => {
+    for (const [, name] of text.matchAll(/\.\.\.(\w+)/g)) {
+      if (used.has(name)) continue;
+      used.add(name);
+      collect(FRAGMENTS[name]);
+    }
+  };
+  fields.forEach(collect);
+  const variables = names.map((name) => `$${name}: String!`).join(", ");
+  return `query Inbox(${variables}) {\n${withViewer ? "  viewer { login id }\n" : ""}${fields.join("\n")}\n}\n${[...used].map((name) => FRAGMENTS[name]).join("\n")}`;
+}
 
 function where(orgs: string[], repos: string[]): string {
   return [...orgs.map((org) => `org:${org}`), ...repos.map((repo) => `repo:${repo}`), "archived:false"].join(" ");
@@ -82,7 +96,7 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
-export function searchVariables(config: InboxConfig, now: Date): Record<string, string> {
+export function searchVariables(config: InboxConfig, now: Date): Record<SearchName, string> {
   const scope = where(config.orgs, config.repos);
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
   // Whole weeks, from a Monday, so the oldest week isn't cut short.
@@ -107,7 +121,7 @@ export function prKey(node: { repository: { nameWithOwner: string }; number: num
   return `${node.repository.nameWithOwner}#${node.number}`;
 }
 
-// Second request: how far my PRs are behind their bases, and the option order of org issue fields [GH-01].
+// After my PRs and Next up's issues: how far my PRs are behind their bases, and the option order of org issue fields [GH-01].
 export function detailsQuery(prs: PullRequestNode[], orgs: string[]): { query: string; compares: Record<string, string> } {
   const compares: Record<string, string> = {};
   const fields = prs.map((pr, index) => {

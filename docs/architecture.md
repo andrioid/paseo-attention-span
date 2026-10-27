@@ -35,7 +35,7 @@ flowchart LR
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
     - `nextUp`: repos and the org issue fields for priority, effort and scope [NXT-04]
-  - `state.json`: dismissals [ATT-08] and the last fetched result, so the inbox shows instantly after a restart [PRIV-01].
+  - `state.json`: dismissals [ATT-08] and the last fetch of each feed, so the inbox shows instantly after a restart [PRIV-01].
 
 ## Tabs
 
@@ -110,19 +110,40 @@ A tap starts with defaults. The ▾ beside a session action opens workspace, pro
 
 ## GitHub requests
 
-Fewest requests practical [GH-01]. A refresh is two GraphQL requests.
+Light on GitHub's API [GH-01], and quick when I press ⟳. The inbox has two feeds, each with its own cache, schedule and error:
 
-1. **One query with search aliases**:
-   - `is:pr is:open author:@me`
-   - `is:pr is:open user-review-requested:@me` (personal requests only)
-   - `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, and `viewerHasReacted`)
-   - `is:issue is:open assignee:@me`
-   - `is:issue is:open commenter:@me` (for issues waiting on others)
-   - `is:issue is:open no:assignee` (Next up, with issue type and field values)
-   - History: `is:pr is:merged author:@me`, `is:pr is:merged reviewed-by:@me -author:@me`, `is:issue is:closed assignee:@me`, each from the Monday `historyWeeks` back
+- **Live** feeds Doing, Waiting and Next up.
+- **History** feeds History.
 
-   Each is scoped to the configured orgs and repos. With comment bodies for the mention rule and Next up, the query costs about 65 of 5,000 points per hour.
-2. **One batched details query**: `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it.
+### Live
 
-It's a digest, not a live view. GitHub is asked every `refreshMinutes` (default 60, at least 5) in the background [FRESH-01], after my own actions, and on ⟳. Opening the screen shows the cache. A failed refresh is retried at most every 5 minutes. That's about 2 requests and 75 points an hour. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts.
+One GraphQL request per search, sent in parallel. GitHub runs the searches in one request one after another, so a combined request took about 5 seconds where parallel ones take about 2.
+
+- `is:pr is:open author:@me` (also asks for the viewer's login)
+- `is:pr is:open user-review-requested:@me` (personal requests only)
+- `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, and `viewerHasReacted`)
+- `is:issue is:open assignee:@me`
+- `is:issue is:open commenter:@me` (for issues waiting on others)
+- `is:issue is:open no:assignee` (Next up, with issue type and field values)
+
+Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it. The other searches carry on meanwhile.
+
+A live refresh is 7 requests and about 70 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
+
+### History
+
+One request with three searches, each from the Monday `historyWeeks` back: `is:pr is:merged author:@me`, `is:pr is:merged reviewed-by:@me -author:@me`, `is:issue is:closed assignee:@me`. About 1 point.
+
+Every search is scoped to the configured orgs and repos.
+
+### When
+
+It's a digest, not a live view. Opening the screen shows the cache. ⟳ fetches only the feed behind the tab I'm on.
+
+| Feed | Fetched |
+|---|---|
+| Live | Every `refreshMinutes` (default 60, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
+| History | Once a day in the background, after a merge from the inbox, and on ⟳ in History. Things I finish outside the inbox show up by the next day. |
+
+A failed refresh is retried at most every 5 minutes. That's about 7 requests and 70 points an hour. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts.
 

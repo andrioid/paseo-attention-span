@@ -5,7 +5,8 @@ import { renderPrompt } from "../shared/prompts";
 import { buildView } from "./view";
 
 const config = InboxConfig.parse({});
-const meta = { fetchedAt: null, refreshing: false, error: null, config };
+const feed = { fetchedAt: null, refreshing: false, error: null };
+const meta = { feeds: { live: feed, history: feed }, config };
 
 function item(key: string, section: Item["section"], othersActivityAt: string): Item {
   return {
@@ -30,18 +31,18 @@ const inbox = (items: Item[]): Inbox => ({ login: "me", items, assigned: [], unc
 describe("dismiss", () => {
   it("ATT-08: hides a dismissed item until someone else acts on it or its reason changes", () => {
     const dismissed = { a: { at: "2026-10-01T00:00:00Z", section: "reply" as const } };
-    const hidden = buildView(inbox([item("a", "reply", "2026-10-01T00:00:00Z")]), dismissed, meta);
+    const hidden = buildView(inbox([item("a", "reply", "2026-10-01T00:00:00Z")]), [], dismissed, meta);
     expect(hidden).toMatchObject({ count: 0, dismissedCount: 1, doing: [] });
 
-    const newActivity = buildView(inbox([item("a", "reply", "2026-10-02T00:00:00Z")]), dismissed, meta);
+    const newActivity = buildView(inbox([item("a", "reply", "2026-10-02T00:00:00Z")]), [], dismissed, meta);
     expect(newActivity.count).toBe(1);
 
-    const newReason = buildView(inbox([item("a", "ci", "2026-10-01T00:00:00Z")]), dismissed, meta);
+    const newReason = buildView(inbox([item("a", "ci", "2026-10-01T00:00:00Z")]), [], dismissed, meta);
     expect(newReason.doing.map((section) => section.id)).toEqual(["ci"]);
   });
 
   it("ATT-09: counts what is visible in Doing; other tabs get their own lists", () => {
-    const view = buildView(inbox([item("a", "reply", "x"), item("b", "drafts", "x"), item("c", "wait_ci", "x"), item("d", "done", "x")]), {}, meta);
+    const view = buildView(inbox([item("a", "reply", "x"), item("b", "drafts", "x"), item("c", "wait_ci", "x")]), [item("d", "done", "x")], {}, meta);
     expect(view.count).toBe(2);
     expect(view.doing.map((section) => section.title)).toEqual(["Waiting for your reply", "My drafts"]);
     expect(view.waiting.map((section) => section.id)).toEqual(["wait_ci"]);
