@@ -28,12 +28,13 @@ flowchart LR
   - Server: RPC handlers for fetching and for GitHub actions.
 - **GitHub access** goes through the host's existing `gh` login. The plugin stores no token [SEC-01].
 - **Local files** live in `~/.config/paseo-github-attention/`:
-  - `config.json`, edited by hand:
+  - `config.json`, edited by hand, except `codeRepos`, which the screen can add to:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
     - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 60) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
+    - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
     - `nextUp`: repos and the org issue fields for priority, effort and scope [NXT-04]
   - `state.json`: dismissals [ATT-08] and the last fetch of each feed, so the inbox shows instantly after a restart [PRIV-01].
 
@@ -104,6 +105,7 @@ A tap starts with defaults. The ▾ beside a session action opens workspace, pro
 ## Sessions
 
 - **Repo to checkout** [SES-05]: match the PR's or issue's repository against the git remotes of registered Paseo projects. Repos without a project can only open GitHub.
+- **Issues kept apart from the code** [SES-07]: an issue starts in the repo `codeRepos` maps its repo to, from that repo's default branch (one `gh repo view`). When neither has a project, Start asks which project holds the code, saves the answer to `codeRepos` and carries on. Claim waits until then, so a start that can't go anywhere doesn't leave the issue taken. The prompt and Claim keep using the issue's own repo.
 - **Workspace**: a worktree with `checkout-pr` for PRs, or `branch-off` from the default branch for issues.
 - **Profile**: looked up per reason in `config.json`, then materialised into `create_agent` from `list_profiles`. A missing `review` profile falls back to `default`; a missing `default` starts the agent with Paseo's defaults. Options ▾ still offers provider and model [SES-06].
 - **Prompt**: a built-in template per session type, filled with the item's context. A template in `config.json` replaces the built-in one [SES-04]. The context is fetched when the session starts, mostly from `gh`'s JSON output: `gh pr checks` and `gh run view --log-failed` for Fix, `gh pr view`/`gh issue view` for Review and Start, one GraphQL query for unresolved threads for Address. Rebase uses the stack already in the item.

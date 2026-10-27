@@ -1,6 +1,6 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { claimIssue, closePullRequest, mergePullRequest, updateBranch } from "./server/actions";
-import { sessionContext } from "./server/context";
+import { defaultBranch, sessionContext } from "./server/context";
 import { FIXTURE_CONTEXT } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { InboxService } from "./server/service";
@@ -23,10 +23,12 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.dismissItem, ({ key }) => ready(() => inbox.dismiss(key)));
   server.handle(rpc.undismissItem, ({ key }) => ready(() => inbox.undismiss(key)));
   server.handle(rpc.restoreDismissed, () => ready(() => inbox.restoreDismissed()));
+  server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => inbox.setCodeRepo(issueRepo, codeRepo)));
   server.handle(rpc.updateBranch, ({ target }) => thenRefresh(updateBranch(target)));
   server.handle(rpc.mergePullRequest, ({ target }) => thenRefresh(mergePullRequest(target), ["live", "history"]));
   server.handle(rpc.closePullRequest, ({ target, comment }) => thenRefresh(closePullRequest(target, comment)));
   server.handle(rpc.claimIssue, ({ target }) => thenRefresh(claimIssue(target)));
+  server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: FIXTURE ? "main" : await defaultBranch(repo) }));
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: FIXTURE ? FIXTURE_CONTEXT : await sessionContext(kind, target) }));
 
   return () => inbox.stop();

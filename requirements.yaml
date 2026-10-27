@@ -63,6 +63,7 @@ functional:
       SES-04: start a session that already has the item's context, such as failing checks or unresolved comments; so that the agent starts informed.
       SES-05: start sessions in my local checkout of the item's repository without configuring paths; so that new repositories work without setup.
       SES-06: start sessions even when no agent profiles are configured; so that the inbox works before I've set anything up.
+      SES-07: start a session on an issue in the repository its code lives in, chosen right there the first time; so that issues kept in a separate repository work without editing files.
   next_up:
     As a developer, I can:
       NXT-01: see open issues nobody is assigned to, apart from the work that needs me; so that I can get an idea of what to do next.

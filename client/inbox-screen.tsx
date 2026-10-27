@@ -12,7 +12,7 @@ import * as rpc from "../shared/rpc";
 import { useInbox } from "./data";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
-import { branchWorkspaces, findProject, inboxAgents, listProfiles, resolveAgentConfig, startSession } from "./sessions";
+import { branchWorkspaces, findCheckout, githubProjects, inboxAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { Avatar, Button, KeepStyles, Meta, SectionHeader, SplitButton, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -80,6 +80,16 @@ const TABS: { id: TabId; label: string; icon: IconName }[] = [
 
 const AGENTS_QUERY_KEY = ["github-attention", "agents"] as const;
 type FetchContext = (input: RpcInput<typeof rpc.sessionContext>) => Promise<RpcOutput<typeof rpc.sessionContext>>;
+type DefaultBranch = (repo: string) => Promise<string | null>;
+
+// A start held back until I say where the issue's code lives [SES-07].
+interface Placing {
+  itemKey: string;
+  kind: SessionKind;
+  target: Target;
+  missing: string;
+  before?: () => Promise<unknown>;
+}
 
 // A session started from the item, as a signal [ATT-07].
 function agentSignal(agent: AgentSummary): Chip {
@@ -112,10 +122,14 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const merge = useRpc(rpc.mergePullRequest);
   const close = useRpc(rpc.closePullRequest);
   const claim = useRpc(rpc.claimIssue);
+  const setCodeRepo = useRpc(rpc.setCodeRepo);
+  const fetchDefaultBranch = useRpc(rpc.defaultBranch);
+  const defaultBranch: DefaultBranch = async (repo) => (await fetchDefaultBranch({ repo })).name;
   const [tab, setTab] = useState<TabId>("doing");
   const [busy, setBusy] = useState<string | null>(null);
   // Dismissed in this visit, offered for undo until the tab changes [ATT-08].
   const [undoable, setUndoable] = useState<Item[]>([]);
+  const [placing, setPlacing] = useState<Placing | null>(null);
   const view = inbox.data;
 
   async function run(key: string, label: string, work: () => Promise<unknown>) {
@@ -144,11 +158,27 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
     const existing = (view?.fixtureAgents ?? agents.data)?.[itemKey];
     if (existing) return openAgent(existing.id);
     if (!view) return;
-    await run(itemKey, "Starting the session", async () => {
-      await before?.();
-      const { context } = await fetchContext({ kind, target });
-      const prompt = renderPrompt(kind, target, context, view.config);
-      await started(await startSession(paseo, { itemKey, kind, target, prompt, config: view.config }));
+    await run(itemKey, "Starting the session", () => startNow(itemKey, kind, target, view.config, before));
+  }
+
+  async function startNow(itemKey: string, kind: SessionKind, target: Target, config: InboxConfig, before?: () => Promise<unknown>) {
+    const checkout = await findCheckout(paseo, config, target, defaultBranch);
+    // Ask where an issue's code lives before claiming it, so a failed start doesn't leave it taken [SES-07].
+    if (!checkout.project && target.kind === "issue") return setPlacing({ itemKey, kind, target, missing: checkout.repo, before });
+    await before?.();
+    const { context } = await fetchContext({ kind, target });
+    const prompt = renderPrompt(kind, target, context, config);
+    await started(await startSession(paseo, { itemKey, kind, target, prompt, config, checkout }));
+  }
+
+  function place(codeRepo: string) {
+    if (!placing) return;
+    const { itemKey, kind, target, before } = placing;
+    setPlacing(null);
+    void run(itemKey, "Starting the session", async () => {
+      const next = await setCodeRepo({ issueRepo: target.repo, codeRepo });
+      inbox.setView(next);
+      await startNow(itemKey, kind, target, next.config, before);
     });
   }
 
@@ -178,6 +208,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
     config: view.config,
     showRepo: repos.size > 1,
     fetchContext,
+    defaultBranch,
     openAgent,
     started,
     act: (item, action) => {
@@ -276,6 +307,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
           }}
         />
       ) : null}
+      {placing ? <CodeRepoPicker issueRepo={placing.target.repo} missing={placing.missing} onPick={place} onClose={() => setPlacing(null)} /> : null}
     </ScrollView>
   );
 }
@@ -305,6 +337,7 @@ interface Actions {
   config: InboxConfig;
   showRepo: boolean;
   fetchContext: FetchContext;
+  defaultBranch: DefaultBranch;
   act: (item: Item, action: ActionId) => void;
   confirm: (item: Item, action: "merge" | "close", comment?: string) => void;
   dismiss: (item: Item) => void;
@@ -546,15 +579,15 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
   const options = useQuery({
     queryKey: ["github-attention", "options", item.key, kind],
     queryFn: async () => {
-      const [{ context }, profiles, project, defaults] = await Promise.all([
+      const [{ context }, profiles, checkout, defaults] = await Promise.all([
         actions.fetchContext({ kind, target }),
         listProfiles(paseo),
-        findProject(paseo, target.repo),
+        findCheckout(paseo, actions.config, target, actions.defaultBranch),
         // Without a ready provider, still show the options; starting reports the error.
         resolveAgentConfig(paseo, kind, actions.config).catch(() => ({ label: "No agent provider is ready" })),
       ]);
-      const workspaces = project ? await branchWorkspaces(paseo, project.projectId, target.headRefName) : [];
-      return { prompt: renderPrompt(kind, target, context, actions.config), profiles, project, workspaces, defaultLabel: defaults.label };
+      const workspaces = checkout.project ? await branchWorkspaces(paseo, checkout.project.projectId, target.headRefName) : [];
+      return { prompt: renderPrompt(kind, target, context, actions.config), profiles, checkout, workspaces, defaultLabel: defaults.label };
     },
     staleTime: 60_000,
   });
@@ -568,7 +601,7 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
     if (!data) return;
     setStarting(true);
     try {
-      await actions.started(await startSession(paseo, { itemKey: item.key, kind, target, prompt: prompt ?? data.prompt, config: actions.config, profileId, workspaceId }));
+      await actions.started(await startSession(paseo, { itemKey: item.key, kind, target, prompt: prompt ?? data.prompt, config: actions.config, checkout: data.checkout, profileId, workspaceId }));
       onClose();
     } catch (error) {
       toast.error(`Starting the session failed: ${(error as Error).message}`);
@@ -583,8 +616,8 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
         <KeepStyles styles={styles}>
         {options.isLoading ? <Text style={styles.muted}>Loading context…</Text> : null}
         {!options.isLoading && !data ? <Text style={styles.danger}>{(options.error as Error)?.message ?? "No options"}</Text> : null}
-        {data && !data.project ? <Text style={styles.danger}>No Paseo project has {target.repo} as its remote. Add it as a project to start sessions.</Text> : null}
-        {data?.project ? (
+        {data && !data.checkout.project ? <Text style={styles.danger}>{noProjectMessage(data.checkout, target)}</Text> : null}
+        {data?.checkout.project ? (
           <View style={{ gap: 10 }}>
             <Text style={styles.muted}>Workspace</Text>
             <View style={styles.wrap}>
@@ -608,6 +641,35 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
             </View>
           </View>
         ) : null}
+        </KeepStyles>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+// Where an issue repo's code lives, picked from my Paseo projects and saved to config.json [SES-07].
+function CodeRepoPicker({ issueRepo, missing, onPick, onClose }: { issueRepo: string; missing: string; onPick: (repo: string) => void; onClose: () => void }) {
+  const styles = useStyles();
+  const paseo = usePaseo();
+  const projects = useQuery({ queryKey: ["github-attention", "github-projects"], queryFn: () => githubProjects(paseo) });
+  return (
+    <Modal title={`Where does the code for ${issueRepo} live?`} open onOpenChange={(open) => (open ? null : onClose())}>
+      <Modal.Content>
+        <KeepStyles styles={styles}>
+          <View style={{ gap: 10 }}>
+            <Text style={styles.text}>No Paseo project has {missing} as its GitHub remote. Pick the project that holds the code for issues in {issueRepo}.</Text>
+            {projects.isLoading ? <Text style={styles.muted}>Loading projects…</Text> : null}
+            {projects.data?.length === 0 ? <Text style={styles.danger}>No Paseo project has a GitHub remote. Add the code repository as a project first.</Text> : null}
+            <View style={styles.wrap}>
+              {projects.data?.map((project) => (
+                <Button key={project.projectId} label={project.repo} icon="play" variant="calm" onPress={() => onPick(project.repo)} />
+              ))}
+            </View>
+            <Text style={styles.muted}>Saved to codeRepos in config.json, so the next start goes straight there.</Text>
+            <View style={styles.wrap}>
+              <Button label="Cancel" onPress={onClose} />
+            </View>
+          </View>
         </KeepStyles>
       </Modal.Content>
     </Modal>

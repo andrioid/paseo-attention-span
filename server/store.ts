@@ -34,6 +34,26 @@ export async function loadConfig(): Promise<InboxConfig> {
   return parsed.data;
 }
 
+// The one setting the screen writes: everything else in the file is kept as it is [SES-07].
+export async function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<InboxConfig> {
+  const raw = await readJson(CONFIG);
+  const file = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
+  const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => issues.toLowerCase() !== issueRepo.toLowerCase()));
+  const next = { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
+  const parsed = InboxConfig.safeParse(next);
+  if (!parsed.success) throw new Error(`${CONFIG} is invalid: ${parsed.error.message}`);
+  await writeAtomically(CONFIG, `${JSON.stringify(next, null, 2)}\n`);
+  return parsed.data;
+}
+
+async function writeAtomically(path: string, content: string): Promise<void> {
+  await mkdir(DIR, { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, content);
+  await rename(temporary, path);
+}
+
 export async function loadState(): Promise<State> {
   const parsed = State.safeParse(await readJson(STATE).catch(() => ({})));
   // A cache that no longer parses (e.g. after an update) is simply dropped.
@@ -41,8 +61,5 @@ export async function loadState(): Promise<State> {
 }
 
 export async function saveState(state: State): Promise<void> {
-  await mkdir(DIR, { recursive: true });
-  const temporary = `${STATE}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify(state, null, 2));
-  await rename(temporary, STATE);
+  await writeAtomically(STATE, JSON.stringify(state, null, 2));
 }

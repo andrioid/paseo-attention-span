@@ -5,7 +5,7 @@ import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
 import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, type SearchName, searchQuery, searchVariables } from "./queries";
-import { loadConfig, loadState, saveState, State } from "./store";
+import { loadConfig, loadState, saveCodeRepo, saveState, State } from "./store";
 import { buildView } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -69,6 +69,12 @@ export class InboxService {
   async restoreDismissed(): Promise<InboxView> {
     this.state.dismissed = {};
     await this.save();
+    return this.view();
+  }
+
+  // Remember where an issue repo's code lives [SES-07].
+  async setCodeRepo(issueRepo: string, codeRepo: string): Promise<InboxView> {
+    this.config = await saveCodeRepo(issueRepo, codeRepo);
     return this.view();
   }
 

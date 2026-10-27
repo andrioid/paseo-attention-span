@@ -1,5 +1,6 @@
 // Screenshots of the plugin in the real Paseo web app, connected to the container's own daemon.
 // Usage: shoot.mjs [only-matching-name-part]; writes PNGs to /out.
+import { readFile, writeFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
 
 const filter = process.argv[2] ?? "";
@@ -10,6 +11,9 @@ const layouts = [
 ];
 const schemes = ["dark", "light"];
 const tabs = ["Doing", "History", "Waiting", "Next up"];
+// Each layout starts without the code-repo mapping that an earlier layout saved.
+const configPath = `${process.env.HOME}/.config/paseo-github-attention/config.json`;
+const originalConfig = await readFile(configPath, "utf8");
 
 const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", args: ["--no-sandbox"] });
 let failed = false;
@@ -31,6 +35,7 @@ for (const layout of layouts) {
       await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip });
     };
     try {
+      await writeFile(configPath, originalConfig);
       // The container's daemon serves the web app and is the only host it knows.
       await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
       await page.waitForTimeout(3000);
@@ -39,6 +44,7 @@ for (const layout of layouts) {
       if (!(await entry.isVisible())) await page.getByRole("button", { name: /menu|sidebar/i }).first().click().catch(() => {});
       await entry.click();
       await page.getByText("Doing").first().waitFor({ timeout: 15000 });
+      await page.getByRole("button", { name: "Refresh now" }).click(); // reloads config.json
       await page.waitForTimeout(2000); // avatars and icons
       // An earlier layout's dismissal lives on in the daemon; bring it back.
       const restore = page.getByText(/dismissed · show them again/);
@@ -80,6 +86,29 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: "Dismiss" }).first().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
+      // Last, because it may open a session: an issue kept apart from its code [SES-07].
+      // Start asks where the code lives, saves it to config.json, and the next start goes straight on.
+      const nextUp = () => page.getByRole("tab", { name: /Next up/ }).first().click();
+      const startIssue = () => page.getByRole("button", { name: "Start Price list import skips quoted rows" }).click();
+      const picker = page.getByText("Where does the code for acme/issues live?");
+      await nextUp();
+      await startIssue();
+      await picker.waitFor({ timeout: 15000 });
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `/out/${prefix}-next-up-code-repo.png` }); // the modal sits over the whole page
+      await page.getByRole("button", { name: "acme/shop" }).click();
+      await page.waitForTimeout(3000);
+      const saved = JSON.parse(await readFile(configPath, "utf8"));
+      if (saved.codeRepos?.["acme/issues"] !== "acme/shop" || saved.orgs?.[0] !== "acme") throw new Error(`config.json after picking: ${JSON.stringify(saved)}`);
+      await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-after.png` });
+      // Still on the inbox means the start stopped later (no agent provider in here); press it again.
+      if (await page.getByRole("tab", { name: /Next up/ }).first().isVisible()) {
+        await nextUp();
+        await startIssue();
+        await page.waitForTimeout(3000);
+        if (await picker.isVisible()) throw new Error("asked where the code lives a second time");
+        await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-again.png` });
+      }
       console.log(`ok ${prefix}`);
     } catch (error) {
       failed = true;

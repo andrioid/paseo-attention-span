@@ -79,7 +79,13 @@ function IssueList({ issues, claim, agents, busy, onStart, onOpenAgent }: Omit<P
                 <Button label={styles.compact ? undefined : "Continue"} icon="play" variant="calm" onPress={() => onOpenAgent(agent.id)} />
               ) : (
                 // Claim first so teammates see it's taken [NXT-05].
-                <Button label={styles.compact ? undefined : claim ? "Claim & start" : "Start"} icon={claim ? "claim" : "play"} variant="calm" onPress={() => onStart(issue, claim)} />
+                <Button
+                  label={styles.compact ? undefined : claim ? "Claim & start" : "Start"}
+                  accessibilityLabel={`${claim ? "Claim & start" : "Start"} ${issue.title}`}
+                  icon={claim ? "claim" : "play"}
+                  variant="calm"
+                  onPress={() => onStart(issue, claim)}
+                />
               )}
               <Button icon="github" variant="ghost" accessibilityLabel="Open on GitHub" onPress={() => void openExternalUrl(issue.url)} />
             </View>

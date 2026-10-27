@@ -27,6 +27,8 @@ export const InboxConfig = z.object({
     .default({ default: "default", review: "review" }),
   // Replaces a built-in prompt template [SES-04].
   prompts: z.partialRecord(SessionKind, z.string()).default({}),
+  // Where an issue repo's code lives, "owner/name" -> "owner/name", for issues kept apart from the code [SES-07].
+  codeRepos: z.record(z.string(), z.string()).default({}),
   // Merge method per "owner/name" [PRS-04].
   mergeMethods: z.record(z.string(), MergeMethod).default({}),
   waitingTooLongDays: z.number().positive().default(3),
@@ -47,3 +49,9 @@ export const InboxConfig = z.object({
     .default({}),
 });
 export type InboxConfig = z.infer<typeof InboxConfig>;
+
+// The repository whose checkout a session on an issue from `repo` works in [SES-07].
+export function codeRepoFor(config: Pick<InboxConfig, "codeRepos">, repo: string): string {
+  const mapped = Object.entries(config.codeRepos).find(([issues]) => issues.toLowerCase() === repo.toLowerCase());
+  return mapped?.[1] ?? repo;
+}

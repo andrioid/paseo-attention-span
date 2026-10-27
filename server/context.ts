@@ -35,6 +35,11 @@ export async function sessionContext(kind: SessionKind, target: Target): Promise
   return [`Description:\n${clip(view.body) || "(empty)"}`, comments.length ? `Recent comments:\n${comments.join("\n\n")}` : ""].filter(Boolean).join("\n\n");
 }
 
+export async function defaultBranch(repo: string): Promise<string | null> {
+  const view = await ghJson<{ defaultBranchRef: { name: string } | null }>(["repo", "view", repo, "--json", "defaultBranchRef"]);
+  return view.defaultBranchRef?.name ?? null;
+}
+
 async function failingChecks(ref: string[], repo: string): Promise<string> {
   const checks = await ghJson<{ name: string; bucket: string; link: string }[]>(["pr", "checks", ...ref, "--json", "name,bucket,link"]);
   const failed = checks.filter((check) => check.bucket === "fail");

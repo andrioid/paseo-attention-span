@@ -4,6 +4,8 @@ import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, Pul
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_ATTENTION_FIXTURE=1).
 
 export const REPO = "acme/shop";
+// Issues kept apart from the code, as some orgs do; its code lives in REPO [SES-07].
+export const ISSUES_REPO = "acme/issues";
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
 
@@ -67,13 +69,13 @@ export function builders(now: Date) {
     return { number, title, url: `https://github.com/${REPO}/issues/${number}`, repository, comments: { nodes: comments } };
   }
 
-  function pickable(number: number, fields: Record<string, string>, createdDaysAgo = 10, type = "Bug", title = `Issue ${number}`): PickableNode {
+  function pickable(number: number, fields: Record<string, string>, createdDaysAgo = 10, type = "Bug", title = `Issue ${number}`, repo = REPO): PickableNode {
     return {
       number,
       title,
-      url: `https://github.com/${REPO}/issues/${number}`,
+      url: `https://github.com/${repo}/issues/${number}`,
       createdAt: daysAgo(createdDaysAgo),
-      repository,
+      repository: repo === REPO ? repository : { nameWithOwner: repo, defaultBranchRef: { name: "main" } },
       issueType: { name: type },
       issueFieldValues: { nodes: Object.entries(fields).map(([field, name]) => ({ name, field: { name: field } })) },
     };
@@ -154,7 +156,10 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       }),
     ],
     commented: [issue(140, [comment(alice, "", 9), comment(me, "Which customers see this?", 1)], "Invoice totals round wrong"), issue(141, [comment(me, "Is this still needed?", 12)], "Rotate the analytics token")],
-    assigned: [pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops")],
+    assigned: [
+      pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"),
+      pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO),
+    ],
     unclaimed: [
       pickable(160, fields("🏕P2 Medium", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"),
       pickable(161, fields("🏝 P3 Low", "🐟 Tiny (< 4h)", "🔙 Backend"), 15, "Bug", "Deleted employee still shows in the calendar"),

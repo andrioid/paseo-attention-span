@@ -40,6 +40,9 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint |
    | `<layout>-next-up.png` | Assigned, then Unclaimed filtered to my scopes |
    | `<layout>-next-up-all.png` | Unclaimed with the "All" filter |
+   | `<layout>-next-up-code-repo.png` | Start on "Price list import skips quoted rows" (in `acme/issues`, no checkout): the picker asking where its code lives. Uncropped |
+   | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping; the start then fails with "No agent provider is ready", as expected in the container |
+   | `<layout>-next-up-code-repo-again.png` | Start pressed again: no picker this time |
 
    Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Look for:
    - text that's unreadable in either theme
@@ -60,7 +63,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 | Opens `http://127.0.0.1:6767/` inside the container, clicks the "GitHub attention" sidebar entry, then each tab by its accessibility label | `preview/shoot.mjs` |
 | Plugin config inside the container (fields for Next up) | `preview/plugin-config.json` |
 | The fake GitHub data, plus fake sessions (`FIXTURE_AGENTS`) and session context | `server/fixture.ts` |
-| A local repo with the `acme/shop` remote registered as a project, with a worktree workspace on `branch-102`, so Options has a project and a workspace to offer | `preview/entrypoint.sh` |
+| A local repo with the `acme/shop` remote registered as a project, with a worktree workspace on `branch-102`, so Options has a project and a workspace to offer. `acme/issues` has no project on purpose | `preview/entrypoint.sh` |
 
 - **Mounts:** Paseo from the host install, read-only (`readlink -f $(command -v paseo)`, three levels up). The repo, read-only. `preview/out`, writable.
 - **Not available inside:** `~/.paseo`, `gh`, the host loopback. Relay is off. The only outside traffic is GitHub avatar images.

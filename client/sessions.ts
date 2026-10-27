@@ -1,5 +1,5 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
-import type { InboxConfig, SessionKind } from "../shared/config";
+import { codeRepoFor, type InboxConfig, type SessionKind } from "../shared/config";
 import type { AgentSummary, Target } from "../shared/inbox";
 
 type Paseo = ReturnType<typeof usePaseo>;
@@ -34,12 +34,47 @@ export interface ProjectMatch {
   rootPath: string;
 }
 
-// The local checkout is the registered Paseo project with the item's GitHub remote [SES-05].
-export async function findProject(paseo: Paseo, repo: string): Promise<ProjectMatch | null> {
+export interface GitHubProject extends ProjectMatch {
+  repo: string;
+}
+
+// Registered Paseo projects with a GitHub remote, by "owner/name".
+export async function githubProjects(paseo: Paseo): Promise<GitHubProject[]> {
   const { projects } = await paseo.projects.list();
-  const wanted = `remote:github.com/${repo.toLowerCase()}`;
-  const project = projects.find((candidate) => candidate.projectKey?.toLowerCase() === wanted);
-  return project ? { projectId: project.projectId, rootPath: project.projectRootPath } : null;
+  return projects.flatMap((project) => {
+    const repo = /^remote:github\.com\/(.+)$/i.exec(project.projectKey ?? "")?.[1];
+    return repo ? [{ repo, projectId: project.projectId, rootPath: project.projectRootPath }] : [];
+  });
+}
+
+// The local checkout is the registered Paseo project with the repo's GitHub remote [SES-05].
+export async function findProject(paseo: Paseo, repo: string): Promise<ProjectMatch | null> {
+  return (await githubProjects(paseo)).find((project) => project.repo.toLowerCase() === repo.toLowerCase()) ?? null;
+}
+
+export interface Checkout {
+  repo: string;
+  project: ProjectMatch | null;
+  // Where a new branch for an issue starts.
+  baseBranch?: string;
+}
+
+// The item's own repo, or for an issue the repo its code lives in [SES-05, SES-07].
+export async function findCheckout(
+  paseo: Paseo,
+  config: Pick<InboxConfig, "codeRepos">,
+  target: Target,
+  defaultBranch: (repo: string) => Promise<string | null>,
+): Promise<Checkout> {
+  const repo = target.kind === "issue" ? codeRepoFor(config, target.repo) : target.repo;
+  const project = await findProject(paseo, repo);
+  if (repo.toLowerCase() === target.repo.toLowerCase()) return { repo, project, baseBranch: target.defaultBranch };
+  return { repo, project, baseBranch: project ? ((await defaultBranch(repo)) ?? undefined) : undefined };
+}
+
+export function noProjectMessage(checkout: Checkout, target: Target): string {
+  const where = checkout.repo === target.repo ? checkout.repo : `${checkout.repo}, where ${target.repo}'s code lives,`;
+  return `No Paseo project has ${where} as its GitHub remote. Add the repository as a project first.`;
 }
 
 export interface WorkspaceChoice {
@@ -122,15 +157,16 @@ export interface StartSession {
   target: Target;
   prompt: string;
   config: InboxConfig;
+  checkout: Checkout;
   profileId?: string;
   workspaceId?: string; // an existing workspace; otherwise a new worktree
 }
 
 // A new worktree: checkout-pr for PRs, branch-off from the default branch for issues.
 export async function startSession(paseo: Paseo, input: StartSession): Promise<string> {
-  const { target } = input;
-  const project = await findProject(paseo, target.repo);
-  if (!project) throw new Error(`No Paseo project has ${target.repo} as its GitHub remote. Add the repository as a project first.`);
+  const { target, checkout } = input;
+  const project = checkout.project;
+  if (!project) throw new Error(noProjectMessage(checkout, target));
   const { agent: agentConfig } = await resolveAgentConfig(paseo, input.kind, input.config, input.profileId);
   const title = `${target.kind === "pr" ? "PR" : "Issue"} ${target.number}: ${target.title}`.slice(0, 120);
 
@@ -152,7 +188,7 @@ export async function startSession(paseo: Paseo, input: StartSession): Promise<s
                 cwd: project.rootPath,
                 projectId: project.projectId,
                 action: "branch-off",
-                baseBranch: target.defaultBranch,
+                baseBranch: checkout.baseBranch,
                 branchName: `issue-${target.number}-${slug(target.title)}`,
               },
       });

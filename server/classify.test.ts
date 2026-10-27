@@ -315,7 +315,7 @@ describe("GitHub requests", () => {
     const inbox = classify({ data, details, config, now: NOW });
     expect(new Set([...inbox.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(14);
     expect(doing(inbox).length).toBeGreaterThan(5);
-    expect([inbox.assigned.length, inbox.unclaimed.length]).toEqual([1, 6]);
+    expect([inbox.assigned.length, inbox.unclaimed.length]).toEqual([2, 6]);
   });
 });
 
