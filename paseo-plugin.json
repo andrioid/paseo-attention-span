@@ -1,0 +1,9 @@
+{
+  "id": "github-inbox",
+  "name": "GitHub inbox",
+  "description": "Open GitHub issues and pull requests that are waiting on you, grouped by why, with one-tap Paseo sessions.",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.13.0"
+  }
+}

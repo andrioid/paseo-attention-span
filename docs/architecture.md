@@ -106,8 +106,8 @@ Fewest requests practical [GH-01]. A refresh is two GraphQL requests.
    - `is:issue is:open commenter:@me` (for issues waiting on others)
    - `is:pr is:merged author:@me merged:>=<monday>`
 
-   Each is scoped to the configured orgs. A probe of this shape cost 16 of 5,000 points per hour.
+   Each is scoped to the configured orgs and repos. With comment bodies for the mention rule, the query costs about 50 of 5,000 points per hour.
 2. **One batched `Ref.compare` query** for behind counts, only for stacked and ready-to-merge PRs.
 
-Refresh happens when the screen opens, on ⟳, and every `refreshMinutes` (default 30) for the count [FRESH-01]: about 4 requests and 70 points an hour in the background. Actions use GraphQL mutations. The only other call is fetching a failing CI log, and only when a Fix session starts.
+Refresh happens when the screen opens, on ⟳, and every `refreshMinutes` (default 30) for the count [FRESH-01]: about 4 requests and 120 points an hour in the background. Actions use GraphQL mutations. The only other call is fetching a failing CI log, and only when a Fix session starts.
 
