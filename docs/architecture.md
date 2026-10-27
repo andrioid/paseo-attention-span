@@ -31,6 +31,7 @@ flowchart LR
   - `config.json`, edited by hand:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
+    - `behind.warn` / `behind.bad` (default 6 / 26 commits) for the behind chip's color [UPS-07]
     - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 60) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
@@ -74,7 +75,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
   1. the PR conflicts with its base,
   2. a stacked PR no longer builds on its parent's head,
   3. it is ready to merge (CI ran against an old base).
-  Otherwise the behind count is shown on rows that appear anyway, but never puts an item on the list by itself.
+  Otherwise the behind count is shown on rows that appear anyway, but never puts an item on the list by itself. Its chip turns amber from `behind.warn` (default 6) commits and red from `behind.bad` (default 26).
 - **Stale draft** [PRS-07]: a draft untouched for 30 days offers Refresh and Close instead of Rebase.
 
 ## Next up
