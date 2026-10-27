@@ -30,8 +30,6 @@ export const InboxConfig = z.object({
   // Merge method per "owner/name" [PRS-04].
   mergeMethods: z.record(z.string(), MergeMethod).default({}),
   waitingTooLongDays: z.number().positive().default(3),
-  // Commits behind its base at which a PR's behind chip turns amber, then red [UPS-07].
-  behind: z.object({ warn: z.number().int().positive().default(6), bad: z.number().int().positive().default(26) }).default({ warn: 6, bad: 26 }),
   // A digest, not a live view: GitHub is asked at most this often unless I press ⟳ [GH-01].
   refreshMinutes: z.number().min(5).default(60),
   staleDraftDays: z.number().positive().default(30),

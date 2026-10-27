@@ -64,9 +64,9 @@ describe("ready to merge and behind base", () => {
     expect(item.chips).toEqual([{ text: "approved", tone: "good" }, { text: "1 behind main", tone: "neutral" }]);
   });
 
-  it("UPS-07: colors the behind chip by how far behind: amber from 6, red from 26", () => {
-    const tone = (behind: number) => run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { [key(1)]: behind }).items[0].chips.find((c) => c.text.includes("behind"))?.tone;
-    expect([tone(5), tone(6), tone(25), tone(26)]).toEqual(["neutral", "warn", "warn", "bad"]);
+  it("UPS-07: the behind chip stays neutral however far behind; only conflicts are flagged", () => {
+    const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { [key(1)]: 2307 }).items;
+    expect(item.chips).toEqual([{ text: "conflicts", tone: "bad" }, { text: "2307 behind main", tone: "neutral" }]);
   });
 
   it("UPS-07: being behind alone never puts a PR in Doing", () => {

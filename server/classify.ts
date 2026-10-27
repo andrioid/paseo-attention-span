@@ -17,9 +17,8 @@ const EPOCH = "1970-01-01T00:00:00Z";
 const rank = (section: SectionId) => SECTION_ORDER.indexOf(section);
 const latest = (...dates: (string | null | undefined)[]) => dates.reduce<string>((max, date) => (date && date > max ? date : max), EPOCH);
 const chip = (text: string, tone: Chip["tone"] = "neutral"): Chip => ({ text, tone });
-// Behind is shown on rows that appear anyway, colored by how far behind, never a reason by itself [UPS-07].
-const behindChip = (count: number, base: string, config: InboxConfig) =>
-  chip(`${count} behind ${base}`, count >= config.behind.bad ? "bad" : count >= config.behind.warn ? "warn" : "neutral");
+// Behind is shown on rows that appear anyway, neutral and never a reason by itself; conflicts are what's flagged [UPS-07].
+const behindChip = (count: number, base: string) => chip(`${count} behind ${base}`);
 const person = (actor: Actor | null | undefined, since: string): Person | undefined =>
   actor ? { login: actor.login, avatarUrl: actor.avatarUrl, bot: actor.__typename === "Bot", since } : undefined;
 
@@ -143,7 +142,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
     else if (s.ciPending) chips.push(chip("CI running", "warn"));
     else if (section === "ready" && s.behindBy === 0) chips.push(chip("CI passed", "good"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
-    if (s.behindBy > 0) chips.push(behindChip(s.behindBy, base, config));
+    if (s.behindBy > 0) chips.push(behindChip(s.behindBy, base));
     if (stack.length > 1) chips.push(chip(`stack of ${stack.length}`));
 
     return {
@@ -168,7 +167,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
     if (s.approved) chips.push(chip("approved", "good"));
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
-    if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName, config));
+    if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName));
     return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, chips };
   };
 
