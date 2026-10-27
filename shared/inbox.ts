@@ -68,6 +68,8 @@ export interface SubRow {
   url: string;
   draft: boolean;
   chips: Chip[];
+  // Behind its parent, conflicting or failing CI: shown even when the stack is collapsed.
+  attention: boolean;
 }
 
 export interface Item {

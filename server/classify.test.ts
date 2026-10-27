@@ -101,6 +101,8 @@ describe("stacks", () => {
       [11, true, ["2/3", "approved", "279 behind #10"]],
       [12, true, ["3/3"]],
     ]);
+    // Only the child behind its parent needs attention when the stack is collapsed.
+    expect(item.children.map((child) => child.attention)).toEqual([true, false]);
     expect(item.target.stack).toEqual([
       { number: 10, head: "a", base: "main" },
       { number: 11, head: "b", base: "a" },

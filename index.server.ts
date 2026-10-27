@@ -20,6 +20,7 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(rpc.getInbox, ({ maxAgeSeconds }) => ready(() => inbox.get(maxAgeSeconds)));
   server.handle(rpc.dismissItem, ({ key }) => ready(() => inbox.dismiss(key)));
+  server.handle(rpc.undismissItem, ({ key }) => ready(() => inbox.undismiss(key)));
   server.handle(rpc.restoreDismissed, () => ready(() => inbox.restoreDismissed()));
   server.handle(rpc.updateBranch, ({ target }) => thenRefresh(updateBranch(target)));
   server.handle(rpc.mergePullRequest, ({ target }) => thenRefresh(mergePullRequest(target)));

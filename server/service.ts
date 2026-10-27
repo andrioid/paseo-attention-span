@@ -46,6 +46,12 @@ export class InboxService {
     return this.view();
   }
 
+  async undismiss(key: string): Promise<InboxView> {
+    delete this.state.dismissed[key];
+    await saveState(this.state);
+    return this.view();
+  }
+
   async restoreDismissed(): Promise<InboxView> {
     this.state.dismissed = {};
     await saveState(this.state);

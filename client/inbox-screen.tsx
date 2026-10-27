@@ -1,31 +1,57 @@
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { InboxConfig, SessionKind } from "../shared/config";
 import { ago } from "../shared/format";
-import type { ActionId, AgentSummary, Item, NextUpIssue, Section, SectionId, SubRow, TabId, Target } from "../shared/inbox";
+import type { ActionId, AgentSummary, Chip, Item, NextUpIssue, Section, SectionId, SubRow, TabId, Target } from "../shared/inbox";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { useInbox } from "./data";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
 import { branchWorkspaces, findProject, inboxAgents, listProfiles, resolveAgentConfig, startSession } from "./sessions";
-import { Avatar, Button, Chip, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
+import { Avatar, Button, KeepStyles, Meta, SectionHeader, SplitButton, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
-const ACTIONS: Record<ActionId, { label: string; icon: IconName }> = {
-  reply: { label: "Reply", icon: "replyArrow" },
-  review: { label: "Review", icon: "review" },
-  fix: { label: "Fix", icon: "fix" },
-  address: { label: "Address", icon: "address" },
-  update: { label: "Update", icon: "update" },
-  rebase: { label: "Rebase", icon: "branch" },
-  refresh: { label: "Refresh", icon: "rotate" },
-  merge: { label: "Merge", icon: "merge" },
-  close: { label: "Close", icon: "close" },
-  start: { label: "Start", icon: "play" },
+const ACTION_ICONS: Record<ActionId, IconName> = {
+  reply: "replyArrow",
+  review: "review",
+  fix: "fix",
+  address: "address",
+  update: "update",
+  rebase: "branch",
+  refresh: "rotate",
+  merge: "merge",
+  close: "close",
+  start: "play",
+};
+
+function actionLabel(action: ActionId, item: Item): string {
+  const stacked = (item.target.stack?.length ?? 0) > 1;
+  return {
+    reply: "Reply ↗",
+    review: "Review",
+    fix: "Fix CI",
+    address: "Address comments",
+    update: "Update branch",
+    rebase: stacked ? "Rebase stack" : "Rebase",
+    refresh: "Refresh draft",
+    merge: "Merge",
+    close: "Close draft",
+    start: "Start",
+  }[action];
+}
+
+// "Continue review" keeps what the session is for [SES-03].
+const CONTINUE_LABELS: Record<SessionKind, string> = {
+  review: "Continue review",
+  fix: "Continue fix",
+  address: "Continue comments",
+  rebase: "Continue rebase",
+  refresh: "Continue refresh",
+  start: "Continue",
 };
 
 const SECTION_ICONS: Record<SectionId, IconName> = {
@@ -55,7 +81,8 @@ const TABS: { id: TabId; label: string; icon: IconName }[] = [
 const AGENTS_QUERY_KEY = ["github-attention", "agents"] as const;
 type FetchContext = (input: RpcInput<typeof rpc.sessionContext>) => Promise<RpcOutput<typeof rpc.sessionContext>>;
 
-function agentTag(agent: AgentSummary): { text: string; tone: "good" | "bad" | "warn" | "neutral" } {
+// A session started from the item, as a signal [ATT-07].
+function agentSignal(agent: AgentSummary): Chip {
   if (agent.requiresAttention) return { text: "agent needs you", tone: "warn" };
   if (agent.status === "running" || agent.status === "initializing") return { text: "agent working", tone: "good" };
   if (agent.status === "error") return { text: "agent failed", tone: "bad" };
@@ -79,6 +106,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const agents = useQuery({ queryKey: AGENTS_QUERY_KEY, queryFn: () => inboxAgents(paseo), refetchInterval: 15_000 });
   const fetchContext = useRpc(rpc.sessionContext);
   const dismiss = useRpc(rpc.dismissItem);
+  const undismiss = useRpc(rpc.undismissItem);
   const restore = useRpc(rpc.restoreDismissed);
   const update = useRpc(rpc.updateBranch);
   const merge = useRpc(rpc.mergePullRequest);
@@ -86,6 +114,8 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const claim = useRpc(rpc.claimIssue);
   const [tab, setTab] = useState<TabId>("doing");
   const [busy, setBusy] = useState<string | null>(null);
+  // Dismissed in this visit, offered for undo until the tab changes [ATT-08].
+  const [undoable, setUndoable] = useState<Item[]>([]);
   const view = inbox.data;
 
   async function run(key: string, label: string, work: () => Promise<unknown>) {
@@ -137,11 +167,14 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
     waiting: view.waiting.reduce((sum, section) => sum + section.items.length, 0),
     next: view.assigned.length + view.unclaimed.length,
   };
+  // The repo is worth showing only when the list spans several.
+  const repos = new Set([...view.doing, ...view.waiting].flatMap((section) => section.items.map((item) => item.repo)));
 
   const actions: Actions = {
     agents: view.fixtureAgents ?? agents.data ?? {},
     busy,
     config: view.config,
+    showRepo: repos.size > 1,
     fetchContext,
     openAgent,
     started,
@@ -162,7 +195,16 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
         toast.show(`PR ${item.target.number} ${action === "merge" ? "merged" : "closed"}`, { variant: "success" });
         await inbox.refreshNow();
       }),
-    dismiss: (item) => void run(item.key, "Dismiss", async () => inbox.setView(await dismiss({ key: item.key }))),
+    dismiss: (item) =>
+      void run(item.key, "Dismiss", async () => {
+        inbox.setView(await dismiss({ key: item.key }));
+        setUndoable((items) => [...items, item]);
+      }),
+  };
+
+  const switchTab = (id: TabId) => {
+    setTab(id);
+    setUndoable([]);
   };
 
   return (
@@ -170,7 +212,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
       <View style={[styles.row, { justifyContent: "space-between", flexWrap: "wrap" }]}>
         <View style={styles.row}>
           {TABS.map(({ id, label, icon }) => (
-            <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} onPress={() => setTab(id)} />
+            <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} onPress={() => switchTab(id)} />
           ))}
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void inbox.refreshNow().catch(() => {})}>
@@ -183,9 +225,26 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
       {tab === "history" ? <History items={view.history} actions={actions} /> : null}
       {tab === "doing" ? (
         <>
+          {undoable.map((item) => (
+            <View key={item.key} style={[styles.panel, styles.row, { justifyContent: "space-between" }]}>
+              <Text style={[styles.muted, { flexShrink: 1 }]} numberOfLines={1}>
+                Dismissed “{item.title}”
+              </Text>
+              <Button
+                label="Undo"
+                variant="calm"
+                onPress={() =>
+                  void run(item.key, "Undo", async () => {
+                    inbox.setView(await undismiss({ key: item.key }));
+                    setUndoable((items) => items.filter((other) => other.key !== item.key));
+                  })
+                }
+              />
+            </View>
+          ))}
           <Sections sections={view.doing} actions={actions} empty="Nothing needs you right now." />
-          {view.dismissedCount > 0 ? (
-            <Pressable accessibilityRole="button" onPress={() => void run("restore", "Restore", async () => inbox.setView(await restore({})))}>
+          {view.dismissedCount > undoable.length ? (
+            <Pressable accessibilityRole="button" onPress={() => void run("restore", "Restore", async () => (inbox.setView(await restore({})), setUndoable([])))}>
               <Text style={styles.muted}>{view.dismissedCount} dismissed · show them again</Text>
             </Pressable>
           ) : null}
@@ -195,7 +254,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
         <>
           <Sections sections={view.waiting} actions={actions} empty="Nothing is waiting on others." />
           {tooLong > 0 ? (
-            <Pressable accessibilityRole="button" onPress={() => setTab("doing")}>
+            <Pressable accessibilityRole="button" onPress={() => switchTab("doing")}>
               <Text style={styles.muted}>{tooLong} more waited too long and moved to Doing →</Text>
             </Pressable>
           ) : null}
@@ -233,9 +292,7 @@ function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: s
       <TablerIcon name={icon} size={16} color={color} />
       {/* On phones only the active tab is labelled, so four tabs fit. */}
       {active || !styles.compact ? <Text style={{ color, fontSize: 14, fontWeight: active ? "600" : "400" }}>{label}</Text> : null}
-      <View style={styles.badge}>
-        <Text style={[styles.muted, { fontSize: 11 }]}>{count}</Text>
-      </View>
+      <Text style={[styles.muted, { fontSize: 12 }]}>{count}</Text>
     </Pressable>
   );
 }
@@ -244,6 +301,7 @@ interface Actions {
   agents: Record<string, AgentSummary>;
   busy: string | null;
   config: InboxConfig;
+  showRepo: boolean;
   fetchContext: FetchContext;
   act: (item: Item, action: ActionId) => void;
   confirm: (item: Item, action: "merge" | "close", comment?: string) => void;
@@ -252,59 +310,87 @@ interface Actions {
   started: (agentId: string) => Promise<void>;
 }
 
+function stateIcon(item: Item, c: ReturnType<typeof useStyles>["c"]): { name: IconName; color: string } {
+  if (item.closedAt) return item.kind === "pr" ? { name: "merge", color: c.accent } : { name: "issueClosed", color: item.chips.length ? c.foregroundMuted : c.accent };
+  if (item.kind === "issue") return { name: "issue", color: c.statusSuccess };
+  return item.draft ? { name: "draft", color: c.foregroundMuted } : { name: "pr", color: c.statusSuccess };
+}
+
+// A card that works collapsed: primary action with ▾ options, GitHub and Dismiss inline [ATT-05, ATT-06].
 function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions: Actions }) {
   const styles = useStyles();
   const [expanded, setExpanded] = useState(false);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
+  const [optionsFor, setOptionsFor] = useState<SessionKind | null>(null);
   const [comment, setComment] = useState("");
   const agent = actions.agents[item.key];
   const sessionAction = item.actions.find((action) => ACTION_SESSION[action]);
-  const tag = agent ? agentTag(agent) : null;
+  const sessionKind = sessionAction ? ACTION_SESSION[sessionAction] : undefined;
+  const inDoing = !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed";
+  const facts = [`#${item.number}`, ...(actions.showRepo ? [item.repo.split("/")[1]] : [])];
+  const chips = agent ? [...item.chips, agentSignal(agent)] : item.chips;
+  const children = expanded ? item.children : item.children.filter((child) => child.attention);
+  const icon = stateIcon(item, styles.c);
 
-  const buttons =
-    actions.busy === item.key ? (
-      <Text style={styles.muted}>working…</Text>
-    ) : agent && sessionAction ? (
-      <Button label="Continue" icon="play" primary onPress={() => actions.openAgent(agent.id)} />
-    ) : (
-      item.actions.map((action, index) => (
-        <Button
-          key={action}
-          label={ACTIONS[action].label}
-          icon={ACTIONS[action].icon}
-          primary={index === 0}
-          onPress={() => (action === "merge" || action === "close" ? setConfirm(action) : actions.act(item, action))}
-        />
-      ))
-    );
+  // At the far right on desktop, so it lines up down the list; after the title on phones.
+  const chevron = (
+    <Pressable accessibilityRole="button" accessibilityLabel={expanded ? "Collapse" : "Expand"} onPress={() => setExpanded(!expanded)} style={{ padding: 6 }}>
+      <TablerIcon name={expanded ? "chevronUp" : "chevronDown"} size={16} />
+    </Pressable>
+  );
+
+  const buttons = (
+    <View style={styles.wrap}>
+      {actions.busy === item.key ? (
+        <Text style={styles.muted}>working…</Text>
+      ) : agent && sessionKind ? (
+        <Button label={CONTINUE_LABELS[sessionKind]} icon="play" variant="calm" onPress={() => actions.openAgent(agent.id)} />
+      ) : (
+        item.actions.map((action) => {
+          const session = ACTION_SESSION[action];
+          const press = () => (action === "merge" || action === "close" ? setConfirm(action) : actions.act(item, action));
+          return <SplitButton key={action} label={actionLabel(action, item)} icon={ACTION_ICONS[action]} onPress={press} onOptions={session ? () => setOptionsFor(session) : undefined} />;
+        })
+      )}
+      {/* Anything the inbox doesn't cover [ATT-12]. */}
+      <Button icon="github" variant="ghost" accessibilityLabel="Open on GitHub" onPress={() => void openExternalUrl(item.url)} />
+      {inDoing ? <Button icon="dismiss" variant="ghost" accessibilityLabel="Dismiss" onPress={() => actions.dismiss(item)} /> : null}
+      {styles.compact ? null : chevron}
+    </View>
+  );
 
   return (
     <View style={first ? null : styles.divider}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}, ${expanded ? "collapse" : "expand"}`} onPress={() => setExpanded(!expanded)}>
-        <View style={styles.item}>
-          <View style={{ paddingTop: 2 }}>
-            <TablerIcon {...stateIcon(item, styles.c)} size={18} />
-          </View>
-          <View style={styles.body}>
-            <Text style={styles.title} numberOfLines={expanded ? undefined : 1}>
-              {item.title}
-            </Text>
-            <View style={styles.wrap}>
-              <Text style={styles.muted}>#{item.number}</Text>
-              {item.chips.map((chip) => (
-                <Chip key={chip.text} {...chip} />
-              ))}
-              {tag ? <Chip {...tag} /> : null}
-            </View>
-            {item.person ? <PersonQuote person={item.person} expanded={expanded} /> : null}
-            {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} /> : null}
-            {styles.compact ? <View style={styles.wrap}>{buttons}</View> : null}
-          </View>
-          {styles.compact ? null : <View style={styles.wrap}>{buttons}</View>}
+      <View style={styles.item}>
+        <View style={{ paddingTop: 3 }}>
+          <TablerIcon name={icon.name} color={icon.color} size={18} />
         </View>
-      </Pressable>
-      {confirm || expanded ? (
-        <View style={{ paddingHorizontal: styles.compact ? 12 : 42, paddingBottom: 14 }}>
+        <View style={styles.body}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title}, ${expanded ? "collapse" : "expand"}`}
+            onPress={() => setExpanded(!expanded)}
+            style={{ gap: 6 }}
+          >
+            <View style={[styles.row, { alignItems: "flex-start" }]}>
+              <Text style={[styles.title, { flex: 1 }]} numberOfLines={expanded ? undefined : styles.compact ? 2 : 1}>
+                {item.title}
+              </Text>
+              {styles.compact ? <TablerIcon name={expanded ? "chevronUp" : "chevronDown"} size={16} /> : null}
+            </View>
+            <Meta facts={facts} chips={chips} />
+            {item.person ? <PersonQuote person={item.person} expanded={expanded} /> : null}
+            {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} /> : null}
+          </Pressable>
+          {styles.compact ? buttons : null}
+          {expanded ? (
+            <Pressable accessibilityRole="link" onPress={() => void openExternalUrl(item.url)}>
+              <Text style={styles.muted}>
+                {item.repo}#{item.number}
+                {item.target.number !== item.number ? ` · actions apply to PR #${item.target.number}` : ""}
+              </Text>
+            </Pressable>
+          ) : null}
           {confirm ? (
             <View style={styles.panel}>
               <Text style={styles.text}>
@@ -316,23 +402,17 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
                 <TextInput style={styles.input} placeholder="Closing comment (optional)" placeholderTextColor={styles.c.foregroundMuted} value={comment} onChangeText={setComment} multiline />
               ) : null}
               <View style={styles.wrap}>
-                <Button label={confirm === "merge" ? "Merge" : "Close PR"} icon={confirm} primary onPress={() => (setConfirm(null), actions.confirm(item, confirm, comment))} />
+                <Button label={confirm === "merge" ? "Merge" : "Close PR"} icon={confirm} variant="solid" onPress={() => (setConfirm(null), actions.confirm(item, confirm, comment))} />
                 <Button label="Cancel" onPress={() => setConfirm(null)} />
               </View>
             </View>
-          ) : (
-            <ItemDetails item={item} actions={actions} sessionKind={sessionAction ? ACTION_SESSION[sessionAction] : undefined} />
-          )}
+          ) : null}
         </View>
-      ) : null}
+        {styles.compact ? null : buttons}
+      </View>
+      {optionsFor ? <SessionOptions item={item} kind={optionsFor} actions={actions} onClose={() => setOptionsFor(null)} /> : null}
     </View>
   );
-}
-
-function stateIcon(item: Item, c: ReturnType<typeof useStyles>["c"]): { name: IconName; color: string } {
-  if (item.closedAt) return item.kind === "pr" ? { name: "merge", color: c.accent } : { name: "issueClosed", color: item.chips.length ? c.foregroundMuted : c.accent };
-  if (item.kind === "issue") return { name: "issue", color: c.statusSuccess };
-  return item.draft ? { name: "draft", color: c.foregroundMuted } : { name: "pr", color: c.statusSuccess };
 }
 
 // Who is waiting on me, or who I'm waiting on.
@@ -341,7 +421,7 @@ function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>
   const line = (
     <View style={styles.row}>
       <Avatar url={person.avatarUrl} bot={person.bot} />
-      <Text style={[styles.muted, { color: styles.c.foreground }]}>{person.login}</Text>
+      <Text style={{ color: styles.c.foreground, fontSize: 12, fontWeight: "600" }}>{person.login}</Text>
       <Text style={styles.muted}>· {ago(person.since)}</Text>
     </View>
   );
@@ -349,7 +429,7 @@ function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>
   return (
     <View style={styles.quote}>
       {line}
-      <Text style={styles.muted} numberOfLines={expanded ? undefined : 2}>
+      <Text style={{ color: styles.c.foreground, fontSize: 13, lineHeight: 18 }} numberOfLines={expanded ? undefined : 2}>
         {person.snippet}
       </Text>
     </View>
@@ -428,7 +508,7 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
   return blocks;
 }
 
-// Stacked or linked PRs as a connected line [ATT-03, ATT-04].
+// Stacked or linked PRs as a connected line; collapsed, only those needing attention [ATT-03, ATT-04].
 function StackLine({ rows, merged }: { rows: SubRow[]; merged: boolean }) {
   const styles = useStyles();
   return (
@@ -440,14 +520,11 @@ function StackLine({ rows, merged }: { rows: SubRow[]; merged: boolean }) {
             <TablerIcon name={merged ? "merge" : row.draft ? "draft" : "pr"} size={14} color={merged ? styles.c.accent : row.draft ? styles.c.foregroundMuted : styles.c.statusSuccess} />
             <View style={{ width: 2, flex: 1, backgroundColor: index === rows.length - 1 ? "transparent" : styles.c.border }} />
           </View>
-          <View style={[styles.wrap, { flex: 1, paddingVertical: 3 }]}>
-            <Text style={styles.muted}>#{row.number}</Text>
-            <Text style={[styles.muted, { color: styles.c.foreground, flexShrink: 1 }]} numberOfLines={1}>
+          <View style={{ flex: 1, paddingVertical: 3, gap: 2 }}>
+            <Text style={{ color: styles.c.foreground, fontSize: 13 }} numberOfLines={1}>
               {row.title}
             </Text>
-            {row.chips.map((chip) => (
-              <Chip key={chip.text} {...chip} />
-            ))}
+            <Meta facts={[`#${row.number}`]} chips={row.chips} />
           </View>
         </View>
       ))}
@@ -455,28 +532,8 @@ function StackLine({ rows, merged }: { rows: SubRow[]; merged: boolean }) {
   );
 }
 
-// Expanded row: Dismiss, GitHub, and session options [ATT-06, SES-02].
-function ItemDetails({ item, actions, sessionKind }: { item: Item; actions: Actions; sessionKind: SessionKind | undefined }) {
-  const styles = useStyles();
-  const [showOptions, setShowOptions] = useState(false);
-  return (
-    <View style={styles.panel}>
-      <Text style={styles.muted}>
-        {item.repo}
-        {item.target.number !== item.number ? ` · actions apply to PR #${item.target.number}` : ""}
-      </Text>
-      <View style={styles.wrap}>
-        <Button label="Dismiss" icon="dismiss" onPress={() => actions.dismiss(item)} />
-        {/* Anything the inbox doesn't cover [ATT-12]. */}
-        <Button label="GitHub" icon="github" onPress={() => void openExternalUrl(item.url)} />
-        {sessionKind ? <Button label="Options" icon={showOptions ? "chevronUp" : "chevronDown"} onPress={() => setShowOptions(!showOptions)} /> : null}
-      </View>
-      {showOptions && sessionKind ? <SessionOptions item={item} kind={sessionKind} actions={actions} /> : null}
-    </View>
-  );
-}
-
-function SessionOptions({ item, kind, actions }: { item: Item; kind: SessionKind; actions: Actions }) {
+// Session options in a modal: a bottom sheet on phones [SES-02].
+function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: SessionKind; actions: Actions; onClose: () => void }) {
   const styles = useStyles();
   const paseo = usePaseo();
   const toast = useToast();
@@ -500,16 +557,14 @@ function SessionOptions({ item, kind, actions }: { item: Item; kind: SessionKind
   const [profileId, setProfileId] = useState<string>();
   const [prompt, setPrompt] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
-
-  if (options.isLoading) return <Text style={styles.muted}>Loading context…</Text>;
-  if (!options.data) return <Text style={styles.danger}>{(options.error as Error)?.message ?? "No options"}</Text>;
   const data = options.data;
-  if (!data.project) return <Text style={styles.danger}>No Paseo project has {target.repo} as its remote. Add it as a project to start sessions.</Text>;
 
   async function start() {
+    if (!data) return;
     setStarting(true);
     try {
       await actions.started(await startSession(paseo, { itemKey: item.key, kind, target, prompt: prompt ?? data.prompt, config: actions.config, profileId, workspaceId }));
+      onClose();
     } catch (error) {
       toast.error(`Starting the session failed: ${(error as Error).message}`);
     } finally {
@@ -518,27 +573,39 @@ function SessionOptions({ item, kind, actions }: { item: Item; kind: SessionKind
   }
 
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={styles.muted}>Workspace</Text>
-      <View style={styles.wrap}>
-        <Toggle label="New worktree" active={!workspaceId} onPress={() => setWorkspaceId(undefined)} />
-        {data.workspaces.map((w) => (
-          <Toggle key={w.id} label={w.name} active={workspaceId === w.id} onPress={() => setWorkspaceId(w.id)} />
-        ))}
-      </View>
-      <Text style={styles.muted}>Agent profile</Text>
-      <View style={styles.wrap}>
-        <Toggle label={data.defaultLabel} active={!profileId} onPress={() => setProfileId(undefined)} />
-        {data.profiles.map((p) => (
-          <Toggle key={p.id} label={p.name} active={profileId === p.id} onPress={() => setProfileId(p.id)} />
-        ))}
-      </View>
-      <Text style={styles.muted}>Prompt</Text>
-      <TextInput style={[styles.input, { minHeight: 140 }]} value={prompt ?? data.prompt} onChangeText={setPrompt} multiline textAlignVertical="top" />
-      <View style={styles.wrap}>
-        <Button label={starting ? "Starting…" : "Start session"} icon="play" primary disabled={starting} onPress={() => void start()} />
-      </View>
-    </View>
+    <Modal title={`${actionLabel(item.actions.find((a) => ACTION_SESSION[a] === kind) ?? "start", item)}: ${item.title}`} open onOpenChange={(open) => (open ? null : onClose())}>
+      <Modal.Content>
+        <KeepStyles styles={styles}>
+        {options.isLoading ? <Text style={styles.muted}>Loading context…</Text> : null}
+        {!options.isLoading && !data ? <Text style={styles.danger}>{(options.error as Error)?.message ?? "No options"}</Text> : null}
+        {data && !data.project ? <Text style={styles.danger}>No Paseo project has {target.repo} as its remote. Add it as a project to start sessions.</Text> : null}
+        {data?.project ? (
+          <View style={{ gap: 10 }}>
+            <Text style={styles.muted}>Workspace</Text>
+            <View style={styles.wrap}>
+              <Toggle label="New worktree" active={!workspaceId} onPress={() => setWorkspaceId(undefined)} />
+              {data.workspaces.map((w) => (
+                <Toggle key={w.id} label={w.name} active={workspaceId === w.id} onPress={() => setWorkspaceId(w.id)} />
+              ))}
+            </View>
+            <Text style={styles.muted}>Agent profile</Text>
+            <View style={styles.wrap}>
+              <Toggle label={data.defaultLabel} active={!profileId} onPress={() => setProfileId(undefined)} />
+              {data.profiles.map((p) => (
+                <Toggle key={p.id} label={p.name} active={profileId === p.id} onPress={() => setProfileId(p.id)} />
+              ))}
+            </View>
+            <Text style={styles.muted}>Prompt</Text>
+            <TextInput style={[styles.input, { minHeight: 180 }]} value={prompt ?? data.prompt} onChangeText={setPrompt} multiline textAlignVertical="top" />
+            <View style={styles.wrap}>
+              <Button label={starting ? "Starting…" : "Start session"} icon="play" variant="solid" disabled={starting} onPress={() => void start()} />
+              <Button label="Cancel" onPress={onClose} />
+            </View>
+          </View>
+        ) : null}
+        </KeepStyles>
+      </Modal.Content>
+    </Modal>
   );
 }
 

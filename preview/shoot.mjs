@@ -57,11 +57,12 @@ for (const layout of layouts) {
       await page.getByText("Retry webhook deliveries with backoff").click();
       await page.waitForTimeout(500);
       await shot("doing-expanded");
-      await page.getByRole("button", { name: "Options" }).click();
+      await page.getByText("Retry webhook deliveries with backoff").first().click(); // collapse
+      await page.getByRole("button", { name: "Address comments options" }).first().click();
       await page.getByText("Agent profile").waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
-      await shot("doing-options");
-      await page.getByText("Retry webhook deliveries with backoff").first().click(); // collapse
+      await page.screenshot({ path: `/out/${prefix}-doing-options.png` }); // the modal sits over the whole page
+      await page.getByRole("button", { name: "Cancel" }).last().click();
       await page.getByRole("button", { name: "Merge", exact: true }).click();
       await page.waitForTimeout(400);
       await shot("doing-merge-confirm");
@@ -76,9 +77,8 @@ for (const layout of layouts) {
       await shot("next-up-all");
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
-      await page.getByText("Publish security.txt").first().click();
-      await page.getByRole("button", { name: "Dismiss" }).click();
-      await page.getByText(/dismissed · show them again/).waitFor({ timeout: 10000 });
+      await page.getByRole("button", { name: "Dismiss" }).first().click();
+      await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
       console.log(`ok ${prefix}`);
     } catch (error) {

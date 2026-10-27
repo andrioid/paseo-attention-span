@@ -169,7 +169,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
     if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName));
-    return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, chips };
+    return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, chips, attention: s.outOfSync || s.conflicts || s.ciFailing };
   };
 
   const target = (pr: PullRequestNode, stack: PullRequestNode[]): Target => ({
@@ -295,7 +295,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
   }
   for (const pr of compact(data.merged.nodes)) {
     const issue = closed.get(pr.closingIssuesReferences.nodes.map(prKey).find((key) => closed.has(key)) ?? "");
-    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [] });
+    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false });
     else items.push({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt });
   }
   for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });

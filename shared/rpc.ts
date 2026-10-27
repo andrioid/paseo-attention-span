@@ -12,6 +12,8 @@ const done = z.object({ ok: z.literal(true) });
 // (default: the configured refresh interval).
 export const getInbox = defineRpc({ name: "inbox.get", input: z.object({ maxAgeSeconds: z.number().min(0).optional() }), output: view });
 export const dismissItem = defineRpc({ name: "inbox.dismiss", input: z.object({ key: z.string() }), output: view });
+// Undo one dismissal [ATT-08].
+export const undismissItem = defineRpc({ name: "inbox.undismiss", input: z.object({ key: z.string() }), output: view });
 export const restoreDismissed = defineRpc({ name: "inbox.restore-dismissed", input: z.object({}), output: view });
 
 // GitHub changes, each from an explicit tap [SAFE-01].

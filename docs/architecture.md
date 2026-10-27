@@ -99,7 +99,7 @@ A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's or
 | Merge ▸ | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04] |
 | Close ▸ | Stale draft | `closePullRequest`, with a comment only if I write one [SAFE-01] |
 
-A tap starts with defaults. Expanding the row offers workspace, profile, and prompt [SES-02]. An existing workspace for the branch or PR is resumed instead of creating a new one [SES-03, ATT-07].
+A tap starts with defaults. The ▾ beside a session action opens workspace, profile and prompt in a modal (a bottom sheet on phones) [SES-02]. Every row also has GitHub ↗ and Dismiss, with Undo right after dismissing [ATT-08, ATT-12]. Expanding a row shows the full quote and the full stack; collapsed, a stack shows only the PRs that need attention [ATT-04, ATT-06]. An existing workspace for the branch or PR is resumed instead of creating a new one [SES-03, ATT-07].
 
 ## Sessions
 

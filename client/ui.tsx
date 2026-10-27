@@ -2,34 +2,32 @@ import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import type { Chip as ChipData } from "../shared/inbox";
+import type { Chip } from "../shared/inbox";
 import { ICONS, type IconName } from "./icons";
 
 // Shared look: theme colors only, tighter on compact layouts [REACH-01].
+// Color is for signals; facts stay quiet.
 
 type Theme = PluginScreenProps["theme"];
 
 export function makeStyles(theme: Theme, compact: boolean) {
   const c = theme.colors;
-  const pad = compact ? 12 : 16;
   return {
     c,
     compact,
     screen: { flex: 1, backgroundColor: c.surface0 },
-    content: { padding: compact ? 12 : 24, gap: compact ? 18 : 24, paddingBottom: 48, maxWidth: 1100, width: "100%" as const, alignSelf: "center" as const },
+    content: { padding: compact ? 12 : 24, gap: compact ? 20 : 28, paddingBottom: 48, maxWidth: 860, width: "100%" as const, alignSelf: "center" as const },
     row: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
     wrap: { flexDirection: "row" as const, flexWrap: "wrap" as const, alignItems: "center" as const, gap: 6 },
     text: { color: c.foreground, fontSize: 14 },
-    muted: { color: c.foregroundMuted, fontSize: 13 },
+    muted: { color: c.foregroundMuted, fontSize: 12 },
     danger: { color: c.statusDanger, fontSize: 13 },
-    title: { color: c.foreground, fontSize: 15, fontWeight: "500" as const, flexShrink: 1 },
-    sectionTitle: { color: c.foregroundMuted, fontSize: 12, fontWeight: "600" as const, letterSpacing: 0.8 },
-    badge: { paddingHorizontal: 7, paddingVertical: 1, borderRadius: 9, backgroundColor: c.surface2 },
+    title: { color: c.foreground, fontSize: 16, fontWeight: "600" as const, flexShrink: 1 },
     card: { backgroundColor: c.surface1, borderRadius: 12, borderWidth: 1, borderColor: c.border, overflow: "hidden" as const },
-    item: { padding: pad, gap: 8, flexDirection: "row" as const, alignItems: "flex-start" as const },
+    item: { padding: compact ? 12 : 16, gap: 10, flexDirection: "row" as const, alignItems: "flex-start" as const },
     divider: { borderTopWidth: 1, borderTopColor: c.border },
     body: { flex: 1, gap: 6, minWidth: 0 },
-    quote: { borderLeftWidth: 3, borderLeftColor: c.border, paddingLeft: 10, paddingVertical: 2, gap: 4 },
+    quote: { backgroundColor: c.surface2, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, gap: 4 },
     panel: { gap: 10, padding: 12, borderRadius: 10, backgroundColor: c.surface2 },
     input: { color: c.foreground, backgroundColor: c.surface1, borderColor: c.border, borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 13 },
   };
@@ -44,21 +42,43 @@ export function StylesProvider({ theme, compact, children }: { theme: Theme; com
   return <StylesContext.Provider value={styles}>{children}</StylesContext.Provider>;
 }
 
+// Modals can render outside this tree (a bottom sheet on phones), so they take the styles along.
+export function KeepStyles({ styles, children }: { styles: Styles; children: ReactNode }) {
+  return <StylesContext.Provider value={styles}>{children}</StylesContext.Provider>;
+}
+
 export function TablerIcon({ name, size = 16, color }: { name: IconName; size?: number; color?: string }) {
   const { c } = useStyles();
   return <Icon icon={ICONS[name]} size={size} color={color ?? c.foregroundMuted} />;
 }
 
-export function toneColor(styles: Styles, tone: ChipData["tone"]): string {
+export function toneColor(styles: Styles, tone: Chip["tone"]): string {
   return { good: styles.c.statusSuccess, bad: styles.c.statusDanger, warn: styles.c.statusWarning, neutral: styles.c.foregroundMuted }[tone];
 }
 
-export function Chip({ text, tone = "neutral" }: { text: string; tone?: ChipData["tone"] }) {
+// A state that matters, as a colored dot and text.
+export function Signal({ text, tone }: Chip) {
   const styles = useStyles();
   const color = toneColor(styles, tone);
   return (
-    <View style={{ borderWidth: 1, borderColor: tone === "neutral" ? styles.c.border : color, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 1 }}>
-      <Text style={{ color, fontSize: 12 }}>{text}</Text>
+    <View style={[styles.row, { gap: 5 }]}>
+      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
+      <Text style={{ color, fontSize: 12, fontWeight: "500" }}>{text}</Text>
+    </View>
+  );
+}
+
+// The line under a title: facts as quiet text joined by "·", then signals [ATT-05].
+export function Meta({ facts, chips }: { facts: string[]; chips: Chip[] }) {
+  const styles = useStyles();
+  const text = [...facts, ...chips.filter((chip) => chip.tone === "neutral").map((chip) => chip.text)];
+  const signals = chips.filter((chip) => chip.tone !== "neutral");
+  return (
+    <View style={[styles.wrap, { columnGap: 10, rowGap: 4 }]}>
+      {text.length ? <Text style={styles.muted}>{text.join(" · ")}</Text> : null}
+      {signals.map((chip) => (
+        <Signal key={chip.text} {...chip} />
+      ))}
     </View>
   );
 }
@@ -69,49 +89,89 @@ export function Avatar({ url, bot, size = 18 }: { url?: string; bot?: boolean; s
   return <Image source={{ uri: url }} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: styles.c.surface2 }} />;
 }
 
-export function Button({ label, icon, onPress, primary, disabled }: { label?: string; icon?: IconName; onPress: () => void; primary?: boolean; disabled?: boolean }) {
-  const styles = useStyles();
+// ghost: no background until hovered or pressed, for secondary icons on every row.
+type Variant = "calm" | "solid" | "plain" | "ghost";
+
+function useHover() {
   const [hovered, setHovered] = useState(false);
-  const color = primary ? styles.c.accentForeground : styles.c.foreground;
+  return { hovered, hover: { onHoverIn: () => setHovered(true), onHoverOut: () => setHovered(false) } };
+}
+
+// Calm by default: accent text on a subtle surface. Solid accent is for confirmations.
+export function Button({
+  label,
+  icon,
+  onPress,
+  variant = "plain",
+  disabled,
+  accessibilityLabel,
+}: {
+  label?: string;
+  icon?: IconName;
+  onPress: () => void;
+  variant?: Variant;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+}) {
+  const styles = useStyles();
+  const { hovered, hover } = useHover();
+  const { c } = styles;
+  const color = variant === "solid" ? c.accentForeground : variant === "calm" ? c.accent : variant === "ghost" ? c.foregroundMuted : c.foreground;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label ?? icon}
+      accessibilityLabel={accessibilityLabel ?? label ?? icon}
       disabled={disabled}
       onPress={onPress}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
+      {...hover}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        paddingVertical: 6,
-        paddingHorizontal: label ? 11 : 7,
+        height: 30,
+        paddingHorizontal: label ? 11 : 8,
         borderRadius: 8,
-        backgroundColor: primary ? styles.c.accent : hovered || pressed ? styles.c.border : styles.c.surface2,
-        opacity: disabled ? 0.5 : pressed && primary ? 0.85 : 1,
+        backgroundColor: variant === "solid" ? c.accent : hovered || (pressed && variant === "ghost") ? c.border : variant === "ghost" ? "transparent" : c.surface2,
+        opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
       })}
     >
       {icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
-      {label ? <Text style={{ color, fontSize: 13, fontWeight: "500" }}>{label}</Text> : null}
+      {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
     </Pressable>
   );
 }
 
-export function SectionHeader({ icon, title, count }: { icon: IconName; title: string; count: number }) {
-  const styles = useStyles();
+// The primary action, with ▾ for its options [SES-02].
+export function SplitButton({ label, icon, onPress, onOptions }: { label: string; icon: IconName; onPress: () => void; onOptions?: () => void }) {
+  const { c } = useStyles();
+  if (!onOptions) return <Button label={label} icon={icon} variant="calm" onPress={onPress} />;
   return (
-    <View style={[styles.row, { marginBottom: 8 }]}>
-      <TablerIcon name={icon} size={15} />
-      <Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>
-      <View style={styles.badge}>
-        <Text style={[styles.muted, { fontSize: 11 }]}>{count}</Text>
+    <View style={{ flexDirection: "row", gap: 1 }}>
+      <View style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0, overflow: "hidden", borderRadius: 8 }}>
+        <Button label={label} icon={icon} variant="calm" onPress={onPress} />
+      </View>
+      <View style={{ overflow: "hidden", borderRadius: 8, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeftWidth: 1, borderLeftColor: c.surface1 }}>
+        <Button icon="chevronDown" variant="calm" accessibilityLabel={`${label} options`} onPress={onOptions} />
       </View>
     </View>
   );
 }
 
-// Choice chips for options and filters.
+// Sentence case, with the count as quiet text.
+export function SectionHeader({ icon, title, count }: { icon: IconName; title: string; count: number }) {
+  const styles = useStyles();
+  return (
+    <View style={[styles.row, { marginBottom: 10 }]}>
+      <TablerIcon name={icon} size={15} />
+      <Text style={{ color: styles.c.foreground, fontSize: 13, fontWeight: "600" }}>
+        {title}
+        <Text style={{ color: styles.c.foregroundMuted, fontWeight: "400" }}> · {count}</Text>
+      </Text>
+    </View>
+  );
+}
+
+// Choice chips for options and filters: the only pills, because they're tappable.
 export function Toggle({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   const { c } = useStyles();
   return (

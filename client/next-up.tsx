@@ -1,11 +1,11 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { InboxConfig } from "../shared/config";
 import { ago } from "../shared/format";
 import type { AgentSummary, NextUpIssue } from "../shared/inbox";
 import type { IconName } from "./icons";
-import { Button, Chip, SectionHeader, TablerIcon, Toggle, useStyles } from "./ui";
+import { Button, Meta, SectionHeader, TablerIcon, Toggle, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
@@ -66,27 +66,23 @@ function IssueList({ issues, claim, agents, busy, onStart, onOpenAgent }: Omit<P
             <View style={{ paddingTop: 2 }}>
               <TablerIcon name={TYPE_ICONS[issue.type?.toLowerCase() ?? ""] ?? "issue"} size={18} color={issue.type === "Bug" ? styles.c.statusDanger : styles.c.foregroundMuted} />
             </View>
-            <Pressable style={styles.body} accessibilityRole="link" onPress={() => void openExternalUrl(issue.url)}>
+            <View style={styles.body}>
               <Text style={styles.title} numberOfLines={2}>
                 {issue.title}
               </Text>
-              <View style={styles.wrap}>
-                <Text style={styles.muted}>
-                  #{issue.number} · {ago(issue.createdAt)} old
-                </Text>
-                {[issue.type, issue.priority, issue.effort, issue.scope].filter(Boolean).map((value) => (
-                  <Chip key={value} text={value!} />
-                ))}
-              </View>
-            </Pressable>
-            {busy === issue.key ? (
-              <Text style={styles.muted}>working…</Text>
-            ) : agent ? (
-              <Button label="Continue" icon="play" primary onPress={() => onOpenAgent(agent.id)} />
-            ) : (
-              // Claim first so teammates see it's taken [NXT-05].
-              <Button label={styles.compact ? undefined : claim ? "Claim & start" : "Start"} icon={claim ? "claim" : "play"} primary onPress={() => onStart(issue, claim)} />
-            )}
+              <Meta facts={[`#${issue.number}`, `${ago(issue.createdAt)} old`, ...[issue.type, issue.priority, issue.effort, issue.scope].filter((v): v is string => !!v)]} chips={[]} />
+            </View>
+            <View style={styles.wrap}>
+              {busy === issue.key ? (
+                <Text style={styles.muted}>working…</Text>
+              ) : agent ? (
+                <Button label={styles.compact ? undefined : "Continue"} icon="play" variant="calm" onPress={() => onOpenAgent(agent.id)} />
+              ) : (
+                // Claim first so teammates see it's taken [NXT-05].
+                <Button label={styles.compact ? undefined : claim ? "Claim & start" : "Start"} icon={claim ? "claim" : "play"} variant="calm" onPress={() => onStart(issue, claim)} />
+              )}
+              <Button icon="github" variant="ghost" accessibilityLabel="Open on GitHub" onPress={() => void openExternalUrl(issue.url)} />
+            </View>
           </View>
         );
       })}

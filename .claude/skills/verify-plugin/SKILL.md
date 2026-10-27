@@ -31,10 +31,10 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | File | Shows |
    |---|---|
    | `<layout>-doing.png` | Doing tab, every section |
-   | `<layout>-doing-expanded.png` | Doing with "Retry webhook deliveries with backoff" expanded (Dismiss, GitHub, Options) |
-   | `<layout>-doing-options.png` | The same row's Options panel: workspace, profile, prompt |
+   | `<layout>-doing-expanded.png` | Doing with "Retry webhook deliveries with backoff" expanded (full quote, full stack, repo#number) |
+   | `<layout>-doing-options.png` | The Options modal from "Address comments ▾" (a bottom sheet on phones): workspace, profile, prompt. Uncropped, since it covers the page |
    | `<layout>-doing-merge-confirm.png` | The Merge confirmation on "Dialog focus returns to the trigger" |
-   | `<layout>-doing-dismissed.png` | After dismissing "Publish security.txt": the "dismissed · show them again" hint |
+   | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
    | `<layout>-history.png` | History by week, with Reviewed toggles |
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint |
