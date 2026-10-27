@@ -11,6 +11,8 @@ Tests cite requirement IDs from [requirements.yaml](requirements.yaml) in their 
 
 ## Preview the screens
 
+Agents: follow the `verify-plugin` skill in `.claude/skills/verify-plugin/`.
+
 ```bash
 npm run preview            # every layout
 npm run preview -- phone   # only names containing "phone"
