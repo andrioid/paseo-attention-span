@@ -5,8 +5,11 @@ import type { Target } from "../shared/inbox";
 type Paseo = ReturnType<typeof usePaseo>;
 
 // Labels tie an agent to the inbox item it works on [ATT-07, SES-03].
-export const LABEL = "github-inbox";
-export const ITEM_LABEL = "github-inbox-item";
+export const LABEL = "github-attention";
+export const ITEM_LABEL = "github-attention-item";
+// Sessions started before the plugin was renamed from "GitHub inbox".
+const OLD_LABEL = "github-inbox";
+const OLD_ITEM_LABEL = "github-inbox-item";
 
 export interface AgentSummary {
   id: string;
@@ -18,10 +21,10 @@ export interface AgentSummary {
 
 // Agents started from the inbox, keyed by item.
 export async function inboxAgents(paseo: Paseo): Promise<Record<string, AgentSummary>> {
-  const { entries } = await paseo.agents.list({ filter: { labels: { [LABEL]: "1" } } });
+  const lists = await Promise.all([LABEL, OLD_LABEL].map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } })));
   const byItem: Record<string, AgentSummary> = {};
-  for (const { agent } of entries) {
-    const key = agent.labels?.[ITEM_LABEL];
+  for (const { agent } of lists.flatMap((list) => list.entries)) {
+    const key = agent.labels?.[ITEM_LABEL] ?? agent.labels?.[OLD_ITEM_LABEL];
     if (!key || agent.archivedAt) continue;
     byItem[key] = {
       id: agent.id,

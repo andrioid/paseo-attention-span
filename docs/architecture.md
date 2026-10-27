@@ -27,7 +27,7 @@ flowchart LR
   - Client: one screen and a sidebar header item. React Native primitives only, so it works on phone and desktop [REACH-01].
   - Server: RPC handlers for fetching and for GitHub actions.
 - **GitHub access** goes through the host's existing `gh` login. The plugin stores no token [SEC-01].
-- **Local files** live in `~/.config/paseo-github-inbox/`:
+- **Local files** live in `~/.config/paseo-github-attention/`:
   - `config.json`, edited by hand:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else

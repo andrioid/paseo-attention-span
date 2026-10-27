@@ -1,6 +1,6 @@
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
-// Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_INBOX_FIXTURE=1).
+// Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_ATTENTION_FIXTURE=1).
 
 export const REPO = "acme/shop";
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };

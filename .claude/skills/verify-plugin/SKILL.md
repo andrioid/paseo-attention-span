@@ -58,7 +58,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 
 - **Mounts:** Paseo from the host install, read-only (`readlink -f $(command -v paseo)`, three levels up). The repo, read-only. `preview/out`, writable.
 - **Not available inside:** `~/.paseo`, `gh`, the host loopback. Relay is off. The only outside traffic is GitHub avatar images.
-- **Fixture mode:** `PASEO_GITHUB_INBOX_FIXTURE=1` makes the server use `fixture()` instead of GitHub. `runGh` refuses to run, so Merge/Claim/Fix context fail on purpose. The shooter never presses them.
+- **Fixture mode:** `PASEO_GITHUB_ATTENTION_FIXTURE=1` makes the server use `fixture()` instead of GitHub. `runGh` refuses to run, so Merge/Claim/Fix context fail on purpose. The shooter never presses them.
 
 ## Keeping it useful
 

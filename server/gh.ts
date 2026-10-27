@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 // Everything goes through the host's existing gh login; no token is stored [SEC-01].
 
 // Previews run on made-up data and never reach GitHub.
-export const FIXTURE = process.env.PASEO_GITHUB_INBOX_FIXTURE === "1";
+export const FIXTURE = process.env.PASEO_GITHUB_ATTENTION_FIXTURE === "1";
 
 export function runGh(args: string[], input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   if (FIXTURE) return Promise.reject(new Error("GitHub is off in fixture mode."));

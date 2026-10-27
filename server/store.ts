@@ -5,8 +5,8 @@ import { z } from "zod";
 import { InboxConfig } from "../shared/config";
 import type { Inbox, SectionId } from "../shared/inbox";
 
-// Local files in ~/.config/paseo-github-inbox/ [PRIV-01].
-export const DIR = process.env.PASEO_GITHUB_INBOX_DIR ?? join(homedir(), ".config", "paseo-github-inbox");
+// Local files in ~/.config/paseo-github-attention/ [PRIV-01].
+export const DIR = process.env.PASEO_GITHUB_ATTENTION_DIR ?? join(homedir(), ".config", "paseo-github-attention");
 const CONFIG = join(DIR, "config.json");
 const STATE = join(DIR, "state.json");
 

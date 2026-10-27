@@ -14,7 +14,7 @@ const RankedField = z.object({
   order: z.array(z.string()).optional(),
 });
 
-// ~/.config/paseo-github-inbox/config.json, edited by hand [SRC-01].
+// ~/.config/paseo-github-attention/config.json, edited by hand [SRC-01].
 export const InboxConfig = z.object({
   // GitHub orgs and "owner/name" repos to cover. Both empty means everything involving me.
   orgs: z.array(z.string()).default([]),

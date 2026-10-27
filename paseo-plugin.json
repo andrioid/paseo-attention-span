@@ -1,6 +1,6 @@
 {
-  "id": "github-inbox",
-  "name": "GitHub inbox",
+  "id": "github-attention",
+  "name": "GitHub attention",
   "description": "Open GitHub issues and pull requests that are waiting on you, grouped by why, with one-tap Paseo sessions.",
   "media": [],
   "requirements": {

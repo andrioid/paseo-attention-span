@@ -52,7 +52,7 @@ const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: "next", label: "Next up", icon: "nextUp" },
 ];
 
-const AGENTS_QUERY_KEY = ["github-inbox", "agents"] as const;
+const AGENTS_QUERY_KEY = ["github-attention", "agents"] as const;
 type FetchContext = (input: RpcInput<typeof rpc.sessionContext>) => Promise<RpcOutput<typeof rpc.sessionContext>>;
 
 function agentTag(agent: AgentSummary): { text: string; tone: "good" | "bad" | "warn" | "neutral" } {
@@ -482,7 +482,7 @@ function SessionOptions({ item, kind, actions }: { item: Item; kind: SessionKind
   const toast = useToast();
   const { target } = item;
   const options = useQuery({
-    queryKey: ["github-inbox", "options", item.key, kind],
+    queryKey: ["github-attention", "options", item.key, kind],
     queryFn: async () => {
       const [{ context }, profiles, project, defaults] = await Promise.all([
         actions.fetchContext({ kind, target }),
