@@ -1,4 +1,5 @@
 import type { AgentSummary, ItemDetails, Target } from "../shared/inbox";
+import { excerpt } from "./markdown";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_ATTENTION_FIXTURE=1).
@@ -152,12 +153,16 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     reviews: [pr(120, { title: "Add a status page", author: bob }), pr(121, { title: "Rework the cart totals", author: alice })],
     mentions: [
       mention(95, [comment(bob, "@me should reminders go out on weekends too, or only on workdays?", 0.5)], { title: "Customers forget unpaid invoices", author: bob }),
-      mention(121, [comment(alice, "@me could you look at the rounding in totals.ts first? That's the risky part.", 0.2)], { __typename: "PullRequest", title: "Rework the cart totals" }),
+      mention(121, [comment(alice, "@me could you look at the rounding in `totals.ts` first? That's the **risky** part.", 0.2)], { __typename: "PullRequest", title: "Rework the cart totals" }),
       mention(
         130,
         [
           comment(alice, "Can we make it easy to get in touch? @me do you see anything harmful here?", 3),
-          comment(bob, "@me also, should the contact be the shared security@ inbox or a person? I'd rather not put a personal address in a public file.", 2),
+          comment(
+            bob,
+            "@me also, should the contact be the shared `security@` inbox or a person? I'd rather not put a personal address in a public file.\n\n- shared inbox: nobody owns it\n- a person: leaves with them\n\nSee [RFC 9116](https://www.rfc-editor.org/rfc/rfc9116).",
+            2,
+          ),
         ],
         { __typename: "PullRequest", title: "Publish security.txt" },
       ),
@@ -202,14 +207,30 @@ export const FIXTURE_AGENTS: Record<string, AgentSummary> = {
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
 
+// Descriptions as GitHub has them: a template comment, Markdown, HTML.
+const PR_BODY = `<!-- What does this change, and why? -->
+Retries failed deliveries with **exponential backoff**, up to 5 attempts. Each attempt is logged, so support can see what happened ([runbook](https://example.com/runbook)).
+
+- \`retry.ts\` holds the policy
+- gives up after ~30 minutes
+
+<details><summary>Test plan</summary>
+
+Ran the webhook suite against a flaky endpoint.
+</details>
+
+${"Longer notes on the rollout follow. ".repeat(12)}`;
+const ISSUE_BODY = `When a shop has more than a few thousand orders, the export runs past the **30 second** limit and the download never starts.
+
+Seen by two customers this week:
+1. Nordic Bikes
+2. Hansen & Søn`;
+
 // What a sheet shows, made up: a description, a size, the linked issue, and failing checks for Rerun.
 export function fixtureDetails(subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean): ItemDetails {
   const pr = target?.kind === "pr" ? target : undefined;
   return {
-    excerpt:
-      subject.kind === "issue"
-        ? "When a shop has more than a few thousand orders, the export runs past the 30 second limit and the download never starts. Seen by two customers this week."
-        : "Retries failed deliveries with exponential backoff, up to 5 attempts, and logs each attempt so support can see what happened.",
+    excerpt: excerpt(subject.kind === "issue" ? ISSUE_BODY : PR_BODY),
     size: pr ? { additions: 84 + (pr.number % 7) * 13, deletions: 12 + (pr.number % 5), files: 2 + (pr.number % 4) } : undefined,
     linked: subject.number === 120 ? [{ number: 200, title: "Customers can't tell when the shop is down", url: `https://github.com/${REPO}/issues/200`, state: "OPEN" }] : [],
     failing: checks && pr ? [{ pr: pr.number, checks: [{ name: "lint", rerunnable: true }, { name: "e2e (chromium)", rerunnable: true }], runs: [{ id: 9001, attempt: 1 }] }] : [],

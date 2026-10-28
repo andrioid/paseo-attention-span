@@ -233,6 +233,13 @@ describe("mentions", () => {
     expect(item.person?.snippet).toContain("@me can you check");
   });
 
+  it("MEN-01, MEN-07: the quote is plain text; the 👍 picker keeps the comment's Markdown", () => {
+    const body = "> @me earlier\nhey @me can you check [the login flow](https://x/login)? It's **broken**.";
+    const [item] = run({ mentions: [mention(80, [comment(alice, body, 3)])] }).items;
+    expect(item.person?.snippet).toBe("hey @me can you check the login flow? It's broken.");
+    expect(item.person?.comments?.[0].body).toBe(body);
+  });
+
   it("MEN-02: replying, reacting or submitting a review clears a mention", () => {
     const replied = mention(80, [comment(alice, "@me ?", 3), comment(me, "done", 2)]);
     const reacted = mention(81, [comment(alice, "@me ?", 3, { reactionGroups: [{ viewerHasReacted: true }] })]);

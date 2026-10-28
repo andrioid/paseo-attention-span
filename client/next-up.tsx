@@ -145,10 +145,10 @@ function IssueSheet({
       top={
         <>
           <Meta facts={[`${issue.repo}#${issue.number}`, ...facts(issue).slice(1)]} chips={[]} />
-          <DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel="PR" />
         </>
       }
       entries={entries}
+      bottom={<DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel="PR" />}
     />
   );
 }

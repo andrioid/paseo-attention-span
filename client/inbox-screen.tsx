@@ -1,6 +1,6 @@
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -12,7 +12,7 @@ import * as rpc from "../shared/rpc";
 import { useInbox } from "./data";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
-import { ActionSheet, DetailLines, type SheetEntry, sizeText } from "./sheet";
+import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, inboxAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
@@ -486,6 +486,10 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
     else if (action === "acknowledge") setSheet("acknowledge");
     else actions.act(item, action);
   }
+  const handlers: SheetHandlers = { onPerform: perform, onOptions: (kind) => setSheet({ options: kind }), onClose: () => setSheet(null) };
+  // A menu with one action is a wasted tap: show that action instead of ⋯. The card still opens the sheet [ATT-06].
+  const entries = sheetEntries(item, agent, actions, handlers);
+  const only = entries.length === 1 ? entries[0] : undefined;
 
   const buttons = (
     <View style={styles.wrap}>
@@ -496,7 +500,11 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       ) : main ? (
         <Button label={actionLabel(main, item)} icon={ACTION_ICONS[main]} variant="calm" onPress={() => perform(main)} />
       ) : null}
-      <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={open} />
+      {only ? (
+        <Button icon={only.icon} variant="ghost" accessibilityLabel={only.label} onPress={only.onPress} />
+      ) : (
+        <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={open} />
+      )}
     </View>
   );
 
@@ -536,7 +544,7 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
         {styles.compact ? null : buttons}
       </View>
       {sheet === "item" ? (
-        <ItemSheet item={item} agent={agent} actions={actions} onPerform={perform} onOptions={(kind) => setSheet({ options: kind })} onClose={() => setSheet(null)} />
+        <ItemSheet item={item} agent={agent} actions={actions} {...handlers} />
       ) : null}
       {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
       {sheet && typeof sheet === "object" ? <SessionOptions item={item} kind={sheet.options} actions={actions} onClose={() => setSheet(null)} /> : null}
@@ -544,29 +552,46 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
   );
 }
 
-// Details on top, then every action with what it will do [ATT-06]. Details are fetched now, not in every refresh [GH-01].
-function ItemSheet({
-  item,
-  agent,
-  actions,
-  onPerform,
-  onOptions,
-  onClose,
-}: {
-  item: Item;
-  agent?: AgentSummary;
-  actions: Actions;
+interface SheetHandlers {
   onPerform: (action: ActionId) => void;
   onOptions: (kind: SessionKind) => void;
   onClose: () => void;
-}) {
-  const styles = useStyles();
+}
+
+// What the card already knows on top, then every action, then what's fetched when it opens, so nothing jumps as it loads [ATT-06, GH-01].
+function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: AgentSummary; actions: Actions } & SheetHandlers) {
   const checks = item.actions.includes("rerun");
   const details = useQuery({
     queryKey: ["github-attention", "details", item.key, checks],
     queryFn: () => actions.fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
     staleTime: 60_000,
   });
+  const meta = [`${item.repo}#${item.number}`, ...(item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [])];
+  return (
+    <ActionSheet
+      title={item.title}
+      onClose={handlers.onClose}
+      top={
+        <>
+          <Meta facts={meta} chips={item.chips} />
+          {item.person ? <PersonQuote person={item.person} expanded /> : null}
+          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} /> : null}
+        </>
+      }
+      entries={sheetEntries(item, agent, actions, handlers, details)}
+      bottom={<DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />}
+    />
+  );
+}
+
+// Everything an item's sheet offers, each saying what it will do [ATT-06]. Rerun's line needs the fetched checks.
+function sheetEntries(
+  item: Item,
+  agent: AgentSummary | undefined,
+  actions: Actions,
+  { onPerform, onOptions, onClose }: SheetHandlers,
+  details?: { data?: { failing: FailingChecks[] }; isLoading: boolean },
+): SheetEntry[] {
   const inDoing = !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed";
   const close = (then: () => void) => () => (onClose(), then());
 
@@ -583,7 +608,7 @@ function ItemSheet({
       entries.push({ key: action, icon: "agent", label, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: () => onPerform(action) });
       entries.push({ key: `${action}-options`, icon: "agent", label: `${label} with options…`, detail: "Choose the workspace, agent profile and prompt first", onPress: () => onOptions(kind) });
     } else if (action === "rerun") {
-      const { detail, runIds } = rerunEntry(details.data?.failing, details.isLoading);
+      const { detail, runIds } = rerunEntry(details?.data?.failing, details?.isLoading ?? true);
       entries.push({ key: action, icon: ACTION_ICONS.rerun, label, detail, disabled: runIds.length === 0, onPress: close(() => actions.rerun(item, runIds)) });
     } else {
       entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), onPress: () => onPerform(action) });
@@ -592,27 +617,7 @@ function ItemSheet({
   // Anything the inbox doesn't cover [ATT-12].
   entries.push({ key: "github", icon: "github", label: "Open on GitHub", detail: `${item.repo}#${item.number}`, onPress: close(() => void openExternalUrl(item.url)) });
   if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", onPress: close(() => actions.dismiss(item)) });
-
-  const meta = [
-    `${item.repo}#${item.number}`,
-    ...(item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : []),
-    ...(details.data?.size ? [sizeText(details.data.size)!] : []),
-  ];
-  return (
-    <ActionSheet
-      title={item.title}
-      onClose={onClose}
-      top={
-        <>
-          <Meta facts={meta} chips={item.chips} />
-          {item.person ? <PersonQuote person={item.person} expanded /> : null}
-          <DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />
-          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} /> : null}
-        </>
-      }
-      entries={entries}
-    />
-  );
+  return entries;
 }
 
 // Pick which waiting comments get a 👍, after reading them in full; all are picked to start [MEN-07].
@@ -640,7 +645,7 @@ function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (id
                 <Text style={{ color: styles.c.foreground, fontSize: 12, fontWeight: "600" }}>
                   {c.author} <Text style={[styles.muted, { fontWeight: "400" }]}>· {ago(c.createdAt)}</Text>
                 </Text>
-                <Text style={{ color: styles.c.foreground, fontSize: 13, lineHeight: 19 }}>{c.body}</Text>
+                <Markdown>{c.body}</Markdown>
               </View>
             </Pressable>
           ))}

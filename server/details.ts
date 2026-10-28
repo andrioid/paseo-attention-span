@@ -1,5 +1,6 @@
 import type { FailingChecks, ItemDetails, Target } from "../shared/inbox";
 import { graphql, runGh } from "./gh";
+import { excerpt } from "./markdown";
 
 // What an item's sheet shows beyond the card, fetched when it opens [ATT-06, GH-01].
 
@@ -28,21 +29,6 @@ const repository = (repo: string) => {
   const [owner, name] = repo.split("/");
   return `repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)})`;
 };
-
-// The description's opening, without HTML comments (PR templates) or images.
-export function excerpt(body: string | undefined, max = 400): string | null {
-  const text = (body ?? "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/<img[^>]*>/gi, "")
-    .replace(/\r/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  if (!text) return null;
-  if (text.length <= max) return text;
-  const cut = text.slice(0, max);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 40)).trimEnd()}…`;
-}
 
 // One GraphQL request, plus one REST call per failing workflow run for its attempt number.
 export async function itemDetails(subject: Subject, target: Target | undefined, checks: boolean): Promise<ItemDetails> {

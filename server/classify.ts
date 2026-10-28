@@ -2,6 +2,7 @@ import type { InboxConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import { type ActionId, type Chip, type Inbox, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/inbox";
 import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode } from "./github-types";
+import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
 
 // Turns one refresh worth of GitHub data into the inbox. Pure, so every rule is testable.
@@ -389,8 +390,6 @@ function replyActions(waiting: Person | undefined): ActionId[] {
   return waiting?.comments?.length ? ["reply", "acknowledge"] : ["reply"];
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
-
 function mentionsMe(body: string | undefined, me: string): number {
   if (!body) return -1;
   // Ignore quoted replies; a team mention (@org/team) never matches a login [MEN-04].
@@ -433,15 +432,17 @@ export function waitingMention(node: MentionNode, me: string): Person | null {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const last = waiting.at(-1);
   if (!last?.author) return null;
+  // The quote is cut around the mention, so it's plain text; the 👍 picker renders whole comments as Markdown.
+  const plain = plainText(last.body ?? "");
   return {
     login: last.author.login,
     avatarUrl: last.author.avatarUrl,
     bot: waiting.every((c) => c.author?.__typename === "Bot"),
     since: waiting[0].createdAt,
-    snippet: snippetAround(last.body ?? "", mentionsMe(last.body, me)),
+    snippet: snippetAround(plain, Math.max(0, mentionsMe(plain, me))),
     url: last.url ?? node.url,
     comments: waiting
       .filter((c) => c.id)
-      .map((c) => ({ id: c.id!, author: c.author!.login, body: clip((c.body ?? "").trim(), 4000), createdAt: c.createdAt, url: c.url })),
+      .map((c) => ({ id: c.id!, author: c.author!.login, body: excerpt(c.body, 4000) ?? "", createdAt: c.createdAt, url: c.url })),
   };
 }

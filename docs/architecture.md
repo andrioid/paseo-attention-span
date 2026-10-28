@@ -74,7 +74,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
 - **One item per issue** [ATT-03]: PRs are grouped under the issues they close (`closingIssuesReferences`, works across repos). A PR without a linked issue is its own item.
 - **One item per stack** [ATT-04]: a stack is followed through base/head branch names. Its section is decided by the bottom PR; the PRs above it are listed beneath.
-- **Mentions** [MEN-01..06]: a thread counts when a person @-mentioned me after my last comment, review or reaction there. Team mentions are ignored. A bot counts only when it opened a thread I need to resolve, and is marked with 🤖.
+- **Mentions** [MEN-01..06]: a thread counts when a person @-mentioned me after my last comment, review or reaction there. Team mentions are ignored. A bot counts only when it opened a thread I need to resolve, and is marked with 🤖. The quote on a card is cut around the mention, so it's shown as plain text: links keep their text, Markdown marks and quoted replies go.
 - **Handed over** [PRS-08]: my PRs assigned to someone else, and not to me, are left out. Mentions of me on them still count.
 - **Dismiss** [ATT-08] hides an item until someone other than me comments, reviews or pushes, or its reason changes. My own actions and CI reruns don't bring it back.
 - **Behind base** [UPS-07] only matters when:
@@ -90,17 +90,18 @@ A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's or
 
 ## Actions
 
-A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet**, a bottom sheet on phones and a dialog on desktop [ATT-06]:
+A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet**, a bottom sheet on phones and a dialog on desktop [ATT-06]. When the sheet would hold a single action, as on Waiting and History cards where it's only Open on GitHub, the card shows that action instead of ⋯; tapping the card still opens the sheet. Top to bottom, the sheet has:
 
-- **Details on top:** repo#number, the PR's size, the opening of the description, the linked issue or PRs, the full quote and the full stack. They are fetched when the sheet opens, in one GraphQL request, so the refresh stays as light as before [GH-01].
-- **Every action below,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open on GitHub [ATT-12] and Dismiss [ATT-08].
+1. **What the card knows:** repo#number, its chips, the full quote and the full stack.
+2. **Every action,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open on GitHub [ATT-12] and Dismiss [ATT-08].
+3. **What's fetched when it opens,** in one GraphQL request, so the refresh stays as light as before [GH-01]: the PR's size, the opening of the description and the linked issue or PRs. It comes last so the actions don't move when it arrives. The description is rendered as Markdown with Paseo's renderer. The server cuts it after the last whole paragraph, list or code block within about 600 characters, drops template comments and images, and keeps only the text of other HTML such as `<details>`.
 
 An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every action that starts or continues an agent session, marked *(agent)* below; the rest change GitHub right away [ATT-13]. GitHub actions don't ask first, apart from Merge and Close. Instead an Undo row appears, where GitHub can take it back, until I switch tabs [ATT-14].
 
 | Action | Shown when | Does |
 |---|---|---|
 | Reply ↗ | Mention waiting | Opens the comment on GitHub [ATT-12] |
-| Acknowledge | Mention waiting | Lists every waiting comment in full, all ticked; 👍 on the ones I keep ticked (`addReaction`), which clears them [MEN-07]. Undo removes them. |
+| Acknowledge | Mention waiting | Lists every waiting comment in full, rendered as Markdown, all ticked; 👍 on the ones I keep ticked (`addReaction`), which clears them [MEN-07]. Undo removes them. |
 | Review *(agent)* | Review requested | Session in a PR checkout using the review profile [SES-01] |
 | Fix CI / Address comments *(agent)* | CI failing / changes requested | Session with the failing log or unresolved threads in the prompt [SES-04] |
 | Rerun failed jobs | CI failing, in the sheet | `gh run rerun --failed` for each failing GitHub Actions run of the PR, or of every PR in its stack. The sheet names the failed checks and how often they were rerun (`gh api …/runs/<id>`), fetched when it opens. Other status checks can't be rerun from here [PRS-09]. |

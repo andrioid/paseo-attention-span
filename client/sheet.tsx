@@ -1,13 +1,13 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { Modal } from "@getpaseo/plugin/client/ui";
+import { Markdown, Modal } from "@getpaseo/plugin/client/ui";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemDetails } from "../shared/inbox";
 import type { IconName } from "./icons";
 import { KeepStyles, TablerIcon, useHover, useStyles } from "./ui";
 
-// Tapping a card opens its sheet: details on top, then every action, each saying what it will do [ATT-06].
-// A bottom sheet on phones, a dialog on desktop.
+// Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
+// Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
 
 export interface SheetEntry {
   key: string;
@@ -18,7 +18,7 @@ export interface SheetEntry {
   onPress: () => void;
 }
 
-export function ActionSheet({ title, top, entries, onClose }: { title: string; top: ReactNode; entries: SheetEntry[]; onClose: () => void }) {
+export function ActionSheet({ title, top, entries, bottom, onClose }: { title: string; top: ReactNode; entries: SheetEntry[]; bottom: ReactNode; onClose: () => void }) {
   const styles = useStyles();
   return (
     <Modal title={title} open onOpenChange={(open) => (open ? null : onClose())}>
@@ -30,6 +30,7 @@ export function ActionSheet({ title, top, entries, onClose }: { title: string; t
               <Entry key={entry.key} entry={entry} first={index === 0} />
             ))}
           </View>
+          <View style={{ gap: 10 }}>{bottom}</View>
         </KeepStyles>
       </Modal.Content>
     </Modal>
@@ -64,17 +65,17 @@ function Entry({ entry, first }: { entry: SheetEntry; first: boolean }) {
   );
 }
 
-// The description's opening and the linked issues or PRs, once fetched.
+// The PR's size, the description's opening and the linked issues or PRs, once fetched.
 export function DetailLines({ details, loading, error, linkedLabel }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string }) {
   const styles = useStyles();
   if (loading) return <Text style={styles.muted}>Loading details…</Text>;
   if (!details) return error ? <Text style={styles.muted}>Couldn't load details: {(error as Error).message}</Text> : null;
   return (
     <>
+      {details.size ? <Text style={styles.muted}>{sizeText(details.size)}</Text> : null}
+      {/* Paseo's renderer: its theme and link handling. The server keeps the excerpt short, in whole blocks. */}
       {details.excerpt ? (
-        <Text style={{ color: styles.c.foreground, fontSize: 13, lineHeight: 19 }} numberOfLines={8}>
-          {details.excerpt}
-        </Text>
+        <Markdown>{details.excerpt}</Markdown>
       ) : (
         <Text style={styles.muted}>No description.</Text>
       )}
@@ -89,4 +90,4 @@ export function DetailLines({ details, loading, error, linkedLabel }: { details?
   );
 }
 
-export const sizeText = (size: ItemDetails["size"]) => (size ? `+${size.additions} −${size.deletions} · ${size.files} file${size.files === 1 ? "" : "s"}` : null);
+const sizeText = (size: ItemDetails["size"]) => (size ? `+${size.additions} −${size.deletions} · ${size.files} file${size.files === 1 ? "" : "s"}` : null);
