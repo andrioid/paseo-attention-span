@@ -2,7 +2,11 @@
   "id": "attention-span",
   "name": "Attention Span",
   "description": "For when your attention is spread thin. The issues and pull requests waiting on you, grouped by why, with one-tap Paseo sessions. Supports GitHub today.",
-  "media": [],
+  "media": [
+    "docs/screenshots/desktop-dark-doing.png",
+    "docs/screenshots/phone-dark-doing.png",
+    "docs/screenshots/desktop-dark-next-up.png"
+  ],
   "requirements": {
     "paseo": ">=0.13.0"
   }

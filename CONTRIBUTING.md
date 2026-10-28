@@ -32,3 +32,9 @@ The previews are react-native-web. Check the iOS and Android apps by hand now an
 ## Install on the daemon
 
 Only when the owner asks: `paseo plugin install <path>`, or `paseo plugin reload attention-span` after changes.
+
+## Listing
+
+The registry listing is [OVERVIEW.md](OVERVIEW.md) plus the `media` in `paseo-plugin.json`, which are screenshots from `docs/screenshots/`; the first is the card thumbnail. Keep the overview in step with what the plugin does. It must not contain install commands.
+
+The plugin has no icon yet. When there is one, put the PNG at `assets/icon.png`, add `"icon": "assets/icon.png"` to `paseo-plugin.json`, and add `assets/` to `files` in `package.json`.

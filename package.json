@@ -10,7 +10,10 @@
     "index.server.ts",
     "client/",
     "server/",
-    "shared/"
+    "shared/",
+    "docs/screenshots/desktop-dark-doing.png",
+    "docs/screenshots/phone-dark-doing.png",
+    "docs/screenshots/desktop-dark-next-up.png"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
