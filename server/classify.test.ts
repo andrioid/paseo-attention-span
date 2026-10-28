@@ -33,9 +33,9 @@ describe("doing", () => {
     expect(item).toMatchObject({ section: "review", actions: ["review"], person: { login: "alice", avatarUrl: alice.avatarUrl } });
   });
 
-  it("PRS-01: lists my PRs with failing checks with a Fix action", () => {
+  it("PRS-01, PRS-09: lists my PRs with failing checks with Fix, and Rerun beside it", () => {
     const [item] = run({ mine: [pr(2, {}, "ERROR")] }).items;
-    expect(item).toMatchObject({ section: "ci", actions: ["fix"] });
+    expect(item).toMatchObject({ section: "ci", actions: ["fix", "rerun"] });
     expect(item.chips).toContainEqual({ text: "CI failing", tone: "bad" });
   });
 
@@ -56,6 +56,18 @@ describe("ready to merge and behind base", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { [key(1)]: 0 }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["merge"], target: { mergeMethod: "squash" } });
     expect(chips(item)).toEqual(["approved", "CI passed"]);
+  });
+
+  it("PRS-10: an approved PR waiting on CI offers Auto-merge where the repo allows it", () => {
+    const allowed = { nameWithOwner: REPO, autoMergeAllowed: true };
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", repository: allowed }, "PENDING")] }).items[0]).toMatchObject({ section: "ready", actions: ["automerge"] });
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }).items[0]).toMatchObject({ section: "ready", actions: [] });
+  });
+
+  it("PRS-10: with auto-merge on, a PR waiting on CI waits in CI running", () => {
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", autoMergeRequest: { enabledAt: daysAgo(0.1) } }, "PENDING")] }).items;
+    expect(item.section).toBe("wait_ci");
+    expect(chips(item)).toContain("auto-merge on");
   });
 
   it("UPS-03, PRS-04: a ready PR behind its base offers Update instead of Merge", () => {
@@ -131,6 +143,13 @@ describe("drafts", () => {
     expect(run({ mentions: [mention(90, [comment(alice, "wip", 1)], { __typename: "PullRequest" })] }).items).toEqual([]);
   });
 
+  it("PRS-11: a healthy draft offers Ready for review; a failing one, Fix and Rerun", () => {
+    expect(run({ mine: [pr(1, { isDraft: true })] }).items[0].actions).toEqual(["ready"]);
+    expect(run({ mine: [pr(1, { isDraft: true }, "PENDING")] }).items[0].actions).toEqual(["ready"]);
+    expect(run({ mine: [pr(1, { isDraft: true }, "FAILURE")] }).items[0].actions).toEqual(["fix", "rerun"]);
+    expect(run({ mine: [pr(1, { isDraft: true, mergeable: "CONFLICTING" })] }).items[0].actions).toEqual(["rebase"]);
+  });
+
   it("PRS-07: a draft untouched for 30 days offers Refresh and Close", () => {
     const [item] = run({ mine: [pr(1, { isDraft: true, updatedAt: daysAgo(60), mergeable: "CONFLICTING" })] }).items;
     expect(item).toMatchObject({ draft: true, actions: ["refresh", "close"] });
@@ -159,7 +178,7 @@ describe("issues", () => {
       assigned: [pickable(50, {})],
     });
     expect(inbox.items).toHaveLength(1);
-    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "ci", actions: ["fix"], target: { number: 1 } });
+    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "ci", actions: ["fix", "rerun"], target: { number: 1 } });
     expect(inbox.items[0].children.map((child) => child.number)).toEqual([1, 2]);
     expect(inbox.assigned).toEqual([]); // already in progress
   });
@@ -210,7 +229,7 @@ describe("history", () => {
 describe("mentions", () => {
   it("MEN-01: lists a thread where a person mentioned me and is waiting", () => {
     const [item] = run({ mentions: [mention(80, [comment(alice, "hey @me can you check the login flow?", 3)])] }).items;
-    expect(item).toMatchObject({ section: "reply", actions: ["reply"], person: { login: "alice", avatarUrl: alice.avatarUrl, bot: false } });
+    expect(item).toMatchObject({ section: "reply", actions: ["reply", "acknowledge"], person: { login: "alice", avatarUrl: alice.avatarUrl, bot: false } });
     expect(item.person?.snippet).toContain("@me can you check");
   });
 
@@ -247,7 +266,28 @@ describe("mentions", () => {
   it("MEN-01: a mention on my own PR makes it a reply", () => {
     const inbox = run({ mine: [pr(1, {}, "FAILURE")], mentions: [mention(1, [comment(alice, "@me why?", 1)], { __typename: "PullRequest" })] });
     expect(inbox.items).toHaveLength(1);
-    expect(inbox.items[0]).toMatchObject({ section: "reply", actions: ["reply"] });
+    expect(inbox.items[0]).toMatchObject({ section: "reply", actions: ["reply", "acknowledge"] });
+  });
+
+  it("MEN-07: offers 👍 for every waiting comment, including a description that mentions me", () => {
+    const node = mention(85, [comment(alice, "@me first", 2), comment(bob, "@me and this", 1)], { id: "I_85", body: "@me see below", author: bob, createdAt: daysAgo(3) });
+    const [item] = run({ mentions: [node] }).items;
+    expect(item.actions).toEqual(["reply", "acknowledge"]);
+    expect(item.person?.comments?.map((c) => [c.id, c.author])).toEqual([
+      ["I_85", "bob"],
+      [node.comments.nodes[0].id, "alice"],
+      [node.comments.nodes[1].id, "bob"],
+    ]);
+  });
+
+  it("MEN-02, MEN-07: a 👍 on the description clears it like one on a comment", () => {
+    const node = mention(86, [], { id: "I_86", body: "@me please look", reactionGroups: [{ viewerHasReacted: true }] });
+    expect(run({ mentions: [node] }).items).toEqual([]);
+  });
+
+  it("MEN-07: without comment ids there is nothing to react to, so only Reply", () => {
+    const [item] = run({ mentions: [mention(87, [comment(alice, "@me ?", 1, { id: undefined })])] }).items;
+    expect(item.actions).toEqual(["reply"]);
   });
 });
 

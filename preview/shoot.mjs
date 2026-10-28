@@ -59,12 +59,31 @@ for (const layout of layouts) {
       }
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
+      // A card's sheet sits over the whole page, so it's shot uncropped.
+      const openSheet = async (title) => {
+        await page.getByRole("button", { name: `${title}, more` }).first().click();
+        await page.getByText("Open on GitHub").last().waitFor({ timeout: 10000 });
+        await page.waitForTimeout(800); // details load
+      };
+      const closeSheet = async () => {
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(400);
+        if (await page.getByText("Open on GitHub").last().isVisible()) await page.getByRole("button", { name: /close/i }).last().click();
+        await page.waitForTimeout(300);
+      };
       await doing();
-      await page.getByText("Retry webhook deliveries with backoff").click();
-      await page.waitForTimeout(500);
-      await shot("doing-expanded");
-      await page.getByText("Retry webhook deliveries with backoff").first().click(); // collapse
-      await page.getByRole("button", { name: "Address comments options" }).first().click();
+      await openSheet("Show delivery dates on the order page");
+      await page.screenshot({ path: `/out/${prefix}-doing-sheet.png` });
+      await closeSheet();
+      await openSheet("Publish security.txt");
+      await page.getByRole("button", { name: "Acknowledge" }).last().click();
+      await page.getByText(/👍 2 comments/).waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `/out/${prefix}-doing-acknowledge.png` });
+      await page.getByRole("button", { name: "Cancel" }).last().click();
+      await page.waitForTimeout(300);
+      await openSheet("Harden the upload endpoint");
+      await page.getByRole("button", { name: "Address comments with options…" }).last().click();
       await page.getByText("Agent profile").waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
       await page.screenshot({ path: `/out/${prefix}-doing-options.png` }); // the modal sits over the whole page
@@ -78,13 +97,17 @@ for (const layout of layouts) {
       await page.waitForTimeout(800);
       await shot("history-reviewed");
       await page.getByRole("tab", { name: /Next up/ }).first().click();
+      await openSheet("Orders export times out for big shops");
+      await page.screenshot({ path: `/out/${prefix}-next-up-sheet.png` });
+      await closeSheet();
       await page.getByText("🔙 Backend", { exact: true }).click();
       await page.waitForTimeout(400);
       await shot("next-up-filtered");
       await page.getByText("All", { exact: true }).click(); // the pick is saved, so clear it for the next layout
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
-      await page.getByRole("button", { name: "Dismiss" }).first().click();
+      await page.getByRole("button", { name: "More actions" }).first().click();
+      await page.getByRole("button", { name: "Dismiss" }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
       // Last, because it may open a session: an issue kept apart from its code [SES-07].

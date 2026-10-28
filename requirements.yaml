@@ -19,12 +19,14 @@ functional:
       ATT-03: see an issue and the pull requests that resolve it as one item, led by the issue; so that related work isn't scattered across the list.
       ATT-04: see a stack of dependent pull requests as one item; so that a stack is handled as the single change it is.
       ATT-05: judge an item from the list without opening it; so that triage is quick and I'm not visually overloaded.
-      ATT-06: expand an item for more detail and options; so that the list stays minimal by default.
+      ATT-06: open an item for more detail and every action, each saying what it will do; so that the list stays minimal by default and pressing a button makes sense.
       ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that I don't start duplicate work.
       ATT-08: dismiss an item until something new happens on it; so that FYIs stop taking up space.
       ATT-09: notice how many items need me from anywhere in Paseo; so that I don't have to open the inbox to check.
       ATT-11: see work that has waited on others for too long; so that stalled work gets nudged.
       ATT-12: open any item on GitHub; so that I can do what the inbox doesn't cover.
+      ATT-13: tell at a glance which actions start an agent session and which change GitHub right away; so that I know what a tap will do.
+      ATT-14: undo a change on GitHub right after making it, where GitHub allows; so that a mis-tap costs nothing without confirming every action.
   mentions:
     As a developer, I can:
       MEN-01: see open threads where a person mentioned me and is still waiting for my response; so that I only hear about mentions when someone is waiting for me.
@@ -33,6 +35,7 @@ functional:
       MEN-04: have mentions of my teams left out; so that only mentions aimed at me personally count.
       MEN-05: see threads a bot opened that I need to resolve; so that bot findings that need me are included.
       MEN-06: tell at a glance when a bot is the one waiting; so that bots are highlighted.
+      MEN-07: react 👍 to the comments waiting on me from the inbox, after reading them in full and picking which; so that acknowledging doesn't need a trip to GitHub.
   reviews:
     As a developer, I can:
       REV-01: see pull requests where my review is requested by name; so that I don't hold up others.
@@ -46,6 +49,9 @@ functional:
       PRS-06: see only my own drafts as work items; so that other people's unfinished work stays out of my list.
       PRS-07: refresh or close a draft that has gone stale; so that old drafts don't linger.
       PRS-08: have my pull requests that are assigned to someone else left out; so that pull requests I've handed over don't count as mine.
+      PRS-09: rerun the failed checks of a pull request without an agent, after seeing which failed and whether they were rerun before; so that flaky checks don't cost a session.
+      PRS-10: turn on auto-merge for an approved pull request whose checks are still running; so that it ships without me waiting for CI.
+      PRS-11: mark a healthy draft ready for review in one step; so that finished drafts reach reviewers.
   upstream:
     As a developer, I can:
       UPS-01: see my pull requests that conflict with their base; so that pull requests needing updates from upstream are easy to fix.
@@ -72,6 +78,7 @@ functional:
       NXT-04: choose which repositories and issue fields the list uses; so that the plugin can be used elsewhere.
       NXT-05: claim an issue and start a session on it in one step; so that teammates see it's taken and I can start right away.
       NXT-06: see issues assigned to me before unclaimed ones; so that I finish what I've taken before picking more.
+      NXT-07: claim an issue without starting a session, and give back one assigned to me; so that what I've taken matches what I'll do.
   waiting:
     As a developer, I can:
       WAI-01: see my work that is waiting on others, grouped by what it waits for; so that I know that work is tracked.

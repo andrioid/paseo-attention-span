@@ -29,7 +29,22 @@ export const SECTIONS = {
 export type SectionId = keyof typeof SECTIONS;
 export const SECTION_ORDER = Object.keys(SECTIONS) as SectionId[];
 
-export type ActionId = "reply" | "review" | "fix" | "address" | "update" | "rebase" | "refresh" | "merge" | "close" | "start";
+// The first is the card's main action; the item's sheet lists them all.
+export type ActionId =
+  | "reply"
+  | "acknowledge"
+  | "review"
+  | "fix"
+  | "rerun"
+  | "address"
+  | "update"
+  | "rebase"
+  | "refresh"
+  | "ready"
+  | "automerge"
+  | "merge"
+  | "close"
+  | "start";
 
 // A short state label on a row [ATT-05]; tone picks its color.
 export interface Chip {
@@ -44,6 +59,17 @@ export interface Person {
   bot: boolean;
   since: string;
   snippet?: string;
+  url?: string;
+  // Mentions only: every comment still waiting on me, for 👍 [MEN-02].
+  comments?: WaitingComment[];
+}
+
+export interface WaitingComment {
+  // The comment's node, or the issue or PR when its description mentions me.
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
   url?: string;
 }
 
@@ -110,6 +136,24 @@ export interface NextUpIssue {
   effort?: string;
   scope?: string;
   defaultBranch?: string;
+}
+
+// More about an item, fetched when its sheet opens rather than in every refresh [GH-01].
+export interface ItemDetails {
+  excerpt: string | null;
+  // The PR actions apply to.
+  size?: { additions: number; deletions: number; files: number };
+  // The issues a PR closes, or the PRs that close an issue.
+  linked: { number: number; title: string; url: string; state: string }[];
+  // Only asked for when the item offers Rerun: each PR in the stack with failing checks.
+  failing: FailingChecks[];
+}
+
+export interface FailingChecks {
+  pr: number;
+  // Checks from GitHub Actions can be rerun; other status checks can't.
+  checks: { name: string; rerunnable: boolean }[];
+  runs: { id: number; attempt: number }[];
 }
 
 export interface Inbox {

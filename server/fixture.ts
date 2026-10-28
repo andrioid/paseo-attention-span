@@ -1,4 +1,4 @@
-import type { AgentSummary } from "../shared/inbox";
+import type { AgentSummary, ItemDetails, Target } from "../shared/inbox";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_ATTENTION_FIXTURE=1).
@@ -18,6 +18,7 @@ export function builders(now: Date) {
   const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
   const commit = (ci: string | null, days = 1) => ({ nodes: [{ commit: { committedDate: daysAgo(days), statusCheckRollup: ci ? { state: ci } : null } }] });
   const thread = (author: Actor, days: number, isResolved = false) => ({ isResolved, comments: { nodes: [comment(author, "", days)] } });
+  let comments = 0;
 
   function pr(number: number, overrides: Partial<PullRequestNode> = {}, ci: string | null = "SUCCESS"): PullRequestNode {
     return {
@@ -47,7 +48,8 @@ export function builders(now: Date) {
   }
 
   function comment(author: Actor, body: string, days: number, extra: Partial<Comment> = {}): Comment {
-    return { author, body, createdAt: daysAgo(days), url: `https://github.com/${REPO}/issues/1#c${body.length}`, reactionGroups: [], ...extra };
+    comments += 1;
+    return { id: `IC_${comments}`, author, body, createdAt: daysAgo(days), url: `https://github.com/${REPO}/issues/1#c${comments}`, reactionGroups: [], ...extra };
   }
 
   function mention(number: number, comments: Comment[], overrides: Partial<MentionNode> = {}): MentionNode {
@@ -143,12 +145,22 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(116, { title: "Try a faster PDF renderer", isDraft: true }, "FAILURE"),
       pr(117, { title: "Harden the upload endpoint", reviewThreads: { nodes: [thread(bot, 1)] } }),
       pr(118, { title: "Send reminders for unpaid invoices", closingIssuesReferences: closes(95, "Customers forget unpaid invoices") }),
+      pr(119, { title: "Show stock levels on product cards", isDraft: true }),
+      pr(122, { title: "Round VAT per line, not per invoice", reviewDecision: "APPROVED", repository: { ...repository, autoMergeAllowed: true } }, "PENDING"),
+      pr(123, { title: "Archive offers older than a year", reviewDecision: "APPROVED", autoMergeRequest: { enabledAt: daysAgo(0.1) } }, "PENDING"),
     ],
     reviews: [pr(120, { title: "Add a status page", author: bob }), pr(121, { title: "Rework the cart totals", author: alice })],
     mentions: [
       mention(95, [comment(bob, "@me should reminders go out on weekends too, or only on workdays?", 0.5)], { title: "Customers forget unpaid invoices", author: bob }),
       mention(121, [comment(alice, "@me could you look at the rounding in totals.ts first? That's the risky part.", 0.2)], { __typename: "PullRequest", title: "Rework the cart totals" }),
-      mention(130, [comment(alice, "Can we make it easy to get in touch? @me do you see anything harmful here?", 3)], { __typename: "PullRequest", title: "Publish security.txt" }),
+      mention(
+        130,
+        [
+          comment(alice, "Can we make it easy to get in touch? @me do you see anything harmful here?", 3),
+          comment(bob, "@me also, should the contact be the shared security@ inbox or a person? I'd rather not put a personal address in a public file.", 2),
+        ],
+        { __typename: "PullRequest", title: "Publish security.txt" },
+      ),
       mention(131, [], {
         __typename: "PullRequest",
         title: "Close two privilege escalations",
@@ -189,3 +201,17 @@ export const FIXTURE_AGENTS: Record<string, AgentSummary> = {
 };
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
+
+// What a sheet shows, made up: a description, a size, the linked issue, and failing checks for Rerun.
+export function fixtureDetails(subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean): ItemDetails {
+  const pr = target?.kind === "pr" ? target : undefined;
+  return {
+    excerpt:
+      subject.kind === "issue"
+        ? "When a shop has more than a few thousand orders, the export runs past the 30 second limit and the download never starts. Seen by two customers this week."
+        : "Retries failed deliveries with exponential backoff, up to 5 attempts, and logs each attempt so support can see what happened.",
+    size: pr ? { additions: 84 + (pr.number % 7) * 13, deletions: 12 + (pr.number % 5), files: 2 + (pr.number % 4) } : undefined,
+    linked: subject.number === 120 ? [{ number: 200, title: "Customers can't tell when the shop is down", url: `https://github.com/${REPO}/issues/200`, state: "OPEN" }] : [],
+    failing: checks && pr ? [{ pr: pr.number, checks: [{ name: "lint", rerunnable: true }, { name: "e2e (chromium)", rerunnable: true }], runs: [{ id: 9001, attempt: 1 }] }] : [],
+  };
+}

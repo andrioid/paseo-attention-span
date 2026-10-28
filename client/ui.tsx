@@ -92,7 +92,7 @@ export function Avatar({ url, bot, size = 18 }: { url?: string; bot?: boolean; s
 // ghost: no background until hovered or pressed, for secondary icons on every row.
 type Variant = "calm" | "solid" | "plain" | "ghost";
 
-function useHover() {
+export function useHover() {
   const [hovered, setHovered] = useState(false);
   return { hovered, hover: { onHoverIn: () => setHovered(true), onHoverOut: () => setHovered(false) } };
 }
@@ -138,22 +138,6 @@ export function Button({
       {icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
       {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
     </Pressable>
-  );
-}
-
-// The primary action, with ▾ for its options [SES-02].
-export function SplitButton({ label, icon, onPress, onOptions }: { label: string; icon: IconName; onPress: () => void; onOptions?: () => void }) {
-  const { c } = useStyles();
-  if (!onOptions) return <Button label={label} icon={icon} variant="calm" onPress={onPress} />;
-  return (
-    <View style={{ flexDirection: "row", gap: 1 }}>
-      <View style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0, overflow: "hidden", borderRadius: 8 }}>
-        <Button label={label} icon={icon} variant="calm" onPress={onPress} />
-      </View>
-      <View style={{ overflow: "hidden", borderRadius: 8, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeftWidth: 1, borderLeftColor: c.surface1 }}>
-        <Button icon="chevronDown" variant="calm" accessibilityLabel={`${label} options`} onPress={onOptions} />
-      </View>
-    </View>
   );
 }
 

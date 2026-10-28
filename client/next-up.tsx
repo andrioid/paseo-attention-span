@@ -1,9 +1,12 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { useMemo } from "react";
-import { Text, View } from "react-native";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { ago } from "../shared/format";
 import type { AgentSummary, NextUpIssue } from "../shared/inbox";
 import type { IconName } from "./icons";
+import type { FetchDetails } from "./inbox-screen";
+import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { Button, Meta, SectionHeader, TablerIcon, Toggle, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
@@ -16,9 +19,14 @@ interface Props {
   onSelect: (scopes: string[]) => void;
   agents: Record<string, AgentSummary>;
   busy: string | null;
+  fetchDetails: FetchDetails;
   onStart: (issue: NextUpIssue, claim: boolean) => void;
+  // Claim without starting, or give an assigned issue back [NXT-07].
+  onClaim: (issue: NextUpIssue, on: boolean) => void;
   onOpenAgent: (agentId: string) => void;
 }
+
+type RowProps = Omit<Props, "assigned" | "unclaimed" | "selected" | "onSelect">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
 export function NextUpList({ assigned, unclaimed, selected, onSelect, ...rowProps }: Props) {
@@ -53,43 +61,94 @@ export function NextUpList({ assigned, unclaimed, selected, onSelect, ...rowProp
   );
 }
 
-function IssueList({ issues, claim, agents, busy, onStart, onOpenAgent }: Omit<Props, "assigned" | "unclaimed" | "selected" | "onSelect"> & { issues: NextUpIssue[]; claim: boolean }) {
+function IssueList({ issues, claim, ...rowProps }: RowProps & { issues: NextUpIssue[]; claim: boolean }) {
   const styles = useStyles();
   return (
     <View style={styles.card}>
-      {issues.map((issue, index) => {
-        const agent = agents[issue.key];
-        return (
-          <View key={issue.key} style={[styles.item, index === 0 ? null : styles.divider]}>
-            <View style={{ paddingTop: 2 }}>
-              <TablerIcon name={TYPE_ICONS[issue.type?.toLowerCase() ?? ""] ?? "issue"} size={18} color={issue.type === "Bug" ? styles.c.statusDanger : styles.c.foregroundMuted} />
-            </View>
-            <View style={styles.body}>
-              <Text style={styles.title} numberOfLines={2}>
-                {issue.title}
-              </Text>
-              <Meta facts={[`#${issue.number}`, `${ago(issue.createdAt)} old`, ...[issue.type, issue.priority, issue.effort, issue.scope].filter((v): v is string => !!v)]} chips={[]} />
-            </View>
-            <View style={styles.wrap}>
-              {busy === issue.key ? (
-                <Text style={styles.muted}>working…</Text>
-              ) : agent ? (
-                <Button label={styles.compact ? undefined : "Continue"} icon="play" variant="calm" onPress={() => onOpenAgent(agent.id)} />
-              ) : (
-                // Claim first so teammates see it's taken [NXT-05].
-                <Button
-                  label={styles.compact ? undefined : claim ? "Claim & start" : "Start"}
-                  accessibilityLabel={`${claim ? "Claim & start" : "Start"} ${issue.title}`}
-                  icon={claim ? "claim" : "play"}
-                  variant="calm"
-                  onPress={() => onStart(issue, claim)}
-                />
-              )}
-              <Button icon="github" variant="ghost" accessibilityLabel="Open on GitHub" onPress={() => void openExternalUrl(issue.url)} />
-            </View>
-          </View>
-        );
-      })}
+      {issues.map((issue, index) => (
+        <IssueRow key={issue.key} issue={issue} claim={claim} first={index === 0} {...rowProps} />
+      ))}
     </View>
+  );
+}
+
+const facts = (issue: NextUpIssue) => [`#${issue.number}`, `${ago(issue.createdAt)} old`, ...[issue.type, issue.priority, issue.effort, issue.scope].filter((v): v is string => !!v)];
+
+// Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
+function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
+  const styles = useStyles();
+  const [open, setOpen] = useState(false);
+  const agent = agents[issue.key];
+  const startLabel = claim ? "Claim & start" : "Start";
+  return (
+    <View style={[styles.item, first ? null : styles.divider]}>
+      <View style={{ paddingTop: 2 }}>
+        <TablerIcon name={TYPE_ICONS[issue.type?.toLowerCase() ?? ""] ?? "issue"} size={18} color={issue.type === "Bug" ? styles.c.statusDanger : styles.c.foregroundMuted} />
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${issue.title}, more`} onPress={() => setOpen(true)} style={styles.body}>
+        <Text style={styles.title} numberOfLines={2}>
+          {issue.title}
+        </Text>
+        <Meta facts={facts(issue)} chips={[]} />
+      </Pressable>
+      <View style={styles.wrap}>
+        {busy === issue.key ? (
+          <Text style={styles.muted}>working…</Text>
+        ) : agent ? (
+          <Button label={styles.compact ? undefined : "Continue"} icon="bot" variant="calm" onPress={() => onOpenAgent(agent.id)} />
+        ) : (
+          // Claim first so teammates see it's taken [NXT-05].
+          <Button label={styles.compact ? undefined : startLabel} accessibilityLabel={`${startLabel} ${issue.title}`} icon="bot" variant="calm" onPress={() => onStart(issue, claim)} />
+        )}
+        <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={() => setOpen(true)} />
+      </View>
+      {open ? <IssueSheet issue={issue} claim={claim} agent={agent} fetchDetails={fetchDetails} onStart={onStart} onClaim={onClaim} onOpenAgent={onOpenAgent} onClose={() => setOpen(false)} /> : null}
+    </View>
+  );
+}
+
+function IssueSheet({
+  issue,
+  claim,
+  agent,
+  fetchDetails,
+  onStart,
+  onClaim,
+  onOpenAgent,
+  onClose,
+}: Pick<Props, "fetchDetails" | "onStart" | "onClaim" | "onOpenAgent"> & { issue: NextUpIssue; claim: boolean; agent?: AgentSummary; onClose: () => void }) {
+  const details = useQuery({
+    queryKey: ["github-attention", "details", issue.key, false],
+    queryFn: () => fetchDetails({ subject: { kind: "issue", repo: issue.repo, number: issue.number }, checks: false }),
+    staleTime: 60_000,
+  });
+  const close = (then: () => void) => () => (onClose(), then());
+  const entries: SheetEntry[] = [
+    agent
+      ? { key: "start", icon: "bot", label: "Continue", detail: "Opens the session started on this issue", onPress: close(() => onOpenAgent(agent.id)) }
+      : {
+          key: "start",
+          icon: "bot",
+          label: claim ? "Claim & start" : "Start",
+          detail: `${claim ? "Assigns you, then an agent" : "An agent"} reads the issue and proposes a plan`,
+          onPress: close(() => onStart(issue, claim)),
+        },
+    claim
+      ? { key: "claim", icon: "claim", label: "Claim", detail: "Assigns you, without starting a session", onPress: close(() => onClaim(issue, true)) }
+      : { key: "unclaim", icon: "unclaim", label: "Unclaim", detail: "Removes you as assignee, so it goes back to Unclaimed", onPress: close(() => onClaim(issue, false)) },
+    { key: "github", icon: "github", label: "Open on GitHub", detail: `${issue.repo}#${issue.number}`, onPress: close(() => void openExternalUrl(issue.url)) },
+  ];
+  return (
+    <ActionSheet
+      title={issue.title}
+      onClose={onClose}
+      top={
+        <>
+          <Meta facts={[`${issue.repo}#${issue.number}`, ...facts(issue).slice(1)]} chips={[]} />
+          <DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel="PR" />
+        </>
+      }
+      entries={entries}
+    />
   );
 }

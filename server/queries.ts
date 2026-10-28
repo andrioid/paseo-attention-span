@@ -8,9 +8,9 @@ const SEARCHES = {
   mentions: {
     first: 30,
     nodes: `__typename
-      ... on Issue { number title url createdAt body author { ...author } repository { nameWithOwner } comments(last: 30) { nodes { ...comment } } }
+      ... on Issue { id number title url createdAt body author { ...author } reactionGroups { viewerHasReacted } repository { nameWithOwner } comments(last: 30) { nodes { ...comment } } }
       ... on PullRequest {
-        number title url createdAt body author { ...author } repository { nameWithOwner } comments(last: 30) { nodes { ...comment } }
+        id number title url createdAt body author { ...author } reactionGroups { viewerHasReacted } repository { nameWithOwner } comments(last: 30) { nodes { ...comment } }
         reviews(last: 20) { nodes { author { login } submittedAt } }
         reviewThreads(last: 30) { nodes { isResolved comments(first: 20) { nodes { ...comment } } } }
       }`,
@@ -36,8 +36,8 @@ const FRAGMENTS: Record<string, string> = {
   comment: `fragment comment on Comment {
   body createdAt
   author { ...author }
-  ... on IssueComment { url reactionGroups { viewerHasReacted } }
-  ... on PullRequestReviewComment { url reactionGroups { viewerHasReacted } }
+  ... on IssueComment { id url reactionGroups { viewerHasReacted } }
+  ... on PullRequestReviewComment { id url reactionGroups { viewerHasReacted } }
 }`,
   pickable: `fragment pickable on Issue {
   number title url createdAt
@@ -48,8 +48,9 @@ const FRAGMENTS: Record<string, string> = {
   pr: `fragment pr on PullRequest {
   id number title url isDraft createdAt updatedAt
   author { ...author }
-  repository { nameWithOwner squashMergeAllowed mergeCommitAllowed defaultBranchRef { name } }
+  repository { nameWithOwner squashMergeAllowed mergeCommitAllowed autoMergeAllowed defaultBranchRef { name } }
   baseRefName headRefName headRefOid isCrossRepository mergeable reviewDecision
+  autoMergeRequest { enabledAt }
   assignees(first: 10) { nodes { login } }
   closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }

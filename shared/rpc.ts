@@ -1,7 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import { SessionKind } from "./config";
-import type { InboxView, Target } from "./inbox";
+import type { InboxView, ItemDetails, Target } from "./inbox";
 
 // Both sides are this plugin, so the types are checked by TypeScript, not repeated as schemas.
 const view = z.custom<InboxView>();
@@ -24,6 +24,19 @@ export const updateBranch = defineRpc({ name: "pr.update-branch", input: z.objec
 export const mergePullRequest = defineRpc({ name: "pr.merge", input: z.object({ target }), output: done });
 export const closePullRequest = defineRpc({ name: "pr.close", input: z.object({ target, comment: z.string().optional() }), output: done });
 export const claimIssue = defineRpc({ name: "issue.claim", input: z.object({ target }), output: done });
+export const unclaimIssue = defineRpc({ name: "issue.unclaim", input: z.object({ target }), output: done });
+// `ready: false` and `on: false` are the Undo of each.
+export const setReady = defineRpc({ name: "pr.ready", input: z.object({ target, ready: z.boolean() }), output: done });
+export const setAutoMerge = defineRpc({ name: "pr.auto-merge", input: z.object({ target, on: z.boolean() }), output: done });
+export const react = defineRpc({ name: "comment.react", input: z.object({ subjectIds: z.array(z.string()), on: z.boolean() }), output: done });
+export const rerunFailed = defineRpc({ name: "checks.rerun", input: z.object({ repo: z.string(), runIds: z.array(z.number()) }), output: done });
+
+// What an item's sheet shows beyond the card [ATT-06]. `checks` asks for failing checks too, for Rerun.
+export const itemDetails = defineRpc({
+  name: "item.details",
+  input: z.object({ subject: z.object({ kind: z.enum(["pr", "issue"]), repo: z.string(), number: z.number() }), target: target.optional(), checks: z.boolean() }),
+  output: z.custom<ItemDetails>(),
+});
 
 // The branch a session on an issue starts from, when its code lives in another repo [SES-07].
 export const defaultBranch = defineRpc({ name: "repo.default-branch", input: z.object({ repo: z.string() }), output: z.object({ name: z.string().nullable() }) });

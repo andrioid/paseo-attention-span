@@ -86,21 +86,32 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
 ## Next up
 
-A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05].
+A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's description and its PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
 
 ## Actions
+
+A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet**, a bottom sheet on phones and a dialog on desktop [ATT-06]:
+
+- **Details on top:** repo#number, the PR's size, the opening of the description, the linked issue or PRs, the full quote and the full stack. They are fetched when the sheet opens, in one GraphQL request, so the refresh stays as light as before [GH-01].
+- **Every action below,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open on GitHub [ATT-12] and Dismiss [ATT-08].
+
+🤖 marks every action that starts or continues an agent session; the rest change GitHub right away [ATT-13]. GitHub actions don't ask first, apart from Merge and Close. Instead an Undo row appears, where GitHub can take it back, until I switch tabs [ATT-14].
 
 | Action | Shown when | Does |
 |---|---|---|
 | Reply ↗ | Mention waiting | Opens the comment on GitHub [ATT-12] |
-| Review ▸ | Review requested | Session in a PR checkout using the review profile [SES-01] |
-| Fix ▸ / Address ▸ | CI failing / changes requested | Session with the failing log or unresolved threads in the prompt [SES-04] |
-| Update ▸ | Behind with no conflicts, not stacked | `updatePullRequestBranch` (rebase) [UPS-03] |
-| Rebase ▸ / Refresh ▸ | Conflicts, any stacked PR, stale draft | Agent rebases the PR, or the whole stack with `git rebase --update-refs` [UPS-04]. A clean rebase is pushed with `--force-with-lease` [UPS-06]. After resolving conflicts it stops and explains, and pushes only when I reply "push" in its session [UPS-05]. |
-| Merge ▸ | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04] |
-| Close ▸ | Stale draft | `closePullRequest`, with a comment only if I write one [SAFE-01] |
+| Acknowledge | Mention waiting | Lists every waiting comment in full, all ticked; 👍 on the ones I keep ticked (`addReaction`), which clears them [MEN-07]. Undo removes them. |
+| 🤖 Review | Review requested | Session in a PR checkout using the review profile [SES-01] |
+| 🤖 Fix CI / 🤖 Address comments | CI failing / changes requested | Session with the failing log or unresolved threads in the prompt [SES-04] |
+| Rerun failed jobs | CI failing, in the sheet | `gh run rerun --failed` for each failing GitHub Actions run of the PR, or of every PR in its stack. The sheet names the failed checks and how often they were rerun (`gh api …/runs/<id>`), fetched when it opens. Other status checks can't be rerun from here [PRS-09]. |
+| Update branch | Behind with no conflicts, not stacked | `updatePullRequestBranch` (rebase) [UPS-03] |
+| 🤖 Rebase / 🤖 Refresh | Conflicts, any stacked PR, stale draft | Agent rebases the PR, or the whole stack with `git rebase --update-refs` [UPS-04]. A clean rebase is pushed with `--force-with-lease` [UPS-06]. After resolving conflicts it stops and explains, and pushes only when I reply "push" in its session [UPS-05]. |
+| Ready for review | My draft with CI not failing, no conflicts, not stale | `markPullRequestReadyForReview` on the bottom PR; Undo converts it back to a draft [PRS-11] |
+| Auto-merge | Approved, CI running, and the repo allows auto-merge | `enablePullRequestAutoMerge` with the merge method below and the head I saw. The PR then waits in *CI running* with an "auto-merge on" chip; Undo turns it off [PRS-10] |
+| Merge | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04]. Asks first. |
+| Close draft | Stale draft, in the sheet | `closePullRequest`, with a comment only if I write one [SAFE-01]. Asks first. |
 
-A tap starts with defaults. The ▾ beside a session action opens workspace, profile and prompt in a modal (a bottom sheet on phones) [SES-02]. Every row also has GitHub ↗ and Dismiss, with Undo right after dismissing [ATT-08, ATT-12]. Expanding a row shows the full quote and the full stack; collapsed, a stack shows only the PRs that need attention [ATT-04, ATT-06]. An existing workspace for the branch or PR is resumed instead of creating a new one [SES-03, ATT-07].
+A tap starts with defaults. An existing workspace for the branch or PR is resumed instead of creating a new one [SES-03, ATT-07]. Collapsed, a stack shows only the PRs that need attention [ATT-04].
 
 ## Sessions
 
@@ -121,9 +132,9 @@ Light on GitHub's API [GH-01], and quick when I press ⟳. The inbox has two fee
 
 One GraphQL request per search, sent in parallel. GitHub runs the searches in one request one after another, so a combined request took about 5 seconds where parallel ones take about 2.
 
-- `is:pr is:open author:@me` (also asks for the viewer's login)
+- `is:pr is:open author:@me` (also asks for the viewer's login, and whether auto-merge is on and allowed)
 - `is:pr is:open user-review-requested:@me` (personal requests only)
-- `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, and `viewerHasReacted`)
+- `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, their IDs for 👍, and `viewerHasReacted`)
 - `is:issue is:open assignee:@me`
 - `is:issue is:open commenter:@me` (for issues waiting on others)
 - `is:issue is:open no:assignee` (Next up, with issue type and field values)
@@ -147,5 +158,5 @@ It's a digest, not a live view. Opening the screen shows the cache. ⟳ fetches 
 | Live | Every `refreshMinutes` (default 60, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
 | History | Once a day in the background, after a merge from the inbox, and on ⟳ in History. Things I finish outside the inbox show up by the next day. |
 
-A failed refresh is retried at most every 5 minutes. That's about 7 requests and 70 points an hour. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts.
+A failed refresh is retried at most every 5 minutes. That's about 7 requests and 70 points an hour. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
 

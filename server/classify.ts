@@ -73,6 +73,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       ciPending: ci === "PENDING" || ci === "EXPECTED",
       conflicts: pr.mergeable === "CONFLICTING",
       approved: pr.reviewDecision === "APPROVED",
+      autoMerge: !!pr.autoMergeRequest,
       threadsOnMe: onMe.length,
       botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
       // Requested changes stay mine until I push after them.
@@ -108,7 +109,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
     else {
       if (s.ciFailing) reasons.push("ci");
       if (s.changes) reasons.push("changes");
-      if (s.approved && !s.conflicts && !s.ciFailing && !s.changes) reasons.push("ready");
+      // Auto-merge waiting on CI leaves nothing for me to do.
+      if (s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending)) reasons.push("ready");
       if (s.conflicts || outOfSync) reasons.push("upstream");
     }
     // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01].
@@ -124,19 +126,23 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       : bottom.reviewRequests.nodes.find((request) => request.requestedReviewer?.login)?.requestedReviewer;
 
     const actions: ActionId[] = [];
-    if (section === "reply") actions.push("reply");
-    if (section === "ci") actions.push("fix");
+    if (section === "reply") actions.push(...replyActions(waiting));
+    // Rerun is for flaky checks, without an agent [PRS-09].
+    if (section === "ci") actions.push("fix", "rerun");
     if (section === "changes") actions.push("address");
-    // Merge only once CI passed against the current base [PRS-04, UPS-07].
-    if (section === "ready") actions.push(...(s.behindBy > 0 ? [stack.length === 1 ? "update" : "rebase"] : s.ciPending ? [] : ["merge"]) as ActionId[]);
+    // Merge only once CI passed against the current base [PRS-04, UPS-07]. Until then, auto-merge if the repo allows it [PRS-10].
+    if (section === "ready")
+      actions.push(...(s.behindBy > 0 ? [stack.length === 1 ? "update" : "rebase"] : s.ciPending ? (bottom.repository.autoMergeAllowed ? ["automerge"] : []) : ["merge"]) as ActionId[]);
     if (section === "upstream") actions.push("rebase");
-    // A stale draft offers Refresh and Close instead of Rebase [PRS-07].
-    if (section === "drafts") actions.push(...(s.stale ? ["refresh", "close"] : s.conflicts || outOfSync ? ["rebase"] : s.ciFailing ? ["fix"] : []) as ActionId[]);
+    // A stale draft offers Refresh and Close instead of Rebase [PRS-07]; a healthy one, Ready for review [PRS-11].
+    if (section === "drafts")
+      actions.push(...(s.stale ? ["refresh", "close"] : s.conflicts || outOfSync ? ["rebase"] : s.ciFailing ? ["fix", "rerun"] : ["ready"]) as ActionId[]);
 
     const chips: Chip[] = [];
     if (section === "too_long") chips.push(chip(`${waitingLabel} · ${ago(waitingSince, now)}`, "warn"));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
+    if (s.autoMerge) chips.push(chip("auto-merge on", "good"));
     if (bottom.reviewDecision === "CHANGES_REQUESTED") chips.push(chip("changes requested", "warn"));
     if (s.threadsOnMe > 0) chips.push(chip(`${s.threadsOnMe} unresolved`, "warn"));
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
@@ -216,7 +222,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       url: lead?.url ?? bottom.url,
       chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips, ...(unit.section === section && unit.waited ? [unit.waited] : [])],
       person: issueWaiting ?? unit.person,
-      actions: issueWaiting ? ["reply"] : unit.actions,
+      actions: issueWaiting ? replyActions(issueWaiting) : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
       target: target(bottom, unit.stack),
       othersActivityAt: latest(...grouped.map((u) => u.othersActivityAt), issueWaiting?.since),
@@ -241,7 +247,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       url: pr.url,
       chips: s.ciFailing ? [chip("CI failing", "bad")] : [],
       person: waiting ?? person(pr.author, s.lastCommitAt),
-      actions: waiting ? ["reply", "review"] : ["review"],
+      actions: waiting ? [...replyActions(waiting), "review"] : ["review"],
       children: [],
       target: target(pr, [pr]),
       othersActivityAt: latest(s.othersActivityAt, s.lastCommitAt, waiting?.since),
@@ -267,7 +273,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Inbox {
       url: node.url,
       chips: [],
       person: waiting,
-      actions: ["reply"],
+      actions: replyActions(waiting),
       children: [],
       target: { kind, repo, number: node.number, title: node.title, url: node.url },
       othersActivityAt: waiting.since,
@@ -378,6 +384,13 @@ function rankIssues(nodes: PickableNode[], details: Details, config: InboxConfig
 
 // ---- Mentions still waiting on me [MEN-01..06] ----
 
+// Reply on GitHub, or 👍 the waiting comments, which clears them too [MEN-02].
+function replyActions(waiting: Person | undefined): ActionId[] {
+  return waiting?.comments?.length ? ["reply", "acknowledge"] : ["reply"];
+}
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
+
 function mentionsMe(body: string | undefined, me: string): number {
   if (!body) return -1;
   // Ignore quoted replies; a team mention (@org/team) never matches a login [MEN-04].
@@ -397,7 +410,7 @@ function snippetAround(body: string, index: number): string {
 export function waitingMention(node: MentionNode, me: string): Person | null {
   const isMe = (actor: Actor | null) => actor?.login.toLowerCase() === me;
   const threads = node.reviewThreads?.nodes ?? [];
-  const opened: Comment = { author: node.author, body: node.body, createdAt: node.createdAt, url: node.url };
+  const opened: Comment = { id: node.id, author: node.author, body: node.body, createdAt: node.createdAt, url: node.url, reactionGroups: node.reactionGroups };
   const everything = [opened, ...node.comments.nodes, ...threads.flatMap((thread) => thread.comments.nodes)];
   // Replying clears it, and so does any review I submit afterwards [MEN-02].
   const myLastAt = latest(
@@ -427,5 +440,8 @@ export function waitingMention(node: MentionNode, me: string): Person | null {
     since: waiting[0].createdAt,
     snippet: snippetAround(last.body ?? "", mentionsMe(last.body, me)),
     url: last.url ?? node.url,
+    comments: waiting
+      .filter((c) => c.id)
+      .map((c) => ({ id: c.id!, author: c.author!.login, body: clip((c.body ?? "").trim(), 4000), createdAt: c.createdAt, url: c.url })),
   };
 }

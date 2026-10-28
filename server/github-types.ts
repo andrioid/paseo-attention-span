@@ -10,6 +10,7 @@ export interface Actor {
 }
 
 export interface Comment {
+  id?: string;
   author: Actor | null;
   body?: string;
   createdAt: string;
@@ -32,13 +33,14 @@ export interface PullRequestNode {
   createdAt: string;
   updatedAt: string;
   author: Actor | null;
-  repository: Repo & { squashMergeAllowed?: boolean; mergeCommitAllowed?: boolean };
+  repository: Repo & { squashMergeAllowed?: boolean; mergeCommitAllowed?: boolean; autoMergeAllowed?: boolean };
   baseRefName: string;
   headRefName: string;
   headRefOid: string;
   isCrossRepository?: boolean;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  autoMergeRequest?: { enabledAt: string } | null;
   assignees: Nodes<{ login: string }>;
   closingIssuesReferences: Nodes<{ number: number; title: string; url: string; repository: Repo }>;
   commits: Nodes<{ commit: { committedDate: string; statusCheckRollup: { state: string } | null } }>;
@@ -51,6 +53,8 @@ export interface PullRequestNode {
 // A search hit from mentions:@me, with bodies for finding the mention.
 export interface MentionNode {
   __typename: "Issue" | "PullRequest";
+  id?: string;
+  reactionGroups?: { viewerHasReacted: boolean }[];
   number: number;
   title: string;
   url: string;
