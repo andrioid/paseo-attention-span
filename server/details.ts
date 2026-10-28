@@ -1,6 +1,5 @@
 import type { FailingChecks, ItemDetails, Target } from "../shared/inbox";
 import { graphql, runGh } from "./gh";
-import { excerpt } from "./markdown";
 
 // What an item's sheet shows beyond the card, fetched when it opens [ATT-06, GH-01].
 
@@ -20,7 +19,7 @@ type PullRequest = {
   commits?: { nodes: { commit: { statusCheckRollup: { contexts: { nodes: Context[] } } | null } }[] };
 };
 type Result = {
-  s: { issueOrPullRequest: { body?: string; closedByPullRequestsReferences?: Linked; closingIssuesReferences?: Linked } | null } | null;
+  s: { issueOrPullRequest: { closedByPullRequestsReferences?: Linked; closingIssuesReferences?: Linked } | null } | null;
 } & Record<string, { pullRequest: PullRequest | null } | null>;
 
 const FAILED = new Set(["FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ERROR"]);
@@ -42,8 +41,8 @@ export async function itemDetails(subject: Subject, target: Target | undefined, 
   const linked = "nodes { number title url state }";
   const query = `query {
   s: ${repository(subject.repo)} { issueOrPullRequest(number: ${subject.number}) {
-    ... on Issue { body closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { ${linked} } }
-    ... on PullRequest { body closingIssuesReferences(first: 5) { ${linked} } }
+    ... on Issue { closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { ${linked} } }
+    ... on PullRequest { closingIssuesReferences(first: 5) { ${linked} } }
   } }
 ${numbers.map((number, index) => `  p${index}: ${repository(pr!.repo)} { pullRequest(number: ${number}) { number additions deletions changedFiles ${checks ? contexts : ""} } }`).join("\n")}
 }`;
@@ -65,7 +64,6 @@ ${numbers.map((number, index) => `  p${index}: ${repository(pr!.repo)} { pullReq
   }
 
   return {
-    excerpt: excerpt(node?.body),
     size: own ? { additions: own.additions, deletions: own.deletions, files: own.changedFiles } : undefined,
     linked: (node?.closingIssuesReferences ?? node?.closedByPullRequestsReferences)?.nodes ?? [],
     failing,

@@ -140,7 +140,6 @@ export interface NextUpIssue {
 
 // More about an item, fetched when its sheet opens rather than in every refresh [GH-01].
 export interface ItemDetails {
-  excerpt: string | null;
   // The PR actions apply to.
   size?: { additions: number; deletions: number; files: number };
   // The issues a PR closes, or the PRs that close an issue.

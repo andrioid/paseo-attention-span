@@ -31,8 +31,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | File | Shows |
    |---|---|
    | `<layout>-doing.png` | Doing tab, every section |
-   | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, then Continue fix and Rerun failed jobs with the made-up failing checks, then the fetched size and the Markdown description. Uncropped, since it covers the page |
-   | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, both ticked. Uncropped |
+   | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, then Continue fix and Rerun failed jobs with the made-up failing checks, then the fetched size. Uncropped, since it covers the page |
+   | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, rendered as Markdown, both ticked. Uncropped |
    | `<layout>-doing-options.png` | The Options modal from "Address comments with options…" in the sheet of "Harden the upload endpoint": workspace, profile, prompt. Uncropped |
    | `<layout>-doing-merge-confirm.png` | The Merge confirmation on "Dialog focus returns to the trigger" |
    | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
@@ -40,7 +40,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint. Each card shows the GitHub button instead of ⋯, its sheet's only action |
    | `<layout>-next-up.png` | Assigned, then all of Unclaimed |
-   | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": Continue, Unclaim, Open on GitHub, then the Markdown description. Uncropped |
+   | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": Continue, Unclaim, Open on GitHub. Uncropped |
    | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope |
    | `<layout>-next-up-code-repo.png` | Start on "Price list import skips quoted rows" (in `acme/issues`, no checkout): the picker asking where its code lives. Uncropped |
    | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping; the start then fails with "No agent provider is ready", as expected in the container |

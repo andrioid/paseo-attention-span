@@ -1,8 +1,8 @@
-// GitHub Markdown for the screen: whole-block excerpts to render, and plain text for quotes that are cut anywhere.
+// GitHub Markdown for the screen: whole comments to render in the 👍 picker, and plain text for quotes cut anywhere.
 
 const FENCE = /^\s*(```|~~~)/;
 
-// The description's opening as Markdown, whole blocks only, so a cut never breaks a link or code block [ATT-06].
+// Markdown cut after whole blocks only, so a cut never breaks a link or code block [MEN-07].
 // HTML comments (PR templates) and images go; other HTML tags, like <details>, keep only their text.
 export function excerpt(body: string | undefined, max = 600): string | null {
   const blocks = markdownBlocks(

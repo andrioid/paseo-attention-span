@@ -86,7 +86,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
 ## Next up
 
-A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's description and its PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
+A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
 
 ## Actions
 
@@ -94,14 +94,14 @@ A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet*
 
 1. **What the card knows:** repo#number, its chips, the full quote and the full stack.
 2. **Every action,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open on GitHub [ATT-12] and Dismiss [ATT-08].
-3. **What's fetched when it opens,** in one GraphQL request, so the refresh stays as light as before [GH-01]: the PR's size, the opening of the description and the linked issue or PRs. It comes last so the actions don't move when it arrives. The description is rendered as Markdown with Paseo's renderer. The server cuts it after the last whole paragraph, list or code block within about 600 characters, drops template comments and images, and keeps only the text of other HTML such as `<details>`.
+3. **What's fetched when it opens,** in one GraphQL request, so the refresh stays as light as before [GH-01]: the PR's size and the linked issue or PRs. It comes last so the actions don't move when it arrives. The description isn't shown; making sense of it takes GitHub anyway.
 
 An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every action that starts or continues an agent session, marked *(agent)* below; the rest change GitHub right away [ATT-13]. GitHub actions don't ask first, apart from Merge and Close. Instead an Undo row appears, where GitHub can take it back, until I switch tabs [ATT-14].
 
 | Action | Shown when | Does |
 |---|---|---|
 | Reply ↗ | Mention waiting | Opens the comment on GitHub [ATT-12] |
-| Acknowledge | Mention waiting | Lists every waiting comment in full, rendered as Markdown, all ticked; 👍 on the ones I keep ticked (`addReaction`), which clears them [MEN-07]. Undo removes them. |
+| Acknowledge | Mention waiting | Lists every waiting comment in full, rendered as Markdown with Paseo's renderer (cut after whole blocks, up to about 4,000 characters), all ticked; 👍 on the ones I keep ticked (`addReaction`), which clears them [MEN-07]. Undo removes them. |
 | Review *(agent)* | Review requested | Session in a PR checkout using the review profile [SES-01] |
 | Fix CI / Address comments *(agent)* | CI failing / changes requested | Session with the failing log or unresolved threads in the prompt [SES-04] |
 | Rerun failed jobs | CI failing, in the sheet | `gh run rerun --failed` for each failing GitHub Actions run of the PR, or of every PR in its stack. The sheet names the failed checks and how often they were rerun (`gh api …/runs/<id>`), fetched when it opens. Other status checks can't be rerun from here [PRS-09]. |

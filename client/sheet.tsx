@@ -1,5 +1,5 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { Markdown, Modal } from "@getpaseo/plugin/client/ui";
+import { Modal } from "@getpaseo/plugin/client/ui";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemDetails } from "../shared/inbox";
@@ -65,7 +65,7 @@ function Entry({ entry, first }: { entry: SheetEntry; first: boolean }) {
   );
 }
 
-// The PR's size, the description's opening and the linked issues or PRs, once fetched.
+// The PR's size and the linked issues or PRs, once fetched.
 export function DetailLines({ details, loading, error, linkedLabel }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string }) {
   const styles = useStyles();
   if (loading) return <Text style={styles.muted}>Loading details…</Text>;
@@ -73,12 +73,6 @@ export function DetailLines({ details, loading, error, linkedLabel }: { details?
   return (
     <>
       {details.size ? <Text style={styles.muted}>{sizeText(details.size)}</Text> : null}
-      {/* Paseo's renderer: its theme and link handling. The server keeps the excerpt short, in whole blocks. */}
-      {details.excerpt ? (
-        <Markdown>{details.excerpt}</Markdown>
-      ) : (
-        <Text style={styles.muted}>No description.</Text>
-      )}
       {details.linked.map((link) => (
         <Pressable key={link.url} accessibilityRole="link" onPress={() => void openExternalUrl(link.url)}>
           <Text style={styles.muted} numberOfLines={1}>
