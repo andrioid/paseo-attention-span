@@ -31,4 +31,4 @@ The previews are react-native-web. Check the iOS and Android apps by hand now an
 
 ## Install on the daemon
 
-Only when the owner asks: `paseo plugin install <path>`, or `paseo plugin reload github-attention` after changes.
+Only when the owner asks: `paseo plugin install <path>`, or `paseo plugin reload attention-span` after changes.

@@ -13,8 +13,8 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
     <SidebarRow
       icon={ICONS.tray}
       label="Attention"
-      active={currentScreen?.screenId === "inbox"}
-      onPress={() => openScreen({ screenId: "inbox" })}
+      active={currentScreen?.screenId === "attention"}
+      onPress={() => openScreen({ screenId: "attention" })}
       trailing={
         count > 0 ? (
           <Text style={{ color: data?.feeds.live.error ? theme.colors.statusDanger : theme.colors.foregroundMuted, fontSize: 12 }}>{count}</Text>
@@ -26,7 +26,7 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
 
 // One screen for everything that needs me [ATT-01].
 export default function contribute(client: PluginClientContext) {
-  client.addScreen({ id: "inbox", title: "Attention Span", Component: AttentionScreen });
-  client.addSidebarHeaderItem({ id: "inbox", title: "Attention Span", Component: SidebarItem });
+  client.addScreen({ id: "attention", title: "Attention Span", Component: AttentionScreen });
+  client.addSidebarHeaderItem({ id: "attention", title: "Attention Span", Component: SidebarItem });
   return () => {};
 }
