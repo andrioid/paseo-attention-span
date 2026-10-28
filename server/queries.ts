@@ -1,4 +1,4 @@
-import type { InboxConfig } from "../shared/config";
+import type { AttentionConfig } from "../shared/config";
 import type { PullRequestNode } from "./github-types";
 
 // Each search with how many results it asks for and what it reads of each.
@@ -81,7 +81,7 @@ export function searchQuery(names: readonly SearchName[], withViewer = false): s
   };
   fields.forEach(collect);
   const variables = names.map((name) => `$${name}: String!`).join(", ");
-  return `query Inbox(${variables}) {\n${withViewer ? "  viewer { login id }\n" : ""}${fields.join("\n")}\n}\n${[...used].map((name) => FRAGMENTS[name]).join("\n")}`;
+  return `query Attention(${variables}) {\n${withViewer ? "  viewer { login id }\n" : ""}${fields.join("\n")}\n}\n${[...used].map((name) => FRAGMENTS[name]).join("\n")}`;
 }
 
 function where(orgs: string[], repos: string[]): string {
@@ -97,7 +97,7 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
-export function searchVariables(config: InboxConfig, now: Date): Record<SearchName, string> {
+export function searchVariables(config: AttentionConfig, now: Date): Record<SearchName, string> {
   const scope = where(config.orgs, config.repos);
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
   // Whole weeks, from a Monday, so the oldest week isn't cut short.

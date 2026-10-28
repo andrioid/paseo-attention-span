@@ -12,7 +12,7 @@ const layouts = [
 const schemes = ["dark", "light"];
 const tabs = ["Doing", "History", "Waiting", "Next up"];
 // Each layout starts without the code-repo mapping that an earlier layout saved.
-const configPath = `${process.env.HOME}/.config/paseo-github-attention/config.json`;
+const configPath = `${process.env.HOME}/.config/paseo-attention-span/config.json`;
 const originalConfig = await readFile(configPath, "utf8");
 
 const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", args: ["--no-sandbox"] });
@@ -40,7 +40,7 @@ for (const layout of layouts) {
       await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
       await page.waitForTimeout(3000);
       // On phones the sidebar sits behind a menu button.
-      const entry = page.getByText("GitHub attention").first();
+      const entry = page.getByText("Attention", { exact: true }).first();
       if (!(await entry.isVisible())) await page.getByRole("button", { name: /menu|sidebar/i }).first().click().catch(() => {});
       await entry.click();
       await page.getByText("Doing").first().waitFor({ timeout: 15000 });
@@ -125,7 +125,7 @@ for (const layout of layouts) {
       const saved = JSON.parse(await readFile(configPath, "utf8"));
       if (saved.codeRepos?.["acme/issues"] !== "acme/shop" || saved.orgs?.[0] !== "acme") throw new Error(`config.json after picking: ${JSON.stringify(saved)}`);
       await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-after.png` });
-      // Still on the inbox means the start stopped later (no agent provider in here); press it again.
+      // Still on the list means the start stopped later (no agent provider in here); press it again.
       if (await page.getByRole("tab", { name: /Next up/ }).first().isVisible()) {
         await nextUp();
         await startIssue();

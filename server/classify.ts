@@ -1,16 +1,16 @@
-import type { InboxConfig, MergeMethod } from "../shared/config";
+import { type ActionId, type Attention, type Chip, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/attention";
+import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import { type ActionId, type Chip, type Inbox, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/inbox";
 import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode } from "./github-types";
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
 
-// Turns one refresh worth of GitHub data into the inbox. Pure, so every rule is testable.
+// Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
 export interface ClassifyInput {
   data: LiveResult;
   details: Details;
-  config: InboxConfig;
+  config: AttentionConfig;
   now: Date;
 }
 
@@ -28,7 +28,7 @@ const person = (actor: Actor | null | undefined, since: string): Person | undefi
 // Search returns empty objects for result types a fragment doesn't cover.
 const compact = <T>(nodes: (T | null | undefined)[]) => nodes.filter((node): node is T => !!node && Object.keys(node).length > 0);
 
-export function classify({ data, details, config, now }: ClassifyInput): Inbox {
+export function classify({ data, details, config, now }: ClassifyInput): Attention {
   const me = data.viewer.login.toLowerCase();
   const isMe = (actor: { login: string } | null | undefined) => actor?.login.toLowerCase() === me;
   const isOther = (actor: { login: string } | null | undefined) => !!actor && !isMe(actor);
@@ -343,14 +343,14 @@ function plain(node: { repository: { nameWithOwner: string }; number: number; ti
   };
 }
 
-export function mergeMethodFor(pr: PullRequestNode, config: InboxConfig): MergeMethod {
+export function mergeMethodFor(pr: PullRequestNode, config: AttentionConfig): MergeMethod {
   // The configured method, else the first the repository allows of squash, merge, rebase [PRS-04].
   return config.mergeMethods[pr.repository.nameWithOwner] ?? (pr.repository.squashMergeAllowed !== false ? "squash" : pr.repository.mergeCommitAllowed ? "merge" : "rebase");
 }
 
 // ---- Next up: issues by priority, effort, then age [NXT-02] ----
 
-function rankIssues(nodes: PickableNode[], details: Details, config: InboxConfig): NextUpIssue[] {
+function rankIssues(nodes: PickableNode[], details: Details, config: AttentionConfig): NextUpIssue[] {
   const { priority, effort, scope } = config.nextUp;
   const valueOf = (node: PickableNode, field: string | undefined) =>
     field ? node.issueFieldValues.nodes.find((value) => value.field?.name === field)?.name : undefined;

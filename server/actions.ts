@@ -1,7 +1,7 @@
-import type { Target } from "../shared/inbox";
+import type { Target } from "../shared/attention";
 import { graphql, runGh } from "./gh";
 
-// Each action runs only from an explicit tap in the inbox [SAFE-01].
+// Each action runs only from an explicit tap in Attention Span [SAFE-01].
 
 function pullRequestId(target: Target): string {
   if (target.kind !== "pr" || !target.id) throw new Error(`${target.repo}#${target.number} is not a pull request.`);
@@ -18,7 +18,7 @@ export async function updateBranch(target: Target): Promise<void> {
   );
 }
 
-// The expected head guards against merging commits the inbox hasn't seen [PRS-04].
+// The expected head guards against merging commits Attention Span hasn't seen [PRS-04].
 export async function mergePullRequest(target: Target): Promise<void> {
   await graphql(
     `mutation($id: ID!, $method: PullRequestMergeMethod!, $oid: GitObjectID) {

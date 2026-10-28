@@ -6,5 +6,5 @@ set -eu
 cd "$(dirname "$0")"
 PASEO_APP=$(dirname "$(dirname "$(dirname "$(readlink -f "$(command -v paseo)")")")")
 mkdir -p out && chmod 777 out && rm -f out/*.png
-docker build -q -t github-attention-preview . >/dev/null
-docker run --rm -v "$PASEO_APP":/opt/paseo:ro -v "$(cd .. && pwd)":/plugin:ro -v "$PWD/out":/out github-attention-preview "$@"
+docker build -q -t attention-span-preview . >/dev/null
+docker run --rm -v "$PASEO_APP":/opt/paseo:ro -v "$(cd .. && pwd)":/plugin:ro -v "$PWD/out":/out attention-span-preview "$@"

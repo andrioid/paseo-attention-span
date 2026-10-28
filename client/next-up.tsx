@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ago } from "../shared/format";
-import type { AgentSummary, NextUpIssue } from "../shared/inbox";
+import type { AgentSummary, NextUpIssue } from "../shared/attention";
 import type { IconName } from "./icons";
-import type { FetchDetails } from "./inbox-screen";
+import type { FetchDetails } from "./attention-screen";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { Button, Meta, SectionHeader, TablerIcon, Toggle, useStyles } from "./ui";
 
@@ -118,7 +118,7 @@ function IssueSheet({
   onClose,
 }: Pick<Props, "fetchDetails" | "onStart" | "onClaim" | "onOpenAgent"> & { issue: NextUpIssue; claim: boolean; agent?: AgentSummary; onClose: () => void }) {
   const details = useQuery({
-    queryKey: ["github-attention", "details", issue.key, false],
+    queryKey: ["attention-span", "details", issue.key, false],
     queryFn: () => fetchDetails({ subject: { kind: "issue", repo: issue.repo, number: issue.number }, checks: false }),
     staleTime: 60_000,
   });

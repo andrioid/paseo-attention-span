@@ -1,4 +1,4 @@
-import type { InboxConfig, MergeMethod } from "./config";
+import type { AttentionConfig, MergeMethod } from "./config";
 
 // Tabs tell the story of my work: what I finished, what needs me, what waits on others, what's next.
 export type TabId = "history" | "doing" | "waiting" | "next";
@@ -155,7 +155,7 @@ export interface FailingChecks {
   runs: { id: number; attempt: number }[];
 }
 
-export interface Inbox {
+export interface Attention {
   login: string;
   items: Item[];
   assigned: NextUpIssue[];
@@ -184,7 +184,7 @@ export interface FeedStatus {
 }
 
 // What the client renders: dismissed items removed, grouped per tab.
-export interface InboxView {
+export interface AttentionView {
   feeds: Record<FeedId, FeedStatus>;
   login: string | null;
   // Items in Doing; the sidebar shows it [ATT-09].
@@ -197,7 +197,7 @@ export interface InboxView {
   dismissedCount: number;
   // Scope chips picked on Next up; none means all [NXT-03].
   scopes: string[];
-  config: InboxConfig;
+  config: AttentionConfig;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
   fixtureAgents?: Record<string, AgentSummary>;
 }

@@ -1,22 +1,22 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
-import { codeRepoFor, type InboxConfig, type SessionKind } from "../shared/config";
-import type { AgentSummary, Target } from "../shared/inbox";
+import type { AgentSummary, Target } from "../shared/attention";
+import { type AttentionConfig, codeRepoFor, type SessionKind } from "../shared/config";
 
 type Paseo = ReturnType<typeof usePaseo>;
 
-// Labels tie an agent to the inbox item it works on [ATT-07, SES-03].
-export const LABEL = "github-attention";
-export const ITEM_LABEL = "github-attention-item";
-// Sessions started before the plugin was renamed from "GitHub inbox".
-const OLD_LABEL = "github-inbox";
-const OLD_ITEM_LABEL = "github-inbox-item";
+// Labels tie an agent to the item it works on [ATT-07, SES-03].
+export const LABEL = "attention-span";
+export const ITEM_LABEL = "attention-span-item";
+// Sessions started under the plugin's earlier names, "GitHub attention" and "GitHub inbox".
+const OLD_LABELS = ["github-attention", "github-inbox"];
 
-// Agents started from the inbox, keyed by item.
-export async function inboxAgents(paseo: Paseo): Promise<Record<string, AgentSummary>> {
-  const lists = await Promise.all([LABEL, OLD_LABEL].map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } })));
+// Agents started from Attention Span, keyed by item.
+export async function itemAgents(paseo: Paseo): Promise<Record<string, AgentSummary>> {
+  const labels = [LABEL, ...OLD_LABELS];
+  const lists = await Promise.all(labels.map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } })));
   const byItem: Record<string, AgentSummary> = {};
   for (const { agent } of lists.flatMap((list) => list.entries)) {
-    const key = agent.labels?.[ITEM_LABEL] ?? agent.labels?.[OLD_ITEM_LABEL];
+    const key = labels.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
     if (!key || agent.archivedAt) continue;
     byItem[key] = {
       id: agent.id,
@@ -62,7 +62,7 @@ export interface Checkout {
 // The item's own repo, or for an issue the repo its code lives in [SES-05, SES-07].
 export async function findCheckout(
   paseo: Paseo,
-  config: Pick<InboxConfig, "codeRepos">,
+  config: Pick<AttentionConfig, "codeRepos">,
   target: Target,
   defaultBranch: (repo: string) => Promise<string | null>,
 ): Promise<Checkout> {
@@ -107,7 +107,7 @@ type AgentConfig = Parameters<Paseo["agents"]["create"]>[0]["config"];
 export async function resolveAgentConfig(
   paseo: Paseo,
   kind: SessionKind,
-  config: InboxConfig,
+  config: AttentionConfig,
   profileId?: string,
 ): Promise<{ agent: AgentConfig; label: string }> {
   const { config: daemon } = await paseo.config.get();
@@ -156,7 +156,7 @@ export interface StartSession {
   kind: SessionKind;
   target: Target;
   prompt: string;
-  config: InboxConfig;
+  config: AttentionConfig;
   checkout: Checkout;
   profileId?: string;
   workspaceId?: string; // an existing workspace; otherwise a new worktree

@@ -1,5 +1,5 @@
-import type { InboxConfig, SessionKind } from "./config";
-import type { ActionId, Target } from "./inbox";
+import type { ActionId, Target } from "./attention";
+import type { AttentionConfig, SessionKind } from "./config";
 
 // Built-in prompt templates [SES-04]. A template in config.json replaces one.
 // Placeholders: {{repo}} {{number}} {{title}} {{url}} {{head}} {{base}} {{stack}} {{context}}
@@ -72,7 +72,7 @@ export function renderPrompt(
   kind: SessionKind,
   target: Target,
   context: string,
-  config: Pick<InboxConfig, "prompts">,
+  config: Pick<AttentionConfig, "prompts">,
 ): string {
   const template = config.prompts[kind] ?? PROMPT_TEMPLATES[kind];
   const values: Record<string, string> = {

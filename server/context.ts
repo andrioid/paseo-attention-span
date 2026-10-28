@@ -1,5 +1,5 @@
+import type { Target } from "../shared/attention";
 import type { SessionKind } from "../shared/config";
-import type { Target } from "../shared/inbox";
 import { graphql, runGh } from "./gh";
 
 // Context for a session prompt, fetched deterministically when a session starts [SES-04].

@@ -4,10 +4,10 @@ set -eu
 HOME_DIR=/tmp/paseo-home
 paseo() { /opt/paseo/resources/bin/paseo --home "$HOME_DIR" "$@"; }
 
-mkdir -p "$HOME/.config/paseo-github-attention"
-cp /preview/plugin-config.json "$HOME/.config/paseo-github-attention/config.json"
+mkdir -p "$HOME/.config/paseo-attention-span"
+cp /preview/plugin-config.json "$HOME/.config/paseo-attention-span/config.json"
 
-export PASEO_GITHUB_ATTENTION_FIXTURE=1
+export PASEO_ATTENTION_SPAN_FIXTURE=1
 # The daemon serves the web app itself; no relay, dictation or voice.
 for setting in pluginsEnabled=true features.webUi.enabled=true features.dictation.enabled=false features.voiceMode.enabled=false; do
   /opt/paseo/resources/bin/paseo daemon config set --home "$HOME_DIR" "${setting%%=*}" "${setting#*=}" >/dev/null

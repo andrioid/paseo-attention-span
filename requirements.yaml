@@ -11,7 +11,7 @@ goals:
 functional:
   sources:
     As a developer, I can:
-      SRC-01: choose which GitHub organizations and repositories the inbox covers; so that it works for any project.
+      SRC-01: choose which GitHub organizations and repositories Attention Span covers; so that it works for any project.
   attention:
     As a developer, I can:
       ATT-01: see in one place the open issues and pull requests that need me; so that I don't depend on noisy GitHub notifications.
@@ -22,9 +22,9 @@ functional:
       ATT-06: open an item for more detail and every action, each saying what it will do; so that the list stays minimal by default and pressing a button makes sense.
       ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that I don't start duplicate work.
       ATT-08: dismiss an item until something new happens on it; so that FYIs stop taking up space.
-      ATT-09: notice how many items need me from anywhere in Paseo; so that I don't have to open the inbox to check.
+      ATT-09: notice how many items need me from anywhere in Paseo; so that I don't have to open Attention Span to check.
       ATT-11: see work that has waited on others for too long; so that stalled work gets nudged.
-      ATT-12: open any item on GitHub; so that I can do what the inbox doesn't cover.
+      ATT-12: open any item on GitHub; so that I can do what Attention Span doesn't cover.
       ATT-13: tell at a glance which actions start an agent session and which change GitHub right away; so that I know what a tap will do.
       ATT-14: undo a change on GitHub right after making it, where GitHub allows; so that a mis-tap costs nothing without confirming every action.
   mentions:
@@ -35,7 +35,7 @@ functional:
       MEN-04: have mentions of my teams left out; so that only mentions aimed at me personally count.
       MEN-05: see threads a bot opened that I need to resolve; so that bot findings that need me are included.
       MEN-06: tell at a glance when a bot is the one waiting; so that bots are highlighted.
-      MEN-07: react 👍 to the comments waiting on me from the inbox, after reading them in full and picking which; so that acknowledging doesn't need a trip to GitHub.
+      MEN-07: react 👍 to the comments waiting on me from Attention Span, after reading them in full and picking which; so that acknowledging doesn't need a trip to GitHub.
   reviews:
     As a developer, I can:
       REV-01: see pull requests where my review is requested by name; so that I don't hold up others.
@@ -68,7 +68,7 @@ functional:
       SES-03: continue an item's existing session instead of starting another; so that work on an item stays in one place.
       SES-04: start a session that already has the item's context, such as failing checks or unresolved comments; so that the agent starts informed.
       SES-05: start sessions in my local checkout of the item's repository without configuring paths; so that new repositories work without setup.
-      SES-06: start sessions even when no agent profiles are configured; so that the inbox works before I've set anything up.
+      SES-06: start sessions even when no agent profiles are configured; so that Attention Span works before I've set anything up.
       SES-07: start a session on an issue in the repository its code lives in, chosen right there the first time; so that issues kept in a separate repository work without editing files.
   next_up:
     As a developer, I can:
@@ -95,7 +95,7 @@ non_functional:
   security:
     SEC-01: uses the GitHub sign-in already on its host and stores no GitHub credentials of its own; so that there is no extra secret to protect.
   privacy:
-    PRIV-01: may keep a local copy of the GitHub data it shows; so that the inbox shows instantly after a restart.
+    PRIV-01: may keep a local copy of the GitHub data it shows; so that Attention Span shows instantly after a restart.
   reach:
     REACH-01: works in Paseo on both phone and desktop; so that I can triage from anywhere.
   freshness:
@@ -103,4 +103,4 @@ non_functional:
 
 docs:
   CONTRIBUTING.md: how to check, preview the screens in isolation, and install — read before changing UI or tooling.
-  docs/architecture.md: how the inbox meets these requirements (sections, rules, actions, GitHub requests) — read before changing behaviour or adding a requirement.
+  docs/architecture.md: how Attention Span meets these requirements (sections, rules, actions, GitHub requests) — read before changing behaviour or adding a requirement.

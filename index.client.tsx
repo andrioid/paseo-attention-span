@@ -1,18 +1,18 @@
 import type { PluginClientContext, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { Text } from "react-native";
-import { useInbox } from "./client/data";
+import { AttentionScreen } from "./client/attention-screen";
+import { useAttention } from "./client/data";
 import { ICONS } from "./client/icons";
-import { InboxScreen } from "./client/inbox-screen";
 
 // The count, visible from anywhere in Paseo [ATT-09].
-function InboxItem({ theme, currentScreen, openScreen }: PluginSidebarItemProps) {
-  const { data } = useInbox();
+function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProps) {
+  const { data } = useAttention();
   const count = data?.count ?? 0;
   return (
     <SidebarRow
-      icon={ICONS.inbox}
-      label="GitHub attention"
+      icon={ICONS.tray}
+      label="Attention"
       active={currentScreen?.screenId === "inbox"}
       onPress={() => openScreen({ screenId: "inbox" })}
       trailing={
@@ -26,7 +26,7 @@ function InboxItem({ theme, currentScreen, openScreen }: PluginSidebarItemProps)
 
 // One screen for everything that needs me [ATT-01].
 export default function contribute(client: PluginClientContext) {
-  client.addScreen({ id: "inbox", title: "GitHub attention", Component: InboxScreen });
-  client.addSidebarHeaderItem({ id: "inbox", title: "GitHub attention", Component: InboxItem });
+  client.addScreen({ id: "inbox", title: "Attention Span", Component: AttentionScreen });
+  client.addSidebarHeaderItem({ id: "inbox", title: "Attention Span", Component: SidebarItem });
   return () => {};
 }

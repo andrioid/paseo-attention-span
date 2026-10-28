@@ -1,31 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { InboxConfig } from "../shared/config";
-import type { Item } from "../shared/inbox";
+import type { Item } from "../shared/attention";
+import { AttentionConfig } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
 import { HISTORY_SEARCHES, LIVE_SEARCHES, searchQuery, searchVariables } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
-const config = InboxConfig.parse({ orgs: ["acme"] });
+const config = AttentionConfig.parse({ orgs: ["acme"] });
 const { daysAgo, commit, thread, pr, comment, mention, issue, pickable, search } = builders(NOW);
 const key = (n: number) => `${REPO}#${n}`;
 const chips = (item: { chips: { text: string }[] }) => item.chips.map((chip) => chip.text);
 const sections = (items: Item[]) => items.map((item) => [item.number, item.section]);
 
-function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: InboxConfig; fieldOptions?: Record<string, string[]> } = {}) {
+function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]> } = {}) {
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
-const doing = (inbox: ReturnType<typeof run>) => inbox.items.filter((item) => !item.section.startsWith("wait_"));
+const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => !item.section.startsWith("wait_"));
 
 describe("doing", () => {
   it("ATT-02: puts each item once, under its most urgent reason, in section order", () => {
     const changes = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(0.5) }] };
-    const inbox = run({
+    const attention = run({
       mine: [pr(1, { reviewDecision: "APPROVED" }), pr(2, {}, "FAILURE"), pr(3, { reviewDecision: "CHANGES_REQUESTED", latestReviews: changes }, "FAILURE")],
       reviews: [pr(9, { author: alice })],
     });
     // Newest activity by others first within a section.
-    expect(sections(inbox.items)).toEqual([[9, "review"], [3, "ci"], [2, "ci"], [1, "ready"]]);
+    expect(sections(attention.items)).toEqual([[9, "review"], [3, "ci"], [2, "ci"], [1, "ready"]]);
   });
 
   it("REV-01: lists PRs requesting my review, showing the author", () => {
@@ -94,7 +94,7 @@ describe("ready to merge and behind base", () => {
   it("PRS-04: uses the merge method from config, else the first the repo allows", () => {
     const noSquash = pr(1, { reviewDecision: "APPROVED", repository: { nameWithOwner: REPO, squashMergeAllowed: false, mergeCommitAllowed: true } });
     expect(run({ mine: [noSquash] }).items[0].target.mergeMethod).toBe("merge");
-    const configured = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, {}, { config: InboxConfig.parse({ mergeMethods: { [REPO]: "rebase" } }) });
+    const configured = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, {}, { config: AttentionConfig.parse({ mergeMethods: { [REPO]: "rebase" } }) });
     expect(configured.items[0].target.mergeMethod).toBe("rebase");
   });
 });
@@ -105,9 +105,9 @@ describe("stacks", () => {
   const top = pr(12, { baseRefName: "b", headRefName: "c", isDraft: true });
 
   it("ATT-04: shows a stack as one item led by its bottom PR", () => {
-    const inbox = run({ mine: [top, bottom, middle] }, { [key(11)]: 279 });
-    expect(inbox.items).toHaveLength(1);
-    const [item] = inbox.items;
+    const attention = run({ mine: [top, bottom, middle] }, { [key(11)]: 279 });
+    expect(attention.items).toHaveLength(1);
+    const [item] = attention.items;
     expect(item.number).toBe(10);
     expect(item.children.map((child) => [child.number, child.draft, chips(child)])).toEqual([
       [11, true, ["2/3", "approved", "279 behind #10"]],
@@ -166,38 +166,38 @@ describe("drafts", () => {
 describe("issues", () => {
   it("ATT-03: a mention on the issue makes it a reply, without the waiting PR's duration chip", () => {
     const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
-    const inbox = run({ mine: [pr(1, { closingIssuesReferences: closes })], mentions: [mention(50, [comment(bob, "@me weekends too?", 0.5)])] });
-    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "reply", person: { login: "bob" } });
-    expect(chips(inbox.items[0])).toEqual(["PR #1"]);
+    const attention = run({ mine: [pr(1, { closingIssuesReferences: closes })], mentions: [mention(50, [comment(bob, "@me weekends too?", 0.5)])] });
+    expect(attention.items[0]).toMatchObject({ kind: "issue", number: 50, section: "reply", person: { login: "bob" } });
+    expect(chips(attention.items[0])).toEqual(["PR #1"]);
   });
 
   it("ATT-03: groups PRs under the issue they close, led by the issue", () => {
     const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
-    const inbox = run({
+    const attention = run({
       mine: [pr(1, { closingIssuesReferences: closes }, "FAILURE"), pr(2, { closingIssuesReferences: closes, reviewDecision: "APPROVED" })],
       assigned: [pickable(50, {})],
     });
-    expect(inbox.items).toHaveLength(1);
-    expect(inbox.items[0]).toMatchObject({ kind: "issue", number: 50, section: "ci", actions: ["fix", "rerun"], target: { number: 1 } });
-    expect(inbox.items[0].children.map((child) => child.number)).toEqual([1, 2]);
-    expect(inbox.assigned).toEqual([]); // already in progress
+    expect(attention.items).toHaveLength(1);
+    expect(attention.items[0]).toMatchObject({ kind: "issue", number: 50, section: "ci", actions: ["fix", "rerun"], target: { number: 1 } });
+    expect(attention.items[0].children.map((child) => child.number)).toEqual([1, 2]);
+    expect(attention.assigned).toEqual([]); // already in progress
   });
 });
 
 describe("waiting", () => {
   it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
-    const inbox = run({
+    const attention = run({
       mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: bob }] } }), pr(2, {}, "PENDING")],
       commented: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
     });
-    expect(sections(inbox.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
-    expect(inbox.items[0]).toMatchObject({ person: { login: "bob", avatarUrl: bob.avatarUrl }, chips: [{ text: "1d" }] });
+    expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
+    expect(attention.items[0]).toMatchObject({ person: { login: "bob", avatarUrl: bob.avatarUrl }, chips: [{ text: "1d" }] });
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
-    const inbox = run({ mine: [pr(1, { commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
-    expect(sections(inbox.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
-    expect(chips(inbox.items[0])).toEqual(["waiting for review · 4d"]);
+    const attention = run({ mine: [pr(1, { commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
+    expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
+    expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
   });
 });
 
@@ -271,9 +271,9 @@ describe("mentions", () => {
   });
 
   it("MEN-01: a mention on my own PR makes it a reply", () => {
-    const inbox = run({ mine: [pr(1, {}, "FAILURE")], mentions: [mention(1, [comment(alice, "@me why?", 1)], { __typename: "PullRequest" })] });
-    expect(inbox.items).toHaveLength(1);
-    expect(inbox.items[0]).toMatchObject({ section: "reply", actions: ["reply", "acknowledge"] });
+    const attention = run({ mine: [pr(1, {}, "FAILURE")], mentions: [mention(1, [comment(alice, "@me why?", 1)], { __typename: "PullRequest" })] });
+    expect(attention.items).toHaveLength(1);
+    expect(attention.items[0]).toMatchObject({ section: "reply", actions: ["reply", "acknowledge"] });
   });
 
   it("MEN-07: offers 👍 for every waiting comment, including a description that mentions me", () => {
@@ -303,7 +303,7 @@ describe("next up", () => {
   const fieldOptions = { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] };
 
   it("NXT-01, NXT-02: orders unclaimed issues by priority, then effort, then age", () => {
-    const inbox = run(
+    const attention = run(
       {
         unclaimed: [
           pickable(1, { Priority: "🏝 P3 Low", Effort: "🦑 Large (1-2w)" }, 50),
@@ -314,34 +314,34 @@ describe("next up", () => {
         ],
       },
       {},
-      { config: InboxConfig.parse({ nextUp }), fieldOptions },
+      { config: AttentionConfig.parse({ nextUp }), fieldOptions },
     );
-    expect(inbox.unclaimed.map((issue) => issue.number)).toEqual([4, 3, 2, 1, 5]);
-    expect(inbox.unclaimed[0]).toMatchObject({ type: "Bug", priority: "🏔 P1 High", effort: "🦑 Large (1-2w)", defaultBranch: "main" });
+    expect(attention.unclaimed.map((issue) => issue.number)).toEqual([4, 3, 2, 1, 5]);
+    expect(attention.unclaimed[0]).toMatchObject({ type: "Bug", priority: "🏔 P1 High", effort: "🦑 Large (1-2w)", defaultBranch: "main" });
   });
 
   it("NXT-06: lists issues assigned to me, ranked the same way", () => {
-    const inbox = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, {}, { config: InboxConfig.parse({ nextUp }) });
-    expect(inbox.assigned.map((issue) => issue.number)).toEqual([8, 7]);
+    const attention = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
+    expect(attention.assigned.map((issue) => issue.number)).toEqual([8, 7]);
   });
 
   it("NXT-04: reads only the configured fields and repositories", () => {
-    const inbox = run({ unclaimed: [pickable(1, { Scope: "🔙 Backend", Other: "x" })] }, {}, { config: InboxConfig.parse({ nextUp }) });
-    expect(inbox.unclaimed[0]).toMatchObject({ scope: "🔙 Backend", priority: undefined });
-    const variables = searchVariables(InboxConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), NOW);
+    const attention = run({ unclaimed: [pickable(1, { Scope: "🔙 Backend", Other: "x" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
+    expect(attention.unclaimed[0]).toMatchObject({ scope: "🔙 Backend", priority: undefined });
+    const variables = searchVariables(AttentionConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), NOW);
     expect(variables.unclaimed).toBe("is:issue is:open no:assignee repo:acme/shop archived:false");
   });
 });
 
 describe("GitHub requests", () => {
   it("SRC-01, GH-01: scopes every search to the configured orgs and repos", () => {
-    const variables = searchVariables(InboxConfig.parse({ orgs: ["acme"], repos: ["acme/web"] }), NOW);
+    const variables = searchVariables(AttentionConfig.parse({ orgs: ["acme"], repos: ["acme/web"] }), NOW);
     for (const [alias, query] of Object.entries(variables)) if (alias !== "unclaimed") expect(query).toContain("org:acme repo:acme/web");
     expect(variables.reviews).toContain("user-review-requested:@me");
   });
 
   it("GH-01: sends each live search as its own request, and History as one, with only the fragments each uses", () => {
-    expect(searchQuery(["mine"], true)).toMatch(/^query Inbox\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
+    expect(searchQuery(["mine"], true)).toMatch(/^query Attention\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
     expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
     expect(searchQuery(["commented"])).not.toContain("fragment");
     expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
@@ -359,10 +359,10 @@ describe("GitHub requests", () => {
 
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
-    const inbox = classify({ data, details, config, now: NOW });
-    expect(new Set([...inbox.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(14);
-    expect(doing(inbox).length).toBeGreaterThan(5);
-    expect([inbox.assigned.length, inbox.unclaimed.length]).toEqual([2, 6]);
+    const attention = classify({ data, details, config, now: NOW });
+    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(14);
+    expect(doing(attention).length).toBeGreaterThan(5);
+    expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 6]);
   });
 });
 

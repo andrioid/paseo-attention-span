@@ -1,11 +1,11 @@
-import { InboxConfig } from "../shared/config";
-import type { FeedId, FeedStatus, Inbox, InboxView, Item } from "../shared/inbox";
+import type { Attention, AttentionView, FeedId, FeedStatus, Item } from "../shared/attention";
+import { AttentionConfig } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
 import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, type SearchName, searchQuery, searchVariables } from "./queries";
-import { loadConfig, loadState, saveCodeRepo, saveState, State } from "./store";
+import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveState, State } from "./store";
 import { buildView } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -20,9 +20,9 @@ interface Feed {
 }
 
 // Owns the cache and the background refresh of each feed [FRESH-01, PRIV-01].
-export class InboxService {
+export class AttentionService {
   private state: State = State.parse({});
-  private config: InboxConfig = InboxConfig.parse({});
+  private config: AttentionConfig = AttentionConfig.parse({});
   private configError: string | null = null;
   private feeds: Record<FeedId, Feed> = {
     live: { inFlight: null, lastAttemptAt: 0, error: null },
@@ -33,8 +33,9 @@ export class InboxService {
   private intervalMinutes = 0;
 
   async start(): Promise<void> {
+    await moveOldFiles().catch((error) => console.error("Couldn't move the old settings folder:", error));
     this.state = await loadState();
-    await this.reloadConfig().catch(() => {}); // shown as the inbox error
+    await this.reloadConfig().catch(() => {}); // shown as the screen's error
     this.schedule();
     void this.refreshStale();
   }
@@ -45,13 +46,13 @@ export class InboxService {
   }
 
   // ⟳ fetches its tab's feed now; otherwise feeds older than their schedule are fetched first.
-  async get(refresh?: FeedId): Promise<InboxView> {
+  async get(refresh?: FeedId): Promise<AttentionView> {
     if (refresh) await this.refresh(refresh).catch(() => {});
     else await this.refreshStale();
     return this.view();
   }
 
-  async dismiss(key: string): Promise<InboxView> {
+  async dismiss(key: string): Promise<AttentionView> {
     const item = this.items().find((candidate) => candidate.key === key);
     if (item) {
       this.state.dismissed[key] = { at: item.othersActivityAt, section: item.section };
@@ -60,20 +61,20 @@ export class InboxService {
     return this.view();
   }
 
-  async undismiss(key: string): Promise<InboxView> {
+  async undismiss(key: string): Promise<AttentionView> {
     delete this.state.dismissed[key];
     await saveState(this.state);
     return this.view();
   }
 
-  async restoreDismissed(): Promise<InboxView> {
+  async restoreDismissed(): Promise<AttentionView> {
     this.state.dismissed = {};
     await this.save();
     return this.view();
   }
 
   // Remember where an issue repo's code lives [SES-07].
-  async setCodeRepo(issueRepo: string, codeRepo: string): Promise<InboxView> {
+  async setCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionView> {
     this.config = await saveCodeRepo(issueRepo, codeRepo);
     return this.view();
   }
@@ -102,7 +103,7 @@ export class InboxService {
       await this.reloadConfig();
       const now = new Date();
       const fetchedAt = now.toISOString();
-      if (id === "live") this.state.live = { fetchedAt, inbox: await this.fetchLive(now) };
+      if (id === "live") this.state.live = { fetchedAt, attention: await this.fetchLive(now) };
       else this.state.history = { fetchedAt, items: await this.fetchHistory(now) };
       // Forget dismissals of items that are gone.
       const keys = new Set(this.items().map((item) => item.key));
@@ -111,12 +112,12 @@ export class InboxService {
       await this.save();
     } catch (error) {
       feed.error = (error as Error).message;
-      console.error(`Inbox ${id} refresh failed:`, feed.error);
+      console.error(`Attention Span ${id} refresh failed:`, feed.error);
       throw error;
     }
   }
 
-  private async fetchLive(now: Date): Promise<Inbox> {
+  private async fetchLive(now: Date): Promise<Attention> {
     const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now);
     return classify({ data, details, config: this.config, now });
   }
@@ -192,7 +193,7 @@ export class InboxService {
   }
 
   private items(): Item[] {
-    return [...(this.state.live?.inbox.items ?? []), ...(this.state.history?.items ?? [])];
+    return [...(this.state.live?.attention.items ?? []), ...(this.state.history?.items ?? [])];
   }
 
   // Feeds finish independently; saves go one at a time so an older snapshot never lands last.
@@ -201,13 +202,13 @@ export class InboxService {
     return this.saving;
   }
 
-  private view(): InboxView {
+  private view(): AttentionView {
     const status = (id: FeedId): FeedStatus => ({
       fetchedAt: this.state[id]?.fetchedAt ?? null,
       refreshing: this.feeds[id].inFlight !== null,
       error: this.feeds[id].error ?? this.configError,
     });
-    return buildView(this.state.live?.inbox ?? null, this.state.history?.items ?? [], this.state.dismissed, {
+    return buildView(this.state.live?.attention ?? null, this.state.history?.items ?? [], this.state.dismissed, {
       feeds: { live: status("live"), history: status("history") },
       scopes: this.state.scopes,
       config: this.config,

@@ -1,13 +1,13 @@
 # Architecture
 
-How the inbox meets [requirements.yaml](../requirements.yaml). Requirement IDs in brackets.
+How Attention Span meets [requirements.yaml](../requirements.yaml). Requirement IDs in brackets.
 
 ## Pieces
 
 ```mermaid
 flowchart LR
   subgraph Paseo app
-    Screen[Inbox screen]
+    Screen[Attention Span screen]
     Badge[Sidebar count]
   end
   subgraph Daemon host
@@ -27,7 +27,7 @@ flowchart LR
   - Client: one screen and a sidebar header item. React Native primitives only, so it works on phone and desktop [REACH-01].
   - Server: RPC handlers for fetching and for GitHub actions.
 - **GitHub access** goes through the host's existing `gh` login. The plugin stores no token [SEC-01].
-- **Local files** live in `~/.config/paseo-github-attention/`:
+- **Local files** live in `~/.config/paseo-attention-span/`:
   - `config.json`, edited by hand, except `codeRepos`, which the screen can add to:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
@@ -36,11 +36,11 @@ flowchart LR
     - optional merge method per repo [PRS-04]
     - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
     - `nextUp`: repos and the org issue fields for priority, effort and scope [NXT-04]
-  - `state.json`: dismissals [ATT-08], the scope chips picked on Next up [NXT-03] and the last fetch of each feed, so the inbox shows instantly after a restart [PRIV-01].
+  - `state.json`: dismissals [ATT-08], the scope chips picked on Next up [NXT-03] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
 
 ## Tabs
 
-The tabs tell the story of my work, left to right: what I finished, what needs me, what waits on others, what's next. The screen opens on **Doing**, and the sidebar entry "GitHub attention" shows Doing's count [ATT-09]. On phones only the active tab shows its label.
+The tabs tell the story of my work, left to right: what I finished, what needs me, what waits on others, what's next. The screen opens on **Doing**, and the sidebar entry "Attention" shows Doing's count [ATT-09]. On phones only the active tab shows its label.
 
 | Tab | Shows |
 |---|---|
@@ -86,7 +86,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
 ## Next up
 
-A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
+A second tab lists open issues nobody is assigned to [NXT-01], in the configured orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
 
 ## Actions
 
@@ -124,7 +124,7 @@ A tap starts with defaults. An existing workspace for the branch or PR is resume
 
 ## GitHub requests
 
-Light on GitHub's API [GH-01], and quick when I press ⟳. The inbox has two feeds, each with its own cache, schedule and error:
+Light on GitHub's API [GH-01], and quick when I press ⟳. Attention Span has two feeds, each with its own cache, schedule and error:
 
 - **Live** feeds Doing, Waiting and Next up.
 - **History** feeds History.
@@ -157,7 +157,7 @@ It's a digest, not a live view. Opening the screen shows the cache. ⟳ fetches 
 | Feed | Fetched |
 |---|---|
 | Live | Every `refreshMinutes` (default 15, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
-| History | Once a day in the background, after a merge from the inbox, and on ⟳ in History. Things I finish outside the inbox show up by the next day. |
+| History | Once a day in the background, after a merge from Attention Span, and on ⟳ in History. Things I finish outside Attention Span show up by the next day. |
 
 A failed refresh is retried at most every 5 minutes. At the default 15 minutes that's about 28 requests and 280 points an hour, under 6% of GitHub's hourly allowance. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
 

@@ -1,19 +1,19 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
+import type { AttentionView, ItemDetails, Target } from "./attention";
 import { SessionKind } from "./config";
-import type { InboxView, ItemDetails, Target } from "./inbox";
 
 // Both sides are this plugin, so the types are checked by TypeScript, not repeated as schemas.
-const view = z.custom<InboxView>();
+const view = z.custom<AttentionView>();
 const target = z.custom<Target>();
 const done = z.object({ ok: z.literal(true) });
 
-// The cached inbox. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳).
-export const getInbox = defineRpc({ name: "inbox.get", input: z.object({ refresh: z.enum(["live", "history"]).optional() }), output: view });
-export const dismissItem = defineRpc({ name: "inbox.dismiss", input: z.object({ key: z.string() }), output: view });
+// The cached view. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳).
+export const getAttention = defineRpc({ name: "attention.get", input: z.object({ refresh: z.enum(["live", "history"]).optional() }), output: view });
+export const dismissItem = defineRpc({ name: "attention.dismiss", input: z.object({ key: z.string() }), output: view });
 // Undo one dismissal [ATT-08].
-export const undismissItem = defineRpc({ name: "inbox.undismiss", input: z.object({ key: z.string() }), output: view });
-export const restoreDismissed = defineRpc({ name: "inbox.restore-dismissed", input: z.object({}), output: view });
+export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.object({ key: z.string() }), output: view });
+export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({}), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });
 // Remember the scope chips picked on Next up [NXT-03].

@@ -2,7 +2,7 @@ import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
-import type { Chip } from "../shared/inbox";
+import type { Chip } from "../shared/attention";
 import { ICONS, type IconName } from "./icons";
 
 // Shared look: theme colors only, tighter on compact layouts [REACH-01].

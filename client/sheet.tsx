@@ -2,7 +2,7 @@ import { openExternalUrl } from "@getpaseo/plugin/client";
 import { Modal } from "@getpaseo/plugin/client/ui";
 import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { ItemDetails } from "../shared/inbox";
+import type { ItemDetails } from "../shared/attention";
 import type { IconName } from "./icons";
 import { KeepStyles, TablerIcon, useHover, useStyles } from "./ui";
 

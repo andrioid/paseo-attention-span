@@ -4,16 +4,16 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import type { InboxConfig, SessionKind } from "../shared/config";
+import { type ActionId, type AgentSummary, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import type { AttentionConfig, SessionKind } from "../shared/config";
 import { ago } from "../shared/format";
-import { type ActionId, type AgentSummary, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/inbox";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
-import { useInbox } from "./data";
+import { useAttention } from "./data";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
-import { branchWorkspaces, findCheckout, githubProjects, inboxAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
+import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
@@ -121,12 +121,12 @@ const SECTION_ICONS: Record<SectionId, IconName> = {
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: "history", label: "History", icon: "history" },
-  { id: "doing", label: "Doing", icon: "inbox" },
+  { id: "doing", label: "Doing", icon: "tray" },
   { id: "waiting", label: "Waiting", icon: "hourglass" },
   { id: "next", label: "Next up", icon: "nextUp" },
 ];
 
-const AGENTS_QUERY_KEY = ["github-attention", "agents"] as const;
+const AGENTS_QUERY_KEY = ["attention-span", "agents"] as const;
 type FetchContext = (input: RpcInput<typeof rpc.sessionContext>) => Promise<RpcOutput<typeof rpc.sessionContext>>;
 export type FetchDetails = (input: RpcInput<typeof rpc.itemDetails>) => Promise<RpcOutput<typeof rpc.itemDetails>>;
 type DefaultBranch = (repo: string) => Promise<string | null>;
@@ -156,21 +156,21 @@ function agentSignal(agent: AgentSummary): Chip {
   return { text: "agent idle", tone: "neutral" };
 }
 
-export function InboxScreen({ theme, layout, navigation }: PluginScreenProps) {
+export function AttentionScreen({ theme, layout, navigation }: PluginScreenProps) {
   return (
     <StylesProvider theme={theme} compact={layout.compact}>
-      <Inbox navigation={navigation} />
+      <AttentionList navigation={navigation} />
     </StylesProvider>
   );
 }
 
-function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
+function AttentionList({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const styles = useStyles();
   const paseo = usePaseo();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const inbox = useInbox();
-  const agents = useQuery({ queryKey: AGENTS_QUERY_KEY, queryFn: () => inboxAgents(paseo), refetchInterval: 15_000 });
+  const attention = useAttention();
+  const agents = useQuery({ queryKey: AGENTS_QUERY_KEY, queryFn: () => itemAgents(paseo), refetchInterval: 15_000 });
   const fetchContext = useRpc(rpc.sessionContext);
   const dismiss = useRpc(rpc.dismissItem);
   const undismiss = useRpc(rpc.undismissItem);
@@ -193,7 +193,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const [busy, setBusy] = useState<string | null>(null);
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   const [placing, setPlacing] = useState<Placing | null>(null);
-  const view = inbox.data;
+  const view = attention.data;
 
   async function run(key: string, label: string, work: () => Promise<unknown>) {
     setBusy(key);
@@ -216,7 +216,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
       await work();
       if (undo) offerUndo(done, undo);
       else toast.show(done, { variant: "success" });
-      void inbox.refreshNow("live").catch(() => {}); // the server is already refreshing; this waits for it
+      void attention.refreshNow("live").catch(() => {}); // the server is already refreshing; this waits for it
     });
   }
 
@@ -238,7 +238,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
     await run(itemKey, "Starting the session", () => startNow(itemKey, kind, target, view.config, before));
   }
 
-  async function startNow(itemKey: string, kind: SessionKind, target: Target, config: InboxConfig, before?: () => Promise<unknown>) {
+  async function startNow(itemKey: string, kind: SessionKind, target: Target, config: AttentionConfig, before?: () => Promise<unknown>) {
     const checkout = await findCheckout(paseo, config, target, defaultBranch);
     // Ask where an issue's code lives before claiming it, so a failed start doesn't leave it taken [SES-07].
     if (!checkout.project && target.kind === "issue") return setPlacing({ itemKey, kind, target, missing: checkout.repo, before });
@@ -254,7 +254,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
     setPlacing(null);
     void run(itemKey, "Starting the session", async () => {
       const next = await setCodeRepo({ issueRepo: target.repo, codeRepo });
-      inbox.setView(next);
+      attention.setView(next);
       await startNow(itemKey, kind, target, next.config, before);
     });
   }
@@ -262,7 +262,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   if (!view) {
     return (
       <View style={[styles.screen, styles.content]}>
-        <Text style={inbox.error ? styles.danger : styles.muted}>{inbox.error ? `Couldn't load the inbox: ${(inbox.error as Error).message}` : "Loading…"}</Text>
+        <Text style={attention.error ? styles.danger : styles.muted}>{attention.error ? `Couldn't load Attention Span: ${(attention.error as Error).message}` : "Loading…"}</Text>
       </View>
     );
   }
@@ -319,12 +319,12 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
         if (action === "merge") await merge({ target: item.target });
         else await close({ target: item.target, comment });
         toast.show(`PR ${item.target.number} ${action === "merge" ? "merged" : "closed"}`, { variant: "success" });
-        await inbox.refreshNow("live");
+        await attention.refreshNow("live");
       }),
     dismiss: (item) =>
       void run(item.key, "Dismiss", async () => {
-        inbox.setView(await dismiss({ key: item.key }));
-        offerUndo(`Dismissed “${item.title}”`, async () => inbox.setView(await undismiss({ key: item.key })), true);
+        attention.setView(await dismiss({ key: item.key }));
+        offerUndo(`Dismissed “${item.title}”`, async () => attention.setView(await undismiss({ key: item.key })), true);
       }),
   };
 
@@ -341,9 +341,9 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
             <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} onPress={() => switchTab(id)} />
           ))}
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void inbox.refreshNow(TAB_FEED[tab]).catch(() => {})}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}>
           <TablerIcon name="update" size={14} />
-          <Text style={styles.muted}>{feed.refreshing || inbox.isFetching ? "refreshing…" : feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
+          <Text style={styles.muted}>{feed.refreshing || attention.isFetching ? "refreshing…" : feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
         </Pressable>
       </View>
       {feed.error ? <Text style={styles.danger}>{feed.error}</Text> : null}
@@ -360,7 +360,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
               void run(String(row.id), "Undo", async () => {
                 await row.undo();
                 setUndoable((rows) => rows.filter((other) => other.id !== row.id));
-                if (!row.dismissal) void inbox.refreshNow("live").catch(() => {});
+                if (!row.dismissal) void attention.refreshNow("live").catch(() => {});
               })
             }
           />
@@ -371,7 +371,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
         <>
           <Sections sections={view.doing} actions={actions} empty="Nothing needs you right now." />
           {view.dismissedCount > undoable.filter((row) => row.dismissal).length ? (
-            <Pressable accessibilityRole="button" onPress={() => void run("restore", "Restore", async () => (inbox.setView(await restore({})), setUndoable([])))}>
+            <Pressable accessibilityRole="button" onPress={() => void run("restore", "Restore", async () => (attention.setView(await restore({})), setUndoable([])))}>
               <Text style={styles.muted}>{view.dismissedCount} dismissed · show them again</Text>
             </Pressable>
           ) : null}
@@ -393,7 +393,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
           unclaimed={view.unclaimed}
           selected={view.scopes}
           onSelect={(scopes) => {
-            inbox.setView({ ...view, scopes });
+            attention.setView({ ...view, scopes });
             saveScopes({ scopes }).catch((error) => toast.error(`Saving the filter failed: ${(error as Error).message}`));
           }}
           agents={actions.agents}
@@ -439,7 +439,7 @@ function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: s
 interface Actions {
   agents: Record<string, AgentSummary>;
   busy: string | null;
-  config: InboxConfig;
+  config: AttentionConfig;
   showRepo: boolean;
   fetchContext: FetchContext;
   fetchDetails: FetchDetails;
@@ -562,7 +562,7 @@ interface SheetHandlers {
 function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: AgentSummary; actions: Actions } & SheetHandlers) {
   const checks = item.actions.includes("rerun");
   const details = useQuery({
-    queryKey: ["github-attention", "details", item.key, checks],
+    queryKey: ["attention-span", "details", item.key, checks],
     queryFn: () => actions.fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
     staleTime: 60_000,
   });
@@ -614,7 +614,7 @@ function sheetEntries(
       entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), onPress: () => onPerform(action) });
     }
   }
-  // Anything the inbox doesn't cover [ATT-12].
+  // Anything Attention Span doesn't cover [ATT-12].
   entries.push({ key: "github", icon: "github", label: "Open on GitHub", detail: `${item.repo}#${item.number}`, onPress: close(() => void openExternalUrl(item.url)) });
   if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", onPress: close(() => actions.dismiss(item)) });
   return entries;
@@ -630,7 +630,7 @@ function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (id
     <Modal title={`Acknowledge: ${item.title}`} open onOpenChange={(open) => (open ? null : onClose())}>
       <Modal.Content>
         <KeepStyles styles={styles}>
-          <Text style={styles.muted}>A 👍 tells them you've seen it, and clears it from your inbox.</Text>
+          <Text style={styles.muted}>A 👍 tells them you've seen it, and clears it from your list.</Text>
           {comments.map((c) => (
             <Pressable
               key={c.id}
@@ -788,7 +788,7 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
   const toast = useToast();
   const { target } = item;
   const options = useQuery({
-    queryKey: ["github-attention", "options", item.key, kind],
+    queryKey: ["attention-span", "options", item.key, kind],
     queryFn: async () => {
       const [{ context }, profiles, checkout, defaults] = await Promise.all([
         actions.fetchContext({ kind, target }),
@@ -862,7 +862,7 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
 function CodeRepoPicker({ issueRepo, missing, onPick, onClose }: { issueRepo: string; missing: string; onPick: (repo: string) => void; onClose: () => void }) {
   const styles = useStyles();
   const paseo = usePaseo();
-  const projects = useQuery({ queryKey: ["github-attention", "github-projects"], queryFn: () => githubProjects(paseo) });
+  const projects = useQuery({ queryKey: ["attention-span", "github-projects"], queryFn: () => githubProjects(paseo) });
   return (
     <Modal title={`Where does the code for ${issueRepo} live?`} open onOpenChange={(open) => (open ? null : onClose())}>
       <Modal.Content>

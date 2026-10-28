@@ -1,4 +1,4 @@
-import type { FailingChecks, ItemDetails, Target } from "../shared/inbox";
+import type { FailingChecks, ItemDetails, Target } from "../shared/attention";
 import { graphql, runGh } from "./gh";
 
 // What an item's sheet shows beyond the card, fetched when it opens [ATT-06, GH-01].

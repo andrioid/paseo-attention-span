@@ -1,7 +1,7 @@
-import type { AgentSummary, ItemDetails, Target } from "../shared/inbox";
+import type { AgentSummary, ItemDetails, Target } from "../shared/attention";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
-// Made-up GitHub data for tests and for previews without GitHub (PASEO_GITHUB_ATTENTION_FIXTURE=1).
+// Made-up GitHub data for tests and for previews without GitHub (PASEO_ATTENTION_SPAN_FIXTURE=1).
 
 export const REPO = "acme/shop";
 // Issues kept apart from the code, as some orgs do; its code lives in REPO [SES-07].

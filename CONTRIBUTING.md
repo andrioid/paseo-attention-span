@@ -24,7 +24,7 @@ This builds a Docker image and runs the plugin in a throwaway Paseo daemon that 
 
 It's isolated on purpose. Agents must never connect tooling to the Paseo daemon that runs them.
 - The container gets only Paseo (mounted read-only from the host install), the plugin source (read-only) and the output folder. It has no `~/.paseo`, no `gh` login and no access to the host's loopback.
-- The plugin runs in fixture mode (`PASEO_GITHUB_ATTENTION_FIXTURE=1`) on the made-up data in `server/fixture.ts`, which shows every section. GitHub calls fail on purpose.
+- The plugin runs in fixture mode (`PASEO_ATTENTION_SPAN_FIXTURE=1`) on the made-up data in `server/fixture.ts`, which shows every section. GitHub calls fail on purpose.
 - It still needs internet access for GitHub avatar images.
 
 The previews are react-native-web. Check the iOS and Android apps by hand now and then.

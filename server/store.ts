@@ -1,12 +1,15 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { InboxConfig } from "../shared/config";
-import type { Inbox, Item, SectionId } from "../shared/inbox";
+import type { Attention, Item, SectionId } from "../shared/attention";
+import { AttentionConfig } from "../shared/config";
 
-// Local files in ~/.config/paseo-github-attention/ [PRIV-01].
-export const DIR = process.env.PASEO_GITHUB_ATTENTION_DIR ?? join(homedir(), ".config", "paseo-github-attention");
+// Local files in ~/.config/paseo-attention-span/ [PRIV-01].
+const CHOSEN_DIR = process.env.PASEO_ATTENTION_SPAN_DIR ?? process.env.PASEO_GITHUB_ATTENTION_DIR;
+export const DIR = CHOSEN_DIR ?? join(homedir(), ".config", "paseo-attention-span");
+// Where they lived while the plugin was called "GitHub attention".
+const OLD_DIR = join(homedir(), ".config", "paseo-github-attention");
 const CONFIG = join(DIR, "config.json");
 const STATE = join(DIR, "state.json");
 
@@ -16,10 +19,23 @@ export const State = z.object({
   // Scope chips picked on Next up; none means all [NXT-03].
   scopes: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
-  live: z.object({ fetchedAt: z.string(), inbox: z.custom<Inbox>((value) => Array.isArray((value as Inbox)?.unclaimed)) }).nullable().default(null),
-  history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().default(null),
+  live: z.object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => Array.isArray((value as Attention)?.unclaimed)) }).nullable().catch(null),
+  history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().catch(null),
 });
 export type State = z.infer<typeof State>;
+
+// Moves the old folder over once, unless a folder is chosen by environment variable.
+export async function moveOldFiles(): Promise<void> {
+  if (CHOSEN_DIR || (await exists(DIR)) || !(await exists(OLD_DIR))) return;
+  await rename(OLD_DIR, DIR);
+}
+
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false,
+  );
+}
 
 async function readJson(path: string): Promise<unknown> {
   try {
@@ -30,20 +46,20 @@ async function readJson(path: string): Promise<unknown> {
   }
 }
 
-export async function loadConfig(): Promise<InboxConfig> {
-  const parsed = InboxConfig.safeParse(await readJson(CONFIG));
+export async function loadConfig(): Promise<AttentionConfig> {
+  const parsed = AttentionConfig.safeParse(await readJson(CONFIG));
   if (!parsed.success) throw new Error(`${CONFIG} is invalid: ${parsed.error.message}`);
   return parsed.data;
 }
 
 // The one setting the screen writes: everything else in the file is kept as it is [SES-07].
-export async function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<InboxConfig> {
+export async function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionConfig> {
   const raw = await readJson(CONFIG);
   const file = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
   const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => issues.toLowerCase() !== issueRepo.toLowerCase()));
   const next = { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
-  const parsed = InboxConfig.safeParse(next);
+  const parsed = AttentionConfig.safeParse(next);
   if (!parsed.success) throw new Error(`${CONFIG} is invalid: ${parsed.error.message}`);
   await writeAtomically(CONFIG, `${JSON.stringify(next, null, 2)}\n`);
   return parsed.data;

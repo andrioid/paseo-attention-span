@@ -14,8 +14,8 @@ const RankedField = z.object({
   order: z.array(z.string()).optional(),
 });
 
-// ~/.config/paseo-github-attention/config.json, edited by hand [SRC-01].
-export const InboxConfig = z.object({
+// ~/.config/paseo-attention-span/config.json, edited by hand [SRC-01].
+export const AttentionConfig = z.object({
   // GitHub orgs and "owner/name" repos to cover. Both empty means everything involving me.
   orgs: z.array(z.string()).default([]),
   repos: z.array(z.string()).default([]),
@@ -38,7 +38,7 @@ export const InboxConfig = z.object({
   mentionDays: z.number().positive().default(30),
   // How many weeks History shows [HIS-01].
   historyWeeks: z.number().int().positive().default(4),
-  // Unclaimed issues to pick from [NXT-04]. Repos default to the inbox's orgs and repos.
+  // Unclaimed issues to pick from [NXT-04]. Repos default to `orgs` and `repos`.
   nextUp: z
     .object({
       repos: z.array(z.string()).optional(),
@@ -48,10 +48,10 @@ export const InboxConfig = z.object({
     })
     .default({}),
 });
-export type InboxConfig = z.infer<typeof InboxConfig>;
+export type AttentionConfig = z.infer<typeof AttentionConfig>;
 
 // The repository whose checkout a session on an issue from `repo` works in [SES-07].
-export function codeRepoFor(config: Pick<InboxConfig, "codeRepos">, repo: string): string {
+export function codeRepoFor(config: Pick<AttentionConfig, "codeRepos">, repo: string): string {
   const mapped = Object.entries(config.codeRepos).find(([issues]) => issues.toLowerCase() === repo.toLowerCase());
   return mapped?.[1] ?? repo;
 }

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { InboxConfig } from "../shared/config";
-import type { Inbox, Item } from "../shared/inbox";
+import type { Attention, Item } from "../shared/attention";
+import { AttentionConfig } from "../shared/config";
 import { renderPrompt } from "../shared/prompts";
 import { buildView } from "./view";
 
-const config = InboxConfig.parse({});
+const config = AttentionConfig.parse({});
 const feed = { fetchedAt: null, refreshing: false, error: null };
 const meta = { feeds: { live: feed, history: feed }, scopes: [], config };
 
@@ -26,23 +26,23 @@ function item(key: string, section: Item["section"], othersActivityAt: string): 
   };
 }
 
-const inbox = (items: Item[]): Inbox => ({ login: "me", items, assigned: [], unclaimed: [] });
+const attention = (items: Item[]): Attention => ({ login: "me", items, assigned: [], unclaimed: [] });
 
 describe("dismiss", () => {
   it("ATT-08: hides a dismissed item until someone else acts on it or its reason changes", () => {
     const dismissed = { a: { at: "2026-10-01T00:00:00Z", section: "reply" as const } };
-    const hidden = buildView(inbox([item("a", "reply", "2026-10-01T00:00:00Z")]), [], dismissed, meta);
+    const hidden = buildView(attention([item("a", "reply", "2026-10-01T00:00:00Z")]), [], dismissed, meta);
     expect(hidden).toMatchObject({ count: 0, dismissedCount: 1, doing: [] });
 
-    const newActivity = buildView(inbox([item("a", "reply", "2026-10-02T00:00:00Z")]), [], dismissed, meta);
+    const newActivity = buildView(attention([item("a", "reply", "2026-10-02T00:00:00Z")]), [], dismissed, meta);
     expect(newActivity.count).toBe(1);
 
-    const newReason = buildView(inbox([item("a", "ci", "2026-10-01T00:00:00Z")]), [], dismissed, meta);
+    const newReason = buildView(attention([item("a", "ci", "2026-10-01T00:00:00Z")]), [], dismissed, meta);
     expect(newReason.doing.map((section) => section.id)).toEqual(["ci"]);
   });
 
   it("ATT-09: counts what is visible in Doing; other tabs get their own lists", () => {
-    const view = buildView(inbox([item("a", "reply", "x"), item("b", "drafts", "x"), item("c", "wait_ci", "x")]), [item("d", "done", "x")], {}, meta);
+    const view = buildView(attention([item("a", "reply", "x"), item("b", "drafts", "x"), item("c", "wait_ci", "x")]), [item("d", "done", "x")], {}, meta);
     expect(view.count).toBe(2);
     expect(view.doing.map((section) => section.title)).toEqual(["Waiting for your reply", "My drafts"]);
     expect(view.waiting.map((section) => section.id)).toEqual(["wait_ci"]);
@@ -75,7 +75,7 @@ describe("prompts", () => {
   });
 
   it("SES-04: a template in config.json replaces the built-in one", () => {
-    const custom = InboxConfig.parse({ prompts: { fix: "Fix {{repo}}#{{number}} on {{head}}: {{context}}" } });
+    const custom = AttentionConfig.parse({ prompts: { fix: "Fix {{repo}}#{{number}} on {{head}}: {{context}}" } });
     expect(renderPrompt("fix", target, "log", custom)).toBe("Fix o/r#7 on feature: log");
   });
 });

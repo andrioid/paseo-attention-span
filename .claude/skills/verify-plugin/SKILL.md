@@ -62,14 +62,14 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 |---|---|
 | Image: Node 24, Chromium, `playwright-core` | `preview/Dockerfile` |
 | Starts a daemon with `--home /tmp/paseo-home`, sets `pluginsEnabled`, `features.webUi.enabled` (the daemon serves the web app itself), dictation and voice off, then installs `/plugin` and runs the shooter | `preview/entrypoint.sh` |
-| Opens `http://127.0.0.1:6767/` inside the container, clicks the "GitHub attention" sidebar entry, then each tab by its accessibility label | `preview/shoot.mjs` |
+| Opens `http://127.0.0.1:6767/` inside the container, clicks the "Attention" sidebar entry, then each tab by its accessibility label | `preview/shoot.mjs` |
 | Plugin config inside the container (fields for Next up) | `preview/plugin-config.json` |
 | The fake GitHub data, plus fake sessions (`FIXTURE_AGENTS`), session context and sheet details (`fixtureDetails`) | `server/fixture.ts` |
 | A local repo with the `acme/shop` remote registered as a project, with a worktree workspace on `branch-102`, so Options has a project and a workspace to offer. `acme/issues` has no project on purpose | `preview/entrypoint.sh` |
 
 - **Mounts:** Paseo from the host install, read-only (`readlink -f $(command -v paseo)`, three levels up). The repo, read-only. `preview/out`, writable.
 - **Not available inside:** `~/.paseo`, `gh`, the host loopback. Relay is off. The only outside traffic is GitHub avatar images.
-- **Fixture mode:** `PASEO_GITHUB_ATTENTION_FIXTURE=1` makes the server use `fixture()` instead of GitHub. `runGh` refuses to run, so Merge/Claim/Fix context fail on purpose. The shooter never presses them.
+- **Fixture mode:** `PASEO_ATTENTION_SPAN_FIXTURE=1` makes the server use `fixture()` instead of GitHub. `runGh` refuses to run, so Merge/Claim/Fix context fail on purpose. The shooter never presses them.
 
 ## Keeping it useful
 
