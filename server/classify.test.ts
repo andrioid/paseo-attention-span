@@ -3,7 +3,7 @@ import type { Item } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
-import { HISTORY_SEARCHES, LIVE_SEARCHES, searchQuery, searchVariables } from "./queries";
+import { HISTORY_SEARCHES, LIVE_SEARCHES, searchQuery, searchVariables, unclaimedScope } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = AttentionConfig.parse({ orgs: ["acme"] });
@@ -330,6 +330,18 @@ describe("next up", () => {
     expect(attention.unclaimed[0]).toMatchObject({ scope: "🔙 Backend", priority: undefined });
     const variables = searchVariables(AttentionConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), NOW);
     expect(variables.unclaimed).toBe("is:issue is:open no:assignee repo:acme/shop archived:false");
+  });
+
+  it("NXT-08: without chosen repos, looks in my Paseo projects' repos, and never in all of GitHub", () => {
+    const projects = ["acme/shop", "me/tool"];
+    expect(unclaimedScope(AttentionConfig.parse({ nextUp: { repos: ["acme/web"] } }), projects)).toEqual({ from: "config", scope: "repo:acme/web archived:false" });
+    expect(unclaimedScope(AttentionConfig.parse({ orgs: ["acme"] }), projects)).toEqual({ from: "config", scope: "org:acme archived:false" });
+    expect(unclaimedScope(AttentionConfig.parse({}), projects)).toEqual({ from: "projects", scope: "repo:acme/shop repo:me/tool archived:false" });
+    expect(unclaimedScope(AttentionConfig.parse({}), [])).toEqual({ from: "none", scope: null });
+    expect(unclaimedScope(AttentionConfig.parse({ nextUp: { repos: [] } }), projects).scope).toBeNull();
+    const variables = searchVariables(AttentionConfig.parse({}), NOW);
+    expect(variables.unclaimed).toBeNull();
+    expect(variables.mine).toBe("is:pr is:open author:@me archived:false"); // the searches about me stay GitHub-wide
   });
 });
 

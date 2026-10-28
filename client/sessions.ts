@@ -1,6 +1,6 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
 import type { AgentSummary, Target } from "../shared/attention";
-import { type AttentionConfig, codeRepoFor, type SessionKind } from "../shared/config";
+import { type AttentionConfig, codeRepoFor, githubRepoOf, type SessionKind } from "../shared/config";
 
 type Paseo = ReturnType<typeof usePaseo>;
 
@@ -42,7 +42,7 @@ export interface GitHubProject extends ProjectMatch {
 export async function githubProjects(paseo: Paseo): Promise<GitHubProject[]> {
   const { projects } = await paseo.projects.list();
   return projects.flatMap((project) => {
-    const repo = /^remote:github\.com\/(.+)$/i.exec(project.projectKey ?? "")?.[1];
+    const repo = githubRepoOf(project.projectKey);
     return repo ? [{ repo, projectId: project.projectId, rootPath: project.projectRootPath }] : [];
   });
 }

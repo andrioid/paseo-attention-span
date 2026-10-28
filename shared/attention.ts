@@ -155,11 +155,15 @@ export interface FailingChecks {
   runs: { id: number; attempt: number }[];
 }
 
+// Where Next up's unclaimed issues came from: the config, my Paseo projects' repos, or nowhere [NXT-08].
+export type UnclaimedSource = "config" | "projects" | "none";
+
 export interface Attention {
   login: string;
   items: Item[];
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
+  unclaimedFrom?: UnclaimedSource;
 }
 
 export interface Section {
@@ -194,6 +198,7 @@ export interface AttentionView {
   history: Item[];
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
+  unclaimedFrom: UnclaimedSource;
   dismissedCount: number;
   // Scope chips picked on Next up; none means all [NXT-03].
   scopes: string[];

@@ -18,6 +18,8 @@ export const State = z.object({
   dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>() })).default({}),
   // Scope chips picked on Next up; none means all [NXT-03].
   scopes: z.array(z.string()).default([]),
+  // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
+  projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
   live: z.object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => Array.isArray((value as Attention)?.unclaimed)) }).nullable().catch(null),
   history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().catch(null),

@@ -31,6 +31,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     history: visible.filter((item) => SECTIONS[item.section].tab === "history"),
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],
+    unclaimedFrom: attention?.unclaimedFrom ?? "config",
     dismissedCount: items.length - visible.length,
   };
 }

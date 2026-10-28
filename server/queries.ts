@@ -1,3 +1,4 @@
+import type { UnclaimedSource } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { PullRequestNode } from "./github-types";
 
@@ -97,8 +98,18 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
-export function searchVariables(config: AttentionConfig, now: Date): Record<SearchName, string> {
+// Where Next up looks for unclaimed issues: the chosen repos, else the configured orgs and repos, else my Paseo
+// projects' repos [NXT-04, NXT-08]. Never all of GitHub: unlike the other searches, this one isn't about me.
+export function unclaimedScope(config: AttentionConfig, projectRepos: string[]): { from: UnclaimedSource; scope: string | null } {
+  if (config.nextUp.repos) return { from: "config", scope: config.nextUp.repos.length ? where([], config.nextUp.repos) : null };
+  if (config.orgs.length || config.repos.length) return { from: "config", scope: where(config.orgs, config.repos) };
+  return projectRepos.length ? { from: "projects", scope: where([], projectRepos) } : { from: "none", scope: null };
+}
+
+// Null for a search with nowhere to look.
+export function searchVariables(config: AttentionConfig, now: Date, projectRepos: string[] = []): Record<SearchName, string | null> {
   const scope = where(config.orgs, config.repos);
+  const unclaimed = unclaimedScope(config, projectRepos).scope;
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
   // Whole weeks, from a Monday, so the oldest week isn't cut short.
   const history = isoDate(new Date(startOfWeek(now).getTime() - (config.historyWeeks - 1) * 7 * 86_400_000));
@@ -109,8 +120,8 @@ export function searchVariables(config: AttentionConfig, now: Date): Record<Sear
     mentions: `is:open mentions:@me updated:>=${since} ${scope}`,
     assigned: `is:issue is:open assignee:@me ${scope}`,
     commented: `is:issue is:open commenter:@me updated:>=${since} ${scope}`,
-    // [NXT-01, NXT-04]
-    unclaimed: `is:issue is:open no:assignee ${config.nextUp.repos ? where([], config.nextUp.repos) : scope}`,
+    // [NXT-01, NXT-04, NXT-08]
+    unclaimed: unclaimed && `is:issue is:open no:assignee ${unclaimed}`,
     // History [HIS-01, HIS-02]
     merged: `is:pr is:merged author:@me merged:>=${history} ${scope}`,
     reviewed: `is:pr is:merged reviewed-by:@me -author:@me merged:>=${history} ${scope}`,

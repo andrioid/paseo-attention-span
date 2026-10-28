@@ -391,6 +391,7 @@ function AttentionList({ navigation }: Pick<PluginScreenProps, "navigation">) {
         <NextUpList
           assigned={view.assigned}
           unclaimed={view.unclaimed}
+          unclaimedFrom={view.unclaimedFrom}
           selected={view.scopes}
           onSelect={(scopes) => {
             attention.setView({ ...view, scopes });

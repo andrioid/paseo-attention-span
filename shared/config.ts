@@ -50,6 +50,11 @@ export const AttentionConfig = z.object({
 });
 export type AttentionConfig = z.infer<typeof AttentionConfig>;
 
+// "owner/name" of a Paseo project with a GitHub remote, from its project key.
+export function githubRepoOf(projectKey: string | null | undefined): string | null {
+  return /^remote:github\.com\/(.+)$/i.exec(projectKey ?? "")?.[1] ?? null;
+}
+
 // The repository whose checkout a session on an issue from `repo` works in [SES-07].
 export function codeRepoFor(config: Pick<AttentionConfig, "codeRepos">, repo: string): string {
   const mapped = Object.entries(config.codeRepos).find(([issues]) => issues.toLowerCase() === repo.toLowerCase());

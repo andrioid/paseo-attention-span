@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { findCheckout } from "../client/sessions";
 import type { Target } from "../shared/attention";
-import { AttentionConfig, codeRepoFor } from "../shared/config";
+import { AttentionConfig, codeRepoFor, githubRepoOf } from "../shared/config";
 
 let dir: string;
 let store: typeof import("./store");
@@ -30,6 +30,12 @@ describe("code repos", () => {
     const config = AttentionConfig.parse({ codeRepos: { "acme/issues": "acme/shop" } });
     const checkout = await findCheckout(paseo(["remote:github.com/acme/shop"]), config, issue, branches);
     expect(checkout).toEqual({ repo: "acme/shop", project: { repo: "acme/shop", projectId: "p0", rootPath: "/src/0" }, baseBranch: "main" });
+  });
+
+  it("SES-05: reads a project's GitHub repo from its project key", () => {
+    expect(githubRepoOf("remote:github.com/acme/shop")).toBe("acme/shop");
+    expect(githubRepoOf("remote:gitlab.com/acme/shop")).toBeNull();
+    expect(githubRepoOf(null)).toBeNull();
   });
 
   it("SES-05: without a mapping, uses the item's own repo and default branch", async () => {

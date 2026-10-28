@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ago } from "../shared/format";
-import type { AgentSummary, NextUpIssue } from "../shared/attention";
+import type { AgentSummary, NextUpIssue, UnclaimedSource } from "../shared/attention";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
@@ -14,6 +14,7 @@ const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", d
 interface Props {
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
+  unclaimedFrom: UnclaimedSource;
   // Scope chips I picked; none means all [NXT-03].
   selected: string[];
   onSelect: (scopes: string[]) => void;
@@ -26,10 +27,10 @@ interface Props {
   onOpenAgent: (agentId: string) => void;
 }
 
-type RowProps = Omit<Props, "assigned" | "unclaimed" | "selected" | "onSelect">;
+type RowProps = Omit<Props, "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "onSelect">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
-export function NextUpList({ assigned, unclaimed, selected, onSelect, ...rowProps }: Props) {
+export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, onSelect, ...rowProps }: Props) {
   const styles = useStyles();
   const scopes = useMemo(() => [...new Set(unclaimed.map((issue) => issue.scope).filter((scope): scope is string => !!scope))].sort(), [unclaimed]);
   // Filter by the scopes I picked last time [NXT-03]; a picked scope with no issues left is ignored.
@@ -55,7 +56,13 @@ export function NextUpList({ assigned, unclaimed, selected, onSelect, ...rowProp
             ))}
           </View>
         ) : null}
-        {shown.length === 0 ? <Text style={styles.text}>No unclaimed issues{active.length ? " in these scopes" : ""}.</Text> : <IssueList issues={shown} claim {...rowProps} />}
+        {unclaimedFrom === "none" ? (
+          <Text style={styles.text}>No repos to look in. Register a project in Paseo, or set nextUp.repos in config.json.</Text>
+        ) : shown.length === 0 ? (
+          <Text style={styles.text}>No unclaimed issues{active.length ? " in these scopes" : ""}.</Text>
+        ) : (
+          <IssueList issues={shown} claim {...rowProps} />
+        )}
       </View>
     </View>
   );

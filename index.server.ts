@@ -20,7 +20,8 @@ export default function contribute(server: PluginServerContext) {
     return { ok: true as const };
   };
 
-  server.handle(rpc.getAttention, ({ refresh }) => ready(() => attention.get(refresh)));
+  // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08].
+  server.handle(rpc.getAttention, ({ refresh }, { paseo }) => ready(() => (attention.connect(paseo), attention.get(refresh))));
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)));
   server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));

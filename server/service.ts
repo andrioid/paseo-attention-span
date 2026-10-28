@@ -1,10 +1,11 @@
 import type { Attention, AttentionView, FeedId, FeedStatus, Item } from "../shared/attention";
-import { AttentionConfig } from "../shared/config";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import { AttentionConfig, githubRepoOf } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, type SearchName, searchQuery, searchVariables } from "./queries";
+import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, type SearchName, searchQuery, searchVariables, unclaimedScope } from "./queries";
 import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveState, State } from "./store";
 import { buildView } from "./view";
 
@@ -31,6 +32,8 @@ export class AttentionService {
   private saving: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
   private intervalMinutes = 0;
+  // The app's connection to Paseo, from its last request; background refreshes have none of their own.
+  private paseo: PluginHandlerContext["paseo"] | null = null;
 
   async start(): Promise<void> {
     await moveOldFiles().catch((error) => console.error("Couldn't move the old settings folder:", error));
@@ -38,6 +41,10 @@ export class AttentionService {
     await this.reloadConfig().catch(() => {}); // shown as the screen's error
     this.schedule();
     void this.refreshStale();
+  }
+
+  connect(paseo: PluginHandlerContext["paseo"]): void {
+    this.paseo = paseo;
   }
 
   stop(): void {
@@ -118,8 +125,23 @@ export class AttentionService {
   }
 
   private async fetchLive(now: Date): Promise<Attention> {
-    const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now);
-    return classify({ data, details, config: this.config, now });
+    const projectRepos = FIXTURE ? [] : await this.projectRepos();
+    const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now, projectRepos);
+    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimedScope(this.config, projectRepos).from };
+  }
+
+  // My Paseo projects' GitHub repos, where Next up looks when no repos are chosen [NXT-08].
+  // Without a connection yet, or if listing fails, the last list is used.
+  private async projectRepos(): Promise<string[]> {
+    if (this.paseo) {
+      try {
+        const { projects } = await this.paseo.projects.list();
+        this.state.projectRepos = [...new Set(projects.map((project) => githubRepoOf(project.projectKey)).filter((repo): repo is string => !!repo))].sort();
+      } catch (error) {
+        console.error("Couldn't list Paseo projects:", error);
+      }
+    }
+    return this.state.projectRepos;
   }
 
   private async fetchHistory(now: Date): Promise<Item[]> {
@@ -128,9 +150,10 @@ export class AttentionService {
   }
 
   // One request per search, in parallel. The details request starts once the searches it needs are back [GH-01].
-  private async searchLive(now: Date): Promise<{ data: LiveResult; details: Details }> {
-    const search = (name: (typeof LIVE_SEARCHES)[number]) =>
-      graphql<Partial<LiveResult>>(searchQuery([name], name === "mine"), this.variables([name], now));
+  private async searchLive(now: Date, projectRepos: string[]): Promise<{ data: LiveResult; details: Details }> {
+    const all = searchVariables(this.config, now, projectRepos);
+    const search = async (name: (typeof LIVE_SEARCHES)[number]): Promise<Partial<LiveResult>> =>
+      all[name] === null ? { [name]: { nodes: [] } } : graphql<Partial<LiveResult>>(searchQuery([name], name === "mine"), { [name]: all[name] });
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
     const forDetails = Promise.all([search("mine"), search("assigned"), search("unclaimed")]);
     const others = Promise.all([search("reviews"), search("mentions"), search("commented")]);
@@ -139,7 +162,7 @@ export class AttentionService {
     return { data: merge([...first, ...rest]), details };
   }
 
-  private variables(names: readonly SearchName[], now: Date): Record<string, string> {
+  private variables(names: readonly SearchName[], now: Date): Record<string, string | null> {
     const all = searchVariables(this.config, now);
     return Object.fromEntries(names.map((name) => [name, all[name]]));
   }

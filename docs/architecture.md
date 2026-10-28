@@ -36,7 +36,7 @@ flowchart LR
     - optional merge method per repo [PRS-04]
     - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
     - `nextUp`: repos and the org issue fields for priority, effort and scope [NXT-04]
-  - `state.json`: dismissals [ATT-08], the scope chips picked on Next up [NXT-03] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
+  - `state.json`: dismissals [ATT-08], the scope chips picked on Next up [NXT-03], my Paseo projects' GitHub repos [NXT-08] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
 
 ## Tabs
 
@@ -86,7 +86,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
 ## Next up
 
-A second tab lists open issues nobody is assigned to [NXT-01], in the configured orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
+A second tab lists open issues nobody is assigned to [NXT-01], in `nextUp.repos` if set, else the configured orgs and repos. With neither, it looks in the GitHub repos of my Paseo projects, listed at each refresh through the app's last connection and kept in `state.json` for refreshes before the app connects; with no projects either, it says where to add some [NXT-08]. Unlike the other searches it isn't about me, so it never runs across all of GitHub. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05]. Each row's sheet shows the issue's PRs, and offers **Claim** without starting, or **Unclaim** (`--remove-assignee @me`) on issues assigned to me; each is the other's Undo [NXT-07].
 
 ## Actions
 
@@ -138,7 +138,7 @@ One GraphQL request per search, sent in parallel. GitHub runs the searches in on
 - `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, their IDs for 👍, and `viewerHasReacted`)
 - `is:issue is:open assignee:@me`
 - `is:issue is:open commenter:@me` (for issues waiting on others)
-- `is:issue is:open no:assignee` (Next up, with issue type and field values)
+- `is:issue is:open no:assignee` (Next up, with issue type and field values; skipped when there's nowhere to look [NXT-08])
 
 Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it. The other searches carry on meanwhile.
 
@@ -148,7 +148,7 @@ A live refresh is 7 requests and about 70 points, of the 5,000 GitHub allows per
 
 One request with three searches, each from the Monday `historyWeeks` back: `is:pr is:merged author:@me`, `is:pr is:merged reviewed-by:@me -author:@me`, `is:issue is:closed assignee:@me`. About 1 point.
 
-Every search is scoped to the configured orgs and repos.
+Every search is scoped to the configured orgs and repos; Next up's unclaimed issues as described under Next up.
 
 ### When
 
