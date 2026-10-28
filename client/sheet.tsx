@@ -25,7 +25,7 @@ export function ActionSheet({ title, top, entries, onClose }: { title: string; t
       <Modal.Content>
         <KeepStyles styles={styles}>
           <View style={{ gap: 10 }}>{top}</View>
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
             {entries.map((entry, index) => (
               <Entry key={entry.key} entry={entry} first={index === 0} />
             ))}
@@ -39,7 +39,7 @@ export function ActionSheet({ title, top, entries, onClose }: { title: string; t
 function Entry({ entry, first }: { entry: SheetEntry; first: boolean }) {
   const styles = useStyles();
   const { hovered, hover } = useHover();
-  const color = entry.disabled ? styles.c.foregroundMuted : styles.c.accent;
+  const muted = styles.c.foregroundMuted;
   return (
     <Pressable
       accessibilityRole="button"
@@ -49,15 +49,15 @@ function Entry({ entry, first }: { entry: SheetEntry; first: boolean }) {
       {...hover}
       style={({ pressed }) => [
         styles.row,
-        { alignItems: "flex-start", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: pressed || hovered ? styles.c.surface2 : "transparent" },
-        first ? null : styles.divider,
+        { alignItems: "flex-start", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: pressed || hovered ? styles.c.border : "transparent" },
+        first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 },
       ]}
     >
       <View style={{ paddingTop: 1 }}>
-        <TablerIcon name={entry.icon} size={16} color={color} />
+        <TablerIcon name={entry.icon} size={16} color={entry.disabled ? muted : styles.action} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color, fontSize: 14, fontWeight: "600" }}>{entry.label}</Text>
+        <Text style={{ color: entry.disabled ? muted : styles.c.foreground, fontSize: 14, fontWeight: "600" }}>{entry.label}</Text>
         {entry.detail ? <Text style={styles.muted}>{entry.detail}</Text> : null}
       </View>
     </Pressable>

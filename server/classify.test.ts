@@ -341,8 +341,8 @@ describe("GitHub requests", () => {
     expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].sort());
   });
 
-  it("GH-01: refreshes hourly by default; the screen never forces a fetch", () => {
-    expect(config.refreshMinutes).toBe(60);
+  it("GH-01: refreshes every 15 minutes by default; the screen never forces a fetch", () => {
+    expect(config.refreshMinutes).toBe(15);
   });
 
   it("ATT-08: records the latest activity by others for dismissals", () => {

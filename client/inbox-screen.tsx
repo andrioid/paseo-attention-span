@@ -16,22 +16,22 @@ import { ActionSheet, DetailLines, type SheetEntry, sizeText } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, inboxAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
-// The robot marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
+// The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
   reply: "replyArrow",
   acknowledge: "thumbUp",
-  review: "bot",
-  fix: "bot",
+  review: "agent",
+  fix: "agent",
   rerun: "reload",
-  address: "bot",
+  address: "agent",
   update: "update",
-  rebase: "bot",
-  refresh: "bot",
+  rebase: "agent",
+  refresh: "agent",
   ready: "pr",
   automerge: "clock",
   merge: "merge",
   close: "close",
-  start: "bot",
+  start: "agent",
 };
 
 function actionLabel(action: ActionId, item: Item): string {
@@ -492,7 +492,7 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       {actions.busy === item.key ? (
         <Text style={styles.muted}>working…</Text>
       ) : agent && sessionKind ? (
-        <Button label={CONTINUE_LABELS[sessionKind]} icon="bot" variant="calm" onPress={() => actions.openAgent(agent.id)} />
+        <Button label={CONTINUE_LABELS[sessionKind]} icon="agent" variant="calm" onPress={() => actions.openAgent(agent.id)} />
       ) : main ? (
         <Button label={actionLabel(main, item)} icon={ACTION_ICONS[main]} variant="calm" onPress={() => perform(main)} />
       ) : null}
@@ -577,11 +577,11 @@ function ItemSheet({
     const label = actionLabel(action, item);
     if (kind && agent) {
       // One session per item: continue it instead of starting another [SES-03].
-      if (!continued) entries.push({ key: action, icon: "bot", label: CONTINUE_LABELS[kind], detail: `Opens the session (${agentSignal(agent).text})`, onPress: close(() => actions.openAgent(agent.id)) });
+      if (!continued) entries.push({ key: action, icon: "agent", label: CONTINUE_LABELS[kind], detail: `Opens the session (${agentSignal(agent).text})`, onPress: close(() => actions.openAgent(agent.id)) });
       continued = true;
     } else if (kind) {
-      entries.push({ key: action, icon: "bot", label, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: () => onPerform(action) });
-      entries.push({ key: `${action}-options`, icon: "bot", label: `${label} with options…`, detail: "Choose the workspace, agent profile and prompt first", onPress: () => onOptions(kind) });
+      entries.push({ key: action, icon: "agent", label, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: () => onPerform(action) });
+      entries.push({ key: `${action}-options`, icon: "agent", label: `${label} with options…`, detail: "Choose the workspace, agent profile and prompt first", onPress: () => onOptions(kind) });
     } else if (action === "rerun") {
       const { detail, runIds } = rerunEntry(details.data?.failing, details.isLoading);
       entries.push({ key: action, icon: ACTION_ICONS.rerun, label, detail, disabled: runIds.length === 0, onPress: close(() => actions.rerun(item, runIds)) });
@@ -635,7 +635,7 @@ function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (id
               onPress={() => toggle(c.id)}
               style={[styles.quote, styles.row, { alignItems: "flex-start", gap: 10 }]}
             >
-              <TablerIcon name={picked.has(c.id) ? "squareCheck" : "square"} size={18} color={picked.has(c.id) ? styles.c.accent : styles.c.foregroundMuted} />
+              <TablerIcon name={picked.has(c.id) ? "squareCheck" : "square"} size={18} color={picked.has(c.id) ? styles.action : styles.c.foregroundMuted} />
               <View style={{ flex: 1, gap: 4 }}>
                 <Text style={{ color: styles.c.foreground, fontSize: 12, fontWeight: "600" }}>
                   {c.author} <Text style={[styles.muted, { fontWeight: "400" }]}>· {ago(c.createdAt)}</Text>
@@ -842,7 +842,7 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
             <Text style={styles.muted}>Prompt</Text>
             <TextInput style={[styles.input, { minHeight: 180 }]} value={prompt ?? data.prompt} onChangeText={setPrompt} multiline textAlignVertical="top" />
             <View style={styles.wrap}>
-              <Button label={starting ? "Starting…" : "Start session"} icon="bot" variant="solid" disabled={starting} onPress={() => void start()} />
+              <Button label={starting ? "Starting…" : "Start session"} icon="agent" variant="solid" disabled={starting} onPress={() => void start()} />
               <Button label="Cancel" onPress={onClose} />
             </View>
           </View>

@@ -33,7 +33,7 @@ export const InboxConfig = z.object({
   mergeMethods: z.record(z.string(), MergeMethod).default({}),
   waitingTooLongDays: z.number().positive().default(3),
   // A digest, not a live view: GitHub is asked at most this often unless I press ⟳ [GH-01].
-  refreshMinutes: z.number().min(5).default(60),
+  refreshMinutes: z.number().min(5).default(15),
   staleDraftDays: z.number().positive().default(30),
   mentionDays: z.number().positive().default(30),
   // How many weeks History shows [HIS-01].

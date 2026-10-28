@@ -95,10 +95,10 @@ function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, on
         {busy === issue.key ? (
           <Text style={styles.muted}>working…</Text>
         ) : agent ? (
-          <Button label={styles.compact ? undefined : "Continue"} icon="bot" variant="calm" onPress={() => onOpenAgent(agent.id)} />
+          <Button label={styles.compact ? undefined : "Continue"} icon="agent" variant="calm" onPress={() => onOpenAgent(agent.id)} />
         ) : (
           // Claim first so teammates see it's taken [NXT-05].
-          <Button label={styles.compact ? undefined : startLabel} accessibilityLabel={`${startLabel} ${issue.title}`} icon="bot" variant="calm" onPress={() => onStart(issue, claim)} />
+          <Button label={styles.compact ? undefined : startLabel} accessibilityLabel={`${startLabel} ${issue.title}`} icon="agent" variant="calm" onPress={() => onStart(issue, claim)} />
         )}
         <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={() => setOpen(true)} />
       </View>
@@ -125,10 +125,10 @@ function IssueSheet({
   const close = (then: () => void) => () => (onClose(), then());
   const entries: SheetEntry[] = [
     agent
-      ? { key: "start", icon: "bot", label: "Continue", detail: "Opens the session started on this issue", onPress: close(() => onOpenAgent(agent.id)) }
+      ? { key: "start", icon: "agent", label: "Continue", detail: "Opens the session started on this issue", onPress: close(() => onOpenAgent(agent.id)) }
       : {
           key: "start",
-          icon: "bot",
+          icon: "agent",
           label: claim ? "Claim & start" : "Start",
           detail: `${claim ? "Assigns you, then an agent" : "An agent"} reads the issue and proposes a plan`,
           onPress: close(() => onStart(issue, claim)),

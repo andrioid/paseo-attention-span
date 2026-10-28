@@ -31,7 +31,7 @@ flowchart LR
   - `config.json`, edited by hand, except `codeRepos`, which the screen can add to:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
-    - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 60) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
+    - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 15) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
     - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
@@ -95,17 +95,17 @@ A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet*
 - **Details on top:** repo#number, the PR's size, the opening of the description, the linked issue or PRs, the full quote and the full stack. They are fetched when the sheet opens, in one GraphQL request, so the refresh stays as light as before [GH-01].
 - **Every action below,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open on GitHub [ATT-12] and Dismiss [ATT-08].
 
-🤖 marks every action that starts or continues an agent session; the rest change GitHub right away [ATT-13]. GitHub actions don't ask first, apart from Merge and Close. Instead an Undo row appears, where GitHub can take it back, until I switch tabs [ATT-14].
+An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every action that starts or continues an agent session, marked *(agent)* below; the rest change GitHub right away [ATT-13]. GitHub actions don't ask first, apart from Merge and Close. Instead an Undo row appears, where GitHub can take it back, until I switch tabs [ATT-14].
 
 | Action | Shown when | Does |
 |---|---|---|
 | Reply ↗ | Mention waiting | Opens the comment on GitHub [ATT-12] |
 | Acknowledge | Mention waiting | Lists every waiting comment in full, all ticked; 👍 on the ones I keep ticked (`addReaction`), which clears them [MEN-07]. Undo removes them. |
-| 🤖 Review | Review requested | Session in a PR checkout using the review profile [SES-01] |
-| 🤖 Fix CI / 🤖 Address comments | CI failing / changes requested | Session with the failing log or unresolved threads in the prompt [SES-04] |
+| Review *(agent)* | Review requested | Session in a PR checkout using the review profile [SES-01] |
+| Fix CI / Address comments *(agent)* | CI failing / changes requested | Session with the failing log or unresolved threads in the prompt [SES-04] |
 | Rerun failed jobs | CI failing, in the sheet | `gh run rerun --failed` for each failing GitHub Actions run of the PR, or of every PR in its stack. The sheet names the failed checks and how often they were rerun (`gh api …/runs/<id>`), fetched when it opens. Other status checks can't be rerun from here [PRS-09]. |
 | Update branch | Behind with no conflicts, not stacked | `updatePullRequestBranch` (rebase) [UPS-03] |
-| 🤖 Rebase / 🤖 Refresh | Conflicts, any stacked PR, stale draft | Agent rebases the PR, or the whole stack with `git rebase --update-refs` [UPS-04]. A clean rebase is pushed with `--force-with-lease` [UPS-06]. After resolving conflicts it stops and explains, and pushes only when I reply "push" in its session [UPS-05]. |
+| Rebase / Refresh *(agent)* | Conflicts, any stacked PR, stale draft | Agent rebases the PR, or the whole stack with `git rebase --update-refs` [UPS-04]. A clean rebase is pushed with `--force-with-lease` [UPS-06]. After resolving conflicts it stops and explains, and pushes only when I reply "push" in its session [UPS-05]. |
 | Ready for review | My draft with CI not failing, no conflicts, not stale | `markPullRequestReadyForReview` on the bottom PR; Undo converts it back to a draft [PRS-11] |
 | Auto-merge | Approved, CI running, and the repo allows auto-merge | `enablePullRequestAutoMerge` with the merge method below and the head I saw. The PR then waits in *CI running* with an "auto-merge on" chip; Undo turns it off [PRS-10] |
 | Merge | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04]. Asks first. |
@@ -155,8 +155,8 @@ It's a digest, not a live view. Opening the screen shows the cache. ⟳ fetches 
 
 | Feed | Fetched |
 |---|---|
-| Live | Every `refreshMinutes` (default 60, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
+| Live | Every `refreshMinutes` (default 15, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
 | History | Once a day in the background, after a merge from the inbox, and on ⟳ in History. Things I finish outside the inbox show up by the next day. |
 
-A failed refresh is retried at most every 5 minutes. That's about 7 requests and 70 points an hour. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
+A failed refresh is retried at most every 5 minutes. At the default 15 minutes that's about 28 requests and 280 points an hour, under 6% of GitHub's hourly allowance. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
 

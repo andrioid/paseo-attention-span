@@ -15,6 +15,8 @@ export function makeStyles(theme: Theme, compact: boolean) {
   return {
     c,
     compact,
+    // Action text and icons. The accent is a fill: as text on a dark theme it's 2.5:1; this green is 5–6:1 on every surface.
+    action: c.statusSuccess,
     screen: { flex: 1, backgroundColor: c.surface0 },
     content: { padding: compact ? 12 : 24, gap: compact ? 20 : 28, paddingBottom: 48, maxWidth: 860, width: "100%" as const, alignSelf: "center" as const },
     row: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
@@ -116,7 +118,7 @@ export function Button({
   const styles = useStyles();
   const { hovered, hover } = useHover();
   const { c } = styles;
-  const color = variant === "solid" ? c.accentForeground : variant === "calm" ? c.accent : variant === "ghost" ? c.foregroundMuted : c.foreground;
+  const color = variant === "solid" ? c.accentForeground : variant === "calm" ? styles.action : variant === "ghost" ? c.foregroundMuted : c.foreground;
   return (
     <Pressable
       accessibilityRole="button"
