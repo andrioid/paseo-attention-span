@@ -11,6 +11,7 @@
     "client/",
     "server/",
     "shared/",
+    "assets/",
     "docs/screenshots/desktop-dark-doing.png",
     "docs/screenshots/phone-dark-doing.png",
     "docs/screenshots/desktop-dark-next-up.png"

@@ -11,7 +11,7 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
   const count = data?.count ?? 0;
   return (
     <SidebarRow
-      icon={ICONS.tray}
+      icon={ICONS.logo}
       label="Attention"
       active={currentScreen?.screenId === "attention"}
       onPress={() => openScreen({ screenId: "attention" })}

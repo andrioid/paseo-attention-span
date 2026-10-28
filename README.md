@@ -1,3 +1,5 @@
+<img src="assets/icon.png" width="96" alt="">
+
 # Attention Span
 
 For when your attention is spread thin. A [Paseo](https://paseo.sh) plugin that lists the GitHub issues and pull requests waiting on you, grouped by why, and starts agent sessions to act on them.

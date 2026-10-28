@@ -1,7 +1,8 @@
 {
   "id": "attention-span",
   "name": "Attention Span",
-  "description": "For when your attention is spread thin. The issues and pull requests waiting on you, grouped by why, with one-tap Paseo sessions. Supports GitHub today.",
+  "description": "For when your attention is spread thin: the GitHub issues and pull requests waiting on you, grouped by why, with one-tap Paseo sessions.",
+  "icon": "assets/icon.png",
   "media": [
     "docs/screenshots/desktop-dark-doing.png",
     "docs/screenshots/phone-dark-doing.png",
