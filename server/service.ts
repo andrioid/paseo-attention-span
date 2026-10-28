@@ -78,6 +78,11 @@ export class InboxService {
     return this.view();
   }
 
+  async setScopes(scopes: string[]): Promise<void> {
+    this.state.scopes = scopes;
+    await this.save();
+  }
+
   // Concurrent callers share one refresh per feed.
   refresh(id: FeedId): Promise<void> {
     const feed = this.feeds[id];
@@ -204,6 +209,7 @@ export class InboxService {
     });
     return buildView(this.state.live?.inbox ?? null, this.state.history?.items ?? [], this.state.dismissed, {
       feeds: { live: status("live"), history: status("history") },
+      scopes: this.state.scopes,
       config: this.config,
       ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),
     });

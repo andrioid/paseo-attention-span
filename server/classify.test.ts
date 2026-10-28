@@ -252,7 +252,7 @@ describe("mentions", () => {
 });
 
 describe("next up", () => {
-  const nextUp = { priority: { field: "Priority" }, effort: { field: "Effort", order: ["Tiny", "Small", "Medium", "Large"] }, scope: { field: "Scope", mine: ["Backend"] } };
+  const nextUp = { priority: { field: "Priority" }, effort: { field: "Effort", order: ["Tiny", "Small", "Medium", "Large"] }, scope: { field: "Scope" } };
   const fieldOptions = { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] };
 
   it("NXT-01, NXT-02: orders unclaimed issues by priority, then effort, then age", () => {

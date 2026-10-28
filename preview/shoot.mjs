@@ -78,9 +78,10 @@ for (const layout of layouts) {
       await page.waitForTimeout(800);
       await shot("history-reviewed");
       await page.getByRole("tab", { name: /Next up/ }).first().click();
-      await page.getByText("All", { exact: true }).click();
+      await page.getByText("🔙 Backend", { exact: true }).click();
       await page.waitForTimeout(400);
-      await shot("next-up-all");
+      await shot("next-up-filtered");
+      await page.getByText("All", { exact: true }).click(); // the pick is saved, so clear it for the next layout
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
       await page.getByRole("button", { name: "Dismiss" }).first().click();

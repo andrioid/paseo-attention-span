@@ -38,8 +38,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-history.png` | History by week, with Reviewed toggles |
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint |
-   | `<layout>-next-up.png` | Assigned, then Unclaimed filtered to my scopes |
-   | `<layout>-next-up-all.png` | Unclaimed with the "All" filter |
+   | `<layout>-next-up.png` | Assigned, then all of Unclaimed |
+   | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope |
    | `<layout>-next-up-code-repo.png` | Start on "Price list import skips quoted rows" (in `acme/issues`, no checkout): the picker asking where its code lives. Uncropped |
    | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping; the start then fails with "No agent provider is ready", as expected in the container |
    | `<layout>-next-up-code-repo-again.png` | Start pressed again: no picker this time |

@@ -13,6 +13,8 @@ const STATE = join(DIR, "state.json");
 export const State = z.object({
   // Item key -> others' activity and section when dismissed [ATT-08].
   dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>() })).default({}),
+  // Scope chips picked on Next up; none means all [NXT-03].
+  scopes: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
   live: z.object({ fetchedAt: z.string(), inbox: z.custom<Inbox>((value) => Array.isArray((value as Inbox)?.unclaimed)) }).nullable().default(null),
   history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().default(null),

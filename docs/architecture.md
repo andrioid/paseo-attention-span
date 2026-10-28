@@ -36,7 +36,7 @@ flowchart LR
     - optional merge method per repo [PRS-04]
     - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
     - `nextUp`: repos and the org issue fields for priority, effort and scope [NXT-04]
-  - `state.json`: dismissals [ATT-08] and the last fetch of each feed, so the inbox shows instantly after a restart [PRIV-01].
+  - `state.json`: dismissals [ATT-08], the scope chips picked on Next up [NXT-03] and the last fetch of each feed, so the inbox shows instantly after a restart [PRIV-01].
 
 ## Tabs
 
@@ -53,7 +53,7 @@ Screenshots, from the preview's made-up data, are in [screenshots/](screenshots/
 
 | Doing | History | Next up (phone) |
 |---|---|---|
-| ![Doing](screenshots/desktop-dark-doing.png) | ![History](screenshots/desktop-dark-history-reviewed.png) | ![Next up](screenshots/phone-light-next-up-all.png) |
+| ![Doing](screenshots/desktop-dark-doing.png) | ![History](screenshots/desktop-dark-history-reviewed.png) | ![Next up](screenshots/phone-light-next-up-filtered.png) |
 
 ### Doing
 
@@ -86,7 +86,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 
 ## Next up
 
-A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list, starting from `nextUp.scope.mine` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05].
+A second tab lists open issues nobody is assigned to [NXT-01], in the inbox's orgs and repos unless `nextUp.repos` is set. They are ordered by priority, then effort, then age [NXT-02]. Priority and effort are org issue fields named in `config.json`; a value ranks by the configured `order` (matched by name, so "Small" matches "🐇 Small (0.5-2d)") or else by the field's own option order. Issues without a value go last. Scope chips filter the list; all are off at first, and the ones I pick are saved in `state.json` [NXT-03]. **Claim & start** assigns me with `gh issue edit --add-assignee @me`, then starts a "start" session on a new branch [NXT-05].
 
 ## Actions
 

@@ -68,7 +68,7 @@ functional:
     As a developer, I can:
       NXT-01: see open issues nobody is assigned to, apart from the work that needs me; so that I can get an idea of what to do next.
       NXT-02: see unclaimed issues ordered by priority, then effort, then age; so that the most important quick wins come first.
-      NXT-03: filter unclaimed issues by scope, starting from my usual scopes; so that I only see work I'd pick up.
+      NXT-03: filter unclaimed issues by scope, and have my choice remembered; so that I only see work I'd pick up.
       NXT-04: choose which repositories and issue fields the list uses; so that the plugin can be used elsewhere.
       NXT-05: claim an issue and start a session on it in one step; so that teammates see it's taken and I can start right away.
       NXT-06: see issues assigned to me before unclaimed ones; so that I finish what I've taken before picking more.

@@ -1,7 +1,6 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Text, View } from "react-native";
-import type { InboxConfig } from "../shared/config";
 import { ago } from "../shared/format";
 import type { AgentSummary, NextUpIssue } from "../shared/inbox";
 import type { IconName } from "./icons";
@@ -9,12 +8,12 @@ import { Button, Meta, SectionHeader, TablerIcon, Toggle, useStyles } from "./ui
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
-const matches = (value: string | undefined, names: string[]) => !!value && names.some((name) => value.toLowerCase().includes(name.toLowerCase()));
-
 interface Props {
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
-  config: InboxConfig;
+  // Scope chips I picked; none means all [NXT-03].
+  selected: string[];
+  onSelect: (scopes: string[]) => void;
   agents: Record<string, AgentSummary>;
   busy: string | null;
   onStart: (issue: NextUpIssue, claim: boolean) => void;
@@ -22,14 +21,13 @@ interface Props {
 }
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
-export function NextUpList({ assigned, unclaimed, config, ...rowProps }: Props) {
+export function NextUpList({ assigned, unclaimed, selected, onSelect, ...rowProps }: Props) {
   const styles = useStyles();
   const scopes = useMemo(() => [...new Set(unclaimed.map((issue) => issue.scope).filter((scope): scope is string => !!scope))].sort(), [unclaimed]);
-  // Filter by scope, starting from my usual scopes [NXT-03].
-  const [selected, setSelected] = useState<string[] | null>(null);
-  const active = selected ?? scopes.filter((scope) => matches(scope, config.nextUp.scope?.mine ?? []));
+  // Filter by the scopes I picked last time [NXT-03]; a picked scope with no issues left is ignored.
+  const active = selected.filter((scope) => scopes.includes(scope));
   const shown = active.length === 0 ? unclaimed : unclaimed.filter((issue) => issue.scope && active.includes(issue.scope));
-  const toggle = (scope: string) => setSelected(active.includes(scope) ? active.filter((s) => s !== scope) : [...active, scope]);
+  const toggle = (scope: string) => onSelect(active.includes(scope) ? active.filter((s) => s !== scope) : [...active, scope]);
 
   return (
     <View style={{ gap: 24 }}>
@@ -43,7 +41,7 @@ export function NextUpList({ assigned, unclaimed, config, ...rowProps }: Props) 
         <SectionHeader icon="nextUp" title="Unclaimed" count={shown.length} />
         {scopes.length > 0 ? (
           <View style={[styles.wrap, { marginBottom: 10 }]}>
-            <Toggle label="All" active={active.length === 0} onPress={() => setSelected([])} />
+            <Toggle label="All" active={active.length === 0} onPress={() => onSelect([])} />
             {scopes.map((scope) => (
               <Toggle key={scope} label={scope} active={active.includes(scope)} onPress={() => toggle(scope)} />
             ))}
@@ -55,7 +53,7 @@ export function NextUpList({ assigned, unclaimed, config, ...rowProps }: Props) 
   );
 }
 
-function IssueList({ issues, claim, agents, busy, onStart, onOpenAgent }: Omit<Props, "assigned" | "unclaimed" | "config"> & { issues: NextUpIssue[]; claim: boolean }) {
+function IssueList({ issues, claim, agents, busy, onStart, onOpenAgent }: Omit<Props, "assigned" | "unclaimed" | "selected" | "onSelect"> & { issues: NextUpIssue[]; claim: boolean }) {
   const styles = useStyles();
   return (
     <View style={styles.card}>

@@ -118,6 +118,7 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const dismiss = useRpc(rpc.dismissItem);
   const undismiss = useRpc(rpc.undismissItem);
   const restore = useRpc(rpc.restoreDismissed);
+  const saveScopes = useRpc(rpc.setScopes);
   const update = useRpc(rpc.updateBranch);
   const merge = useRpc(rpc.mergePullRequest);
   const close = useRpc(rpc.closePullRequest);
@@ -297,7 +298,11 @@ function Inbox({ navigation }: Pick<PluginScreenProps, "navigation">) {
         <NextUpList
           assigned={view.assigned}
           unclaimed={view.unclaimed}
-          config={view.config}
+          selected={view.scopes}
+          onSelect={(scopes) => {
+            inbox.setView({ ...view, scopes });
+            saveScopes({ scopes }).catch((error) => toast.error(`Saving the filter failed: ${(error as Error).message}`));
+          }}
           agents={actions.agents}
           busy={busy}
           onOpenAgent={openAgent}

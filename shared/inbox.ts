@@ -152,6 +152,8 @@ export interface InboxView {
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   dismissedCount: number;
+  // Scope chips picked on Next up; none means all [NXT-03].
+  scopes: string[];
   config: InboxConfig;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
   fixtureAgents?: Record<string, AgentSummary>;

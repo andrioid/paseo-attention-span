@@ -24,6 +24,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.undismissItem, ({ key }) => ready(() => inbox.undismiss(key)));
   server.handle(rpc.restoreDismissed, () => ready(() => inbox.restoreDismissed()));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => inbox.setCodeRepo(issueRepo, codeRepo)));
+  server.handle(rpc.setScopes, ({ scopes }) => ready(() => inbox.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.updateBranch, ({ target }) => thenRefresh(updateBranch(target)));
   server.handle(rpc.mergePullRequest, ({ target }) => thenRefresh(mergePullRequest(target), ["live", "history"]));
   server.handle(rpc.closePullRequest, ({ target, comment }) => thenRefresh(closePullRequest(target, comment)));

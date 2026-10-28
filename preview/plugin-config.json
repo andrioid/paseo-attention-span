@@ -3,6 +3,6 @@
   "nextUp": {
     "priority": { "field": "Priority" },
     "effort": { "field": "Effort", "order": ["Tiny", "Small", "Medium", "Large"] },
-    "scope": { "field": "Scope", "mine": ["Backend"] }
+    "scope": { "field": "Scope" }
   }
 }

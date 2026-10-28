@@ -44,7 +44,7 @@ export const InboxConfig = z.object({
       repos: z.array(z.string()).optional(),
       priority: RankedField.optional(),
       effort: RankedField.optional(),
-      scope: z.object({ field: z.string(), mine: z.array(z.string()).default([]) }).optional(),
+      scope: z.object({ field: z.string() }).optional(),
     })
     .default({}),
 });

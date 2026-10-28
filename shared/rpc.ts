@@ -16,6 +16,8 @@ export const undismissItem = defineRpc({ name: "inbox.undismiss", input: z.objec
 export const restoreDismissed = defineRpc({ name: "inbox.restore-dismissed", input: z.object({}), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });
+// Remember the scope chips picked on Next up [NXT-03].
+export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });
 
 // GitHub changes, each from an explicit tap [SAFE-01].
 export const updateBranch = defineRpc({ name: "pr.update-branch", input: z.object({ target }), output: done });
