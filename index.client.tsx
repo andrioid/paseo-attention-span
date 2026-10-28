@@ -1,7 +1,8 @@
-import type { PluginClientContext, PluginSidebarItemProps } from "@getpaseo/plugin/client";
+import type { PluginClientContext, PluginScreenProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { Text } from "react-native";
 import { AttentionScreen } from "./client/attention-screen";
+import { CoverageSettings } from "./client/coverage-settings";
 import { useAttention } from "./client/data";
 import { ICONS } from "./client/icons";
 
@@ -26,7 +27,10 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
 
 // One screen for everything that needs me [ATT-01].
 export default function contribute(client: PluginClientContext) {
-  client.addScreen({ id: "attention", title: "Attention Span", Component: AttentionScreen });
+  // Settings → Plugins → Attention Span, also opened from the screen's gear and the setup checklist [SRC-02].
+  client.addSettingsScreen({ id: "coverage", title: "Attention Span", icon: ICONS.logo, Component: CoverageSettings });
+  const Screen = (props: PluginScreenProps) => <AttentionScreen {...props} openSettings={() => client.openSettings("coverage")} />;
+  client.addScreen({ id: "attention", title: "Attention Span", Component: Screen });
   client.addSidebarHeaderItem({ id: "attention", title: "Attention Span", Component: SidebarItem });
   return () => {};
 }

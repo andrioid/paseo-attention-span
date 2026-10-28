@@ -10,7 +10,7 @@ const CHOSEN_DIR = process.env.PASEO_ATTENTION_SPAN_DIR ?? process.env.PASEO_GIT
 export const DIR = CHOSEN_DIR ?? join(homedir(), ".config", "paseo-attention-span");
 // Where they lived while the plugin was called "GitHub attention".
 const OLD_DIR = join(homedir(), ".config", "paseo-github-attention");
-const CONFIG = join(DIR, "config.json");
+export const CONFIG = join(DIR, "config.json");
 const STATE = join(DIR, "state.json");
 
 export const State = z.object({
@@ -54,13 +54,27 @@ export async function loadConfig(): Promise<AttentionConfig> {
   return parsed.data;
 }
 
-// The one setting the screen writes: everything else in the file is kept as it is [SES-07].
-export async function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionConfig> {
+// Where an issue repo's code lives, chosen on the screen [SES-07].
+export function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionConfig> {
+  return updateConfig((file) => {
+    const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
+    const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => issues.toLowerCase() !== issueRepo.toLowerCase()));
+    return { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
+  });
+}
+
+// The orgs and repos chosen in settings [SRC-02].
+export function saveCoverage(orgs: string[], repos: string[]): Promise<AttentionConfig> {
+  return updateConfig((file) => ({ ...file, orgs, repos }));
+}
+
+// What the screen writes changes only its own keys; everything else in the file is kept as it is.
+// A file that doesn't read or parse is left alone.
+async function updateConfig(change: (file: Record<string, unknown>) => Record<string, unknown>): Promise<AttentionConfig> {
   const raw = await readJson(CONFIG);
-  const file = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
-  const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => issues.toLowerCase() !== issueRepo.toLowerCase()));
-  const next = { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
+  const current = AttentionConfig.safeParse(raw);
+  if (!current.success) throw new Error(`${CONFIG} is invalid: ${current.error.message}`);
+  const next = change(raw as Record<string, unknown>);
   const parsed = AttentionConfig.safeParse(next);
   if (!parsed.success) throw new Error(`${CONFIG} is invalid: ${parsed.error.message}`);
   await writeAtomically(CONFIG, `${JSON.stringify(next, null, 2)}\n`);

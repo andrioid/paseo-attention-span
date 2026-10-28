@@ -39,11 +39,17 @@ for (const layout of layouts) {
       // The container's daemon serves the web app and is the only host it knows.
       await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
       await page.waitForTimeout(3000);
-      // On phones the sidebar sits behind a menu button.
-      const entry = page.getByText("Attention", { exact: true }).first();
-      if (!(await entry.isVisible())) await page.getByRole("button", { name: /menu|sidebar/i }).first().click().catch(() => {});
-      await entry.click();
-      await page.getByText("Doing").first().waitFor({ timeout: 15000 });
+      // Screens without tabs: the top of the page is enough.
+      const top = (name) => page.screenshot({ path: `/out/${prefix}-${name}.png`, clip: { x: 0, y: 0, width: layout.viewport.width, height: layout.isMobile ? 1100 : 900 } });
+      // On phones the sidebar sits behind a menu button. Wait for the entry first, so a slow load doesn't look like a phone.
+      const openAttention = async () => {
+        const entry = page.getByText("Attention", { exact: true }).first();
+        await entry.waitFor({ state: "attached", timeout: 15000 });
+        if (!(await entry.isVisible())) await page.getByRole("button", { name: /menu|sidebar/i }).first().click().catch(() => {});
+        await entry.click();
+        await page.getByRole("button", { name: "Refresh now" }).waitFor({ timeout: 15000 });
+      };
+      await openAttention();
       await page.getByRole("button", { name: "Refresh now" }).click(); // reloads config.json
       await page.waitForTimeout(2000); // avatars and icons
       // An earlier layout's dismissal lives on in the daemon; bring it back.
@@ -104,6 +110,34 @@ for (const layout of layouts) {
       await page.waitForTimeout(400);
       await shot("next-up-filtered");
       await page.getByText("All", { exact: true }).click(); // the pick is saved, so clear it for the next layout
+      // Settings from the gear: a typo is caught, then a repo is added and saved to config.json [SRC-02].
+      await doing();
+      await page.getByRole("button", { name: "Attention Span settings" }).click();
+      const addRepo = page.getByLabel("Add a repository");
+      await addRepo.waitFor({ timeout: 15000 });
+      await addRepo.fill("acme/shpo");
+      await addRepo.press("Enter");
+      await page.getByText(/acme\/shpo wasn't found/).waitFor({ timeout: 10000 });
+      await top("settings-typo");
+      await addRepo.fill("acme/web");
+      await addRepo.press("Enter");
+      await page.getByText("acme/web", { exact: true }).waitFor({ timeout: 10000 });
+      await page.waitForTimeout(500);
+      await top("settings");
+      const withRepo = JSON.parse(await readFile(configPath, "utf8"));
+      if (withRepo.repos?.[0] !== "acme/web" || withRepo.orgs?.[0] !== "acme" || !withRepo.nextUp) throw new Error(`config.json after adding: ${JSON.stringify(withRepo)}`);
+      // The setup checklist, from a config.json that doesn't parse; fixed, Check again brings the tabs back [SET-01].
+      await writeFile(configPath, "{ broken");
+      // Out of Paseo's settings: phones have only a back arrow, so start over from the app.
+      await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
+      await openAttention();
+      await page.getByRole("button", { name: "Refresh now" }).click();
+      await page.locator(`text="Set up Attention Span" >> visible=true`).waitFor({ timeout: 15000 });
+      await page.waitForTimeout(800);
+      await top("setup");
+      await writeFile(configPath, originalConfig);
+      await page.getByRole("button", { name: "Check again" }).click();
+      await page.getByRole("tab", { name: /Doing/ }).first().waitFor({ timeout: 15000 });
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
       await page.getByRole("button", { name: "More actions" }).first().click();

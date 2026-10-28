@@ -45,3 +45,22 @@ describe("local files", () => {
     expect(state.live).toBeNull();
   });
 });
+
+describe("settings", () => {
+  it("SRC-02: saving orgs and repos keeps the rest of config.json", async () => {
+    await mkdir(newDir(), { recursive: true });
+    await writeFile(join(newDir(), "config.json"), JSON.stringify({ orgs: ["old"], nextUp: { repos: ["acme/shop"] }, extra: 1 }));
+    const config = await store.saveCoverage(["acme"], ["me/tool"]);
+    expect([config.orgs, config.repos]).toEqual([["acme"], ["me/tool"]]);
+    expect(JSON.parse(await readFile(join(newDir(), "config.json"), "utf8"))).toEqual({ orgs: ["acme"], repos: ["me/tool"], nextUp: { repos: ["acme/shop"] }, extra: 1 });
+  });
+
+  it("SRC-02: leaves a config.json that doesn't parse alone", async () => {
+    await mkdir(newDir(), { recursive: true });
+    for (const broken of ["{ not json", JSON.stringify({ refreshMinutes: "soon" })]) {
+      await writeFile(join(newDir(), "config.json"), broken);
+      await expect(store.saveCoverage(["acme"], [])).rejects.toThrow();
+      expect(await readFile(join(newDir(), "config.json"), "utf8")).toBe(broken);
+    }
+  });
+});

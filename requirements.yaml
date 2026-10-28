@@ -12,6 +12,10 @@ functional:
   sources:
     As a developer, I can:
       SRC-01: choose which GitHub organizations and repositories Attention Span covers; so that it works for any project.
+      SRC-02: choose those organizations and repositories in the app, each checked on GitHub as I add it; so that I don't edit files on the daemon's machine and a typo shows right away.
+  setup:
+    As a developer, I can:
+      SET-01: see what's missing and how to fix it when Attention Span can't load, along with what it covers and which projects and agent it will use; so that getting started doesn't end at an error.
   attention:
     As a developer, I can:
       ATT-01: see in one place the open issues and pull requests that need me; so that I don't depend on noisy GitHub notifications.

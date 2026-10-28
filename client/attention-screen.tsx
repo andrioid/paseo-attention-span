@@ -9,11 +9,13 @@ import type { AttentionConfig, SessionKind } from "../shared/config";
 import { ago } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
+import { blocks } from "../shared/setup";
 import { useAttention } from "./data";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
+import { SetupChecklist } from "./setup";
 import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
@@ -156,15 +158,16 @@ function agentSignal(agent: AgentSummary): Chip {
   return { text: "agent idle", tone: "neutral" };
 }
 
-export function AttentionScreen({ theme, layout, navigation }: PluginScreenProps) {
+// `openSettings` opens the orgs and repos settings [SRC-02].
+export function AttentionScreen({ theme, layout, navigation, openSettings }: PluginScreenProps & { openSettings?: () => void }) {
   return (
     <StylesProvider theme={theme} compact={layout.compact}>
-      <AttentionList navigation={navigation} />
+      <AttentionList navigation={navigation} openSettings={openSettings} />
     </StylesProvider>
   );
 }
 
-function AttentionList({ navigation }: Pick<PluginScreenProps, "navigation">) {
+function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "navigation"> & { openSettings?: () => void }) {
   const styles = useStyles();
   const paseo = usePaseo();
   const toast = useToast();
@@ -194,6 +197,11 @@ function AttentionList({ navigation }: Pick<PluginScreenProps, "navigation">) {
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const view = attention.data;
+  // Only when something fails: is it setup, and what's missing [SET-01]?
+  const fetchSetup = useRpc(rpc.setupStatus);
+  const failing = !!attention.error || !!view?.feeds.live.error;
+  const setup = useQuery({ queryKey: ["attention-span", "setup"], queryFn: () => fetchSetup({}), enabled: failing });
+  const [checking, setChecking] = useState(false);
 
   async function run(key: string, label: string, work: () => Promise<unknown>) {
     setBusy(key);
@@ -257,6 +265,20 @@ function AttentionList({ navigation }: Pick<PluginScreenProps, "navigation">) {
       attention.setView(next);
       await startNow(itemKey, kind, target, next.config, before);
     });
+  }
+
+  if (failing && setup.data && blocks(setup.data)) {
+    const check = async () => {
+      setChecking(true);
+      await attention.refreshNow("live").catch(() => {});
+      await setup.refetch();
+      setChecking(false);
+    };
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <SetupChecklist status={setup.data} config={view?.config} onCheck={() => void check()} checking={checking} openSettings={openSettings} />
+      </ScrollView>
+    );
   }
 
   if (!view) {
@@ -341,10 +363,17 @@ function AttentionList({ navigation }: Pick<PluginScreenProps, "navigation">) {
             <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} onPress={() => switchTab(id)} />
           ))}
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}>
-          <TablerIcon name="update" size={14} />
-          <Text style={styles.muted}>{feed.refreshing || attention.isFetching ? "refreshing…" : feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
-        </Pressable>
+        <View style={[styles.row, { gap: 16 }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}>
+            <TablerIcon name="update" size={14} />
+            <Text style={styles.muted}>{feed.refreshing || attention.isFetching ? "refreshing…" : feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
+          </Pressable>
+          {openSettings ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
+              <TablerIcon name="settings" size={16} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
       {feed.error ? <Text style={styles.danger}>{feed.error}</Text> : null}
 

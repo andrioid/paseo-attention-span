@@ -4,6 +4,7 @@ import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { FIXTURE_CONTEXT, fixtureDetails } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
+import { checkCoverage, configStatus, setupStatus } from "./server/setup";
 import { AttentionService } from "./server/service";
 import type { FeedId } from "./shared/attention";
 import * as rpc from "./shared/rpc";
@@ -26,6 +27,10 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)));
+  server.handle(rpc.setupStatus, () => setupStatus());
+  server.handle(rpc.getCoverage, () => configStatus());
+  server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name));
+  server.handle(rpc.setCoverage, ({ orgs, repos }) => ready(() => attention.setCoverage(orgs, repos)).then(() => ({ ok: true as const })));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.updateBranch, ({ target }) => thenRefresh(updateBranch(target)));
   server.handle(rpc.mergePullRequest, ({ target }) => thenRefresh(mergePullRequest(target), ["live", "history"]));

@@ -6,6 +6,9 @@ import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, Pul
 export const REPO = "acme/shop";
 // Issues kept apart from the code, as some orgs do; its code lives in REPO [SES-07].
 export const ISSUES_REPO = "acme/issues";
+// What the settings screen can add in previews [SRC-02]; anything else isn't found.
+export const FIXTURE_ORGS = ["acme"];
+export const FIXTURE_REPOS = [REPO, ISSUES_REPO, "acme/web"];
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
 

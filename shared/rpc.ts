@@ -2,6 +2,7 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import type { AttentionView, ItemDetails, Target } from "./attention";
 import { SessionKind } from "./config";
+import type { ConfigStatus, CoverageCheck, SetupStatus } from "./setup";
 
 // Both sides are this plugin, so the types are checked by TypeScript, not repeated as schemas.
 const view = z.custom<AttentionView>();
@@ -16,6 +17,12 @@ export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.o
 export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({}), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });
+// What the setup checklist shows when nothing loads [SET-01].
+export const setupStatus = defineRpc({ name: "setup.status", input: z.object({}), output: z.custom<SetupStatus>() });
+// The settings screen: the orgs and repos in config.json, each checked on GitHub as it's added [SRC-02].
+export const getCoverage = defineRpc({ name: "config.coverage", input: z.object({}), output: z.custom<ConfigStatus>() });
+export const checkCoverage = defineRpc({ name: "config.check-coverage", input: z.object({ kind: z.enum(["org", "repo"]), name: z.string() }), output: z.custom<CoverageCheck>() });
+export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.object({ orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
 // Remember the scope chips picked on Next up [NXT-03].
 export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });
 

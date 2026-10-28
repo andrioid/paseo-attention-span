@@ -14,15 +14,14 @@ For when your attention is spread thin. A [Paseo](https://paseo.sh) plugin that 
 paseo plugin install git:andrioid/paseo-attention-span
 ```
 
-Then:
+Then open Attention in the sidebar. Until it can reach GitHub, it shows a checklist of what's missing:
 
-- Sign in to the GitHub CLI on the daemon host: `gh auth login`.
-- Register the repositories you work in as Paseo projects, so items can start sessions.
-- Optionally, narrow it down in `~/.config/paseo-attention-span/config.json`, for example:
+- The GitHub CLI, installed and signed in on the machine that runs Paseo: `gh auth login`.
+- The repositories you work in, registered as Paseo projects, so items can start sessions.
 
-  ```json
-  { "orgs": ["acme"], "repos": ["someone/tool"] }
-  ```
+To narrow it down to some organizations and repositories, use the gear on the screen, or Settings, Plugins, Attention Span. Everything else is in `~/.config/paseo-attention-span/config.json`.
+
+![Setup](docs/screenshots/desktop-dark-setup.png)
 
 ## Develop
 

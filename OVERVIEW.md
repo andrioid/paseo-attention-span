@@ -17,9 +17,13 @@ A mention only counts while the person is still waiting for you; replying or rea
 - To start sessions, the repositories need to be registered as Paseo projects, with their GitHub remote. Items in other repositories can still be opened on GitHub.
 - Requires Paseo 0.13.0 or later. Tested on Linux.
 
-It works without configuration: the lists about you cover everything on GitHub that involves you, and Next up looks for unclaimed issues in your Paseo projects' repositories. To narrow it down or change defaults, edit `~/.config/paseo-attention-span/config.json` on the daemon host. There is no settings screen. The options are:
+When `gh` is missing or signed out, or `config.json` can't be read, the screen shows a setup checklist instead of the lists: what's missing, how to fix it, and a button to check again. It also says what the plugin covers, how many of your projects it can start sessions in, and which agent sessions will use.
 
-- `orgs` and `repos`: the organizations and `owner/name` repositories to cover. Next up's unclaimed issues use them too, instead of your projects.
+It works without configuration: the lists about you cover everything on GitHub that involves you, and Next up looks for unclaimed issues in your Paseo projects' repositories.
+
+To narrow it down, choose organizations and repositories under Settings, Plugins, Attention Span, or with the gear on the screen. Each one is checked on GitHub as you add it. Next up's unclaimed issues use them too, instead of your projects.
+
+Everything else is set in `~/.config/paseo-attention-span/config.json` on the daemon host, which the settings screen also writes to:
 - `profiles`: the Paseo agent profile per session type. Reviews use `review`, everything else `default`, and a missing profile falls back to Paseo's defaults.
 - `prompts`: your own prompt template per session type, replacing the built-in one.
 - `mergeMethods`: squash, merge or rebase per repository.
@@ -56,4 +60,4 @@ Where GitHub allows it, an Undo appears after an action.
 ## Limits
 
 - github.com only. Other forges and GitHub Enterprise are not supported yet.
-- Settings are edited by hand.
+- Apart from organizations and repositories, settings are edited by hand.

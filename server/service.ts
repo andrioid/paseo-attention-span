@@ -6,7 +6,7 @@ import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
 import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, type SearchName, searchQuery, searchVariables, unclaimedScope } from "./queries";
-import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveState, State } from "./store";
+import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveState, State } from "./store";
 import { buildView } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -84,6 +84,13 @@ export class AttentionService {
   async setCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionView> {
     this.config = await saveCodeRepo(issueRepo, codeRepo);
     return this.view();
+  }
+
+  // Orgs and repos chosen in settings [SRC-02]. The lists follow right away; History catches up behind them.
+  async setCoverage(orgs: string[], repos: string[]): Promise<void> {
+    this.config = await saveCoverage(orgs, repos);
+    void this.refresh("history").catch(() => {});
+    await this.refresh("live").catch(() => {});
   }
 
   async setScopes(scopes: string[]): Promise<void> {
