@@ -56,10 +56,7 @@ jobs:
           echo "next=$next" >> "$GITHUB_OUTPUT"
 
       - run: npm version "${{ steps.version.outputs.next }}" --no-git-tag-version
-      # Uses trusted publishing, or NPM_TOKEN when that secret exists.
       - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Tag and write release notes
         env:

@@ -39,7 +39,7 @@ Run the Release workflow in GitHub Actions on `main` and pick patch or minor. It
 
 The registry checks npm twice a day and updates the listing through its own review, so a release needs nothing else.
 
-npm trusts the workflow through trusted publishing, so there is no npm token. A `NPM_TOKEN` secret, if present, is used instead; it was only needed for the first publish.
+npm trusts the workflow through trusted publishing, so there is no npm token.
 
 ## Listing
 
