@@ -84,8 +84,8 @@ function Coverage() {
         {error ? <Text style={styles.danger}>{error}</Text> : null}
         <Text style={styles.muted}>
           {orgs.length || repos.length
-            ? "Every list covers only these. Next up looks for unclaimed issues in them too, unless nextUp.repos is set."
-            : "Covering everything on GitHub that involves you. Next up looks for unclaimed issues in your Paseo projects' repos."}
+            ? "Attention Span only shows pull requests and issues from the organizations and repositories above. Next up suggests unclaimed issues from them too."
+            : "With none chosen, Attention Span shows everything on GitHub that involves you, and Next up suggests issues from your Paseo projects' repositories."}
         </Text>
         {/* Until more moves here, point to the file for the rest. */}
         <Text style={styles.muted}>Settings are not complete yet. Until then, check out your ~/.config/paseo-attention-span/config.json for more options.</Text>
