@@ -34,6 +34,23 @@ for (const layout of layouts) {
       const clip = bottom > 0 ? { x: 0, y: 0, width, height: Math.min(height, Math.ceil(bottom) + 16) } : undefined;
       await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip });
     };
+    // A sheet or modal sits over the whole page: clip to a band around it, so the thumbnail stays readable.
+    // On phones it's a bottom sheet: a draggable container, taller than what it shows, so end at its last text.
+    const modalShot = async (name) => {
+      const box = layout.isMobile
+        ? await page.evaluate(() => {
+            const texts = (node) => [...node.querySelectorAll("*")].filter((n) => !n.children.length && n.textContent.trim());
+            const sheet = [...document.querySelectorAll('[role="slider"]')].filter((n) => texts(n).length).pop();
+            if (!sheet) return null;
+            const y = sheet.getBoundingClientRect().y;
+            return { y, height: Math.max(...texts(sheet).map((n) => n.getBoundingClientRect().bottom)) - y };
+          })
+        : await page.getByRole("dialog").last().boundingBox().catch(() => null);
+      const { width, height } = page.viewportSize();
+      const y = box ? Math.max(0, Math.floor(box.y) - 80) : 0;
+      const clip = box ? { x: 0, y, width, height: Math.min(height - y, Math.ceil(box.height) + 160) } : undefined;
+      await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip });
+    };
     try {
       await writeFile(configPath, originalConfig);
       // The container's daemon serves the web app and is the only host it knows.
@@ -65,34 +82,37 @@ for (const layout of layouts) {
       }
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
-      // A card's sheet sits over the whole page, so it's shot uncropped.
       const openSheet = async (title) => {
         await page.getByRole("button", { name: `${title}, more` }).first().click();
-        await page.getByText("Open on GitHub").last().waitFor({ timeout: 10000 });
+        await page.getByText(/^Open (issue|PR) on GitHub$/).last().waitFor({ timeout: 10000 });
         await page.waitForTimeout(800); // details load
       };
       const closeSheet = async () => {
         await page.keyboard.press("Escape");
         await page.waitForTimeout(400);
-        if (await page.getByText("Open on GitHub").last().isVisible()) await page.getByRole("button", { name: /close/i }).last().click();
+        if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /close/i }).last().click();
         await page.waitForTimeout(300);
       };
       await doing();
       await openSheet("Show delivery dates on the order page");
-      await page.screenshot({ path: `/out/${prefix}-doing-sheet.png` });
+      await modalShot("doing-sheet");
+      await closeSheet();
+      // An issue led card: its stack of PRs, each opening on GitHub [ATT-03, ATT-12].
+      await openSheet("Supplier prices are a week out of date");
+      await modalShot("doing-issue-sheet");
       await closeSheet();
       await openSheet("Publish security.txt");
       await page.getByRole("button", { name: "Acknowledge" }).last().click();
       await page.getByText(/👍 2 comments/).waitFor({ timeout: 10000 });
       await page.waitForTimeout(400);
-      await page.screenshot({ path: `/out/${prefix}-doing-acknowledge.png` });
+      await modalShot("doing-acknowledge");
       await page.getByRole("button", { name: "Cancel" }).last().click();
       await page.waitForTimeout(300);
       await openSheet("Harden the upload endpoint");
       await page.getByRole("button", { name: "Address comments with options…" }).last().click();
       await page.getByText("Agent profile").waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
-      await page.screenshot({ path: `/out/${prefix}-doing-options.png` }); // the modal sits over the whole page
+      await modalShot("doing-options");
       await page.getByRole("button", { name: "Cancel" }).last().click();
       await page.getByRole("button", { name: "Merge", exact: true }).click();
       await page.waitForTimeout(400);
@@ -104,7 +124,7 @@ for (const layout of layouts) {
       await shot("history-reviewed");
       await page.getByRole("tab", { name: /Next up/ }).first().click();
       await openSheet("Orders export times out for big shops");
-      await page.screenshot({ path: `/out/${prefix}-next-up-sheet.png` });
+      await modalShot("next-up-sheet");
       await closeSheet();
       await page.getByText("🔙 Backend", { exact: true }).click();
       await page.waitForTimeout(400);
@@ -153,7 +173,7 @@ for (const layout of layouts) {
       await startIssue();
       await picker.waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
-      await page.screenshot({ path: `/out/${prefix}-next-up-code-repo.png` }); // the modal sits over the whole page
+      await modalShot("next-up-code-repo");
       await page.getByRole("button", { name: "acme/shop" }).click();
       await page.waitForTimeout(3000);
       const saved = JSON.parse(await readFile(configPath, "utf8"));

@@ -16,7 +16,7 @@ import { NextUpList } from "./next-up";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
-import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useStyles } from "./ui";
+import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -597,6 +597,9 @@ function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: 
     staleTime: 60_000,
   });
   const meta = [`${item.repo}#${item.number}`, ...(item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [])];
+  // PRs already in the stack line link from there; list only the rest, like someone else's PR closing the same issue.
+  const shown = new Set(item.children.map((child) => child.url));
+  const extra = details.data && { ...details.data, linked: details.data.linked.filter((link) => !shown.has(link.url)) };
   return (
     <ActionSheet
       title={item.title}
@@ -605,11 +608,11 @@ function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: 
         <>
           <Meta facts={meta} chips={item.chips} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
-          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} /> : null}
+          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
         </>
       }
       entries={sheetEntries(item, agent, actions, handlers, details)}
-      bottom={<DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />}
+      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />}
     />
   );
 }
@@ -645,7 +648,7 @@ function sheetEntries(
     }
   }
   // Anything Attention Span doesn't cover [ATT-12].
-  entries.push({ key: "github", icon: "github", label: "Open on GitHub", detail: `${item.repo}#${item.number}`, onPress: close(() => void openExternalUrl(item.url)) });
+  entries.push({ key: "github", icon: "github", label: `Open ${item.kind === "issue" ? "issue" : "PR"} on GitHub`, detail: `${item.repo}#${item.number}`, onPress: close(() => void openExternalUrl(item.url)) });
   if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", onPress: close(() => actions.dismiss(item)) });
   return entries;
 }
@@ -788,12 +791,13 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
 }
 
 // Stacked or linked PRs as a connected line; collapsed, only those needing attention [ATT-03, ATT-04].
-function StackLine({ rows, merged }: { rows: SubRow[]; merged: boolean }) {
+// In the sheet each row opens its PR on GitHub [ATT-12].
+function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: boolean; links?: boolean }) {
   const styles = useStyles();
   return (
     <View>
       {rows.map((row, index) => (
-        <View key={row.key} style={[styles.row, { alignItems: "stretch" }]}>
+        <StackRow key={row.key} url={row.url} number={row.number} link={links}>
           <View style={{ width: 16, alignItems: "center" }}>
             <View style={{ width: 2, flex: 1, backgroundColor: index === 0 ? "transparent" : styles.c.border }} />
             <TablerIcon name={merged ? "merge" : row.draft ? "draft" : "pr"} size={14} color={merged ? styles.c.accent : row.draft ? styles.c.foregroundMuted : styles.c.statusSuccess} />
@@ -805,9 +809,31 @@ function StackLine({ rows, merged }: { rows: SubRow[]; merged: boolean }) {
             </Text>
             <Meta facts={[`#${row.number}`]} chips={row.chips} />
           </View>
-        </View>
+          {links ? (
+            <View style={{ justifyContent: "center", paddingHorizontal: 4 }}>
+              <TablerIcon name="github" size={14} color={styles.c.foregroundMuted} />
+            </View>
+          ) : null}
+        </StackRow>
       ))}
     </View>
+  );
+}
+
+function StackRow({ url, number, link, children }: { url: string; number: number; link: boolean; children: ReactNode }) {
+  const styles = useStyles();
+  const { hovered, hover } = useHover();
+  if (!link) return <View style={[styles.row, { alignItems: "stretch" }]}>{children}</View>;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`Open PR #${number} on GitHub`}
+      onPress={() => void openExternalUrl(url)}
+      {...hover}
+      style={({ pressed }) => [styles.row, { alignItems: "stretch", borderRadius: 6, backgroundColor: pressed || hovered ? styles.c.surface2 : "transparent" }]}
+    >
+      {children}
+    </Pressable>
   );
 }
 
