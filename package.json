@@ -1,7 +1,16 @@
 {
-  "name": "paseo-attention-span",
-  "private": true,
-  "version": "0.1.0",
+  "name": "@andrioid/paseo-attention-span",
+  "version": "0.0.0-development",
+  "description": "For when your attention is spread thin: the GitHub issues and pull requests waiting on you, grouped by why, with one-tap Paseo sessions.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrioid/paseo-attention-span.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "files": [
     "paseo-plugin.json",
@@ -11,6 +20,7 @@
     "client/",
     "server/",
     "shared/",
+    "!**/*.test.ts",
     "assets/",
     "docs/screenshots/desktop-dark-doing.png",
     "docs/screenshots/phone-dark-doing.png",

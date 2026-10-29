@@ -33,6 +33,14 @@ The previews are react-native-web. Check the iOS and Android apps by hand now an
 
 Only when the owner asks: `paseo plugin install <path>`, or `paseo plugin reload attention-span` after changes.
 
+## Release
+
+Run the Release workflow in GitHub Actions on `main` and pick patch or minor. It runs `npm run check`, publishes `@andrioid/paseo-attention-span` to npm with the next version after the latest `v*` tag, then pushes that tag and a GitHub Release with generated notes. It never commits, so `version` in `package.json` stays a placeholder.
+
+The registry checks npm twice a day and updates the listing through its own review, so a release needs nothing else.
+
+npm trusts the workflow through trusted publishing, so there is no npm token. A `NPM_TOKEN` secret, if present, is used instead; it was only needed for the first publish.
+
 ## Listing
 
 The registry listing is [OVERVIEW.md](OVERVIEW.md) plus the `media` in `paseo-plugin.json`, which are screenshots from `docs/screenshots/`; the first is the card thumbnail. Keep the overview in step with what the plugin does. It must not contain install commands.

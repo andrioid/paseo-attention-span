@@ -11,8 +11,10 @@ For when your attention is spread thin. A [Paseo](https://paseo.sh) plugin that 
 ## Install
 
 ```bash
-paseo plugin install git:andrioid/paseo-attention-span
+paseo plugin add andrioid/attention-span
 ```
+
+That's the reviewed release from the Paseo plugin registry. For the unreleased latest from `main`, use `paseo plugin add git:andrioid/paseo-attention-span` instead.
 
 Then open Attention in the sidebar. Until it can reach GitHub, it shows a checklist of what's missing:
 

@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Fixes are patch, new features are minor
+        type: choice
+        options: [patch, minor]
+        default: patch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@^11.5.1
+      - run: npm install
+      - run: npm run check
+
+      - name: Pick the next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          if [ -z "$last" ]; then
+            next=0.1.0
+          elif [ "$(git rev-list -n 1 "$last")" = "$(git rev-parse HEAD)" ]; then
+            echo "::error::Nothing to release: $last is already the latest commit."
+            exit 1
+          else
+            IFS=. read -r major minor patch <<< "${last#v}"
+            if [ "$BUMP" = minor ]; then
+              next="$major.$((minor + 1)).0"
+            else
+              next="$major.$minor.$((patch + 1))"
+            fi
+          fi
+          echo "Releasing $next (last: ${last:-none})"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
+      - run: npm version "${{ steps.version.outputs.next }}" --no-git-tag-version
+      # Uses trusted publishing, or NPM_TOKEN when that secret exists.
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag and write release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.next }}
+        run: |
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --generate-notes --verify-tag
