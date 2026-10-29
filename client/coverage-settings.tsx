@@ -36,7 +36,7 @@ function Coverage() {
         </SettingsCard>
       </SettingsSection>
     );
-  const { orgs, repos, path } = coverage.data;
+  const { orgs, repos } = coverage.data;
   // A file that doesn't parse is left for the person who edited it.
   if (coverage.data.error)
     return (
@@ -87,7 +87,8 @@ function Coverage() {
             ? "Every list covers only these. Next up looks for unclaimed issues in them too, unless nextUp.repos is set."
             : "Covering everything on GitHub that involves you. Next up looks for unclaimed issues in your Paseo projects' repos."}
         </Text>
-        <Text style={styles.muted}>Saved in {path}, where everything else is set.</Text>
+        {/* Until more moves here, point to the file for the rest. */}
+        <Text style={styles.muted}>Settings are not complete yet. Until then, check out your ~/.config/paseo-attention-span/config.json for more options.</Text>
       </View>
     </View>
   );

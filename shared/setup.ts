@@ -1,7 +1,6 @@
 // What getting started needs, for the setup checklist [SET-01] and the settings screen [SRC-02].
 
 export interface ConfigStatus {
-  path: string;
   // Why config.json can't be read, if it can't. The settings screen won't overwrite it then.
   error: string | null;
   orgs: string[];

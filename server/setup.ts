@@ -1,7 +1,7 @@
 import type { ConfigStatus, CoverageCheck, CoverageKind, SetupStatus } from "../shared/setup";
 import { FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
 import { FIXTURE, runGh } from "./gh";
-import { CONFIG, loadConfig } from "./store";
+import { loadConfig } from "./store";
 
 // What the setup checklist needs [SET-01]. Asked only when Attention Span can't load.
 export async function setupStatus(): Promise<SetupStatus> {
@@ -22,9 +22,9 @@ async function ghStatus(): Promise<SetupStatus["gh"]> {
 export async function configStatus(): Promise<ConfigStatus> {
   try {
     const { orgs, repos } = await loadConfig();
-    return { path: CONFIG, error: null, orgs, repos };
+    return { error: null, orgs, repos };
   } catch (error) {
-    return { path: CONFIG, error: (error as Error).message, orgs: [], repos: [] };
+    return { error: (error as Error).message, orgs: [], repos: [] };
   }
 }
 

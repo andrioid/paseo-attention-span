@@ -10,7 +10,7 @@ const CHOSEN_DIR = process.env.PASEO_ATTENTION_SPAN_DIR ?? process.env.PASEO_GIT
 export const DIR = CHOSEN_DIR ?? join(homedir(), ".config", "paseo-attention-span");
 // Where they lived while the plugin was called "GitHub attention".
 const OLD_DIR = join(homedir(), ".config", "paseo-github-attention");
-export const CONFIG = join(DIR, "config.json");
+const CONFIG = join(DIR, "config.json");
 const STATE = join(DIR, "state.json");
 
 export const State = z.object({
