@@ -11,6 +11,7 @@ import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { blocks } from "../shared/setup";
 import { useAttention } from "./data";
+import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
@@ -301,14 +302,11 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     waiting: view.waiting.reduce((sum, section) => sum + section.items.length, 0),
     next: view.assigned.length + view.unclaimed.length,
   };
-  // The repo is worth showing only when the list spans several.
-  const repos = new Set([...view.doing, ...view.waiting].flatMap((section) => section.items.map((item) => item.repo)));
 
   const actions: Actions = {
     agents: view.fixtureAgents ?? agents.data ?? {},
     busy,
     config: view.config,
-    showRepo: repos.size > 1,
     fetchContext,
     fetchDetails,
     defaultBranch,
@@ -485,7 +483,6 @@ interface Actions {
   agents: Record<string, AgentSummary>;
   busy: string | null;
   config: AttentionConfig;
-  showRepo: boolean;
   fetchContext: FetchContext;
   fetchDetails: FetchDetails;
   defaultBranch: DefaultBranch;
@@ -498,10 +495,11 @@ interface Actions {
   started: (agentId: string) => Promise<void>;
 }
 
-function stateIcon(item: Item, c: ReturnType<typeof useStyles>["c"]): { name: IconName; color: string } {
-  if (item.closedAt) return item.kind === "pr" ? { name: "merge", color: c.accent } : { name: "issueClosed", color: item.chips.length ? c.foregroundMuted : c.accent };
-  if (item.kind === "issue") return { name: "issue", color: c.statusSuccess };
-  return item.draft ? { name: "draft", color: c.foregroundMuted } : { name: "pr", color: c.statusSuccess };
+// What the card is: open, draft, merged or closed. Urgency stays in the chips and section headers.
+function stateMark(item: Item): CardProps["mark"] {
+  if (item.closedAt) return item.kind === "pr" ? { icon: "merge", tone: "good" } : { icon: "issueClosed", tone: item.chips.length ? "neutral" : "good" };
+  if (item.kind === "issue") return { icon: "issue", tone: "good" };
+  return item.draft ? { icon: "draft", tone: "neutral" } : { icon: "pr", tone: "good" };
 }
 
 // A card that works collapsed: its main action and ⋯. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
@@ -510,19 +508,15 @@ const isRed = (chips: Chip[]) => chips.some((chip) => chip.tone === "bad");
 type Sheet = "item" | "acknowledge" | { options: SessionKind } | null;
 
 function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions: Actions }) {
-  const styles = useStyles();
   const agent = actions.agents[item.key];
   const chips = agent ? [...item.chips, agentSignal(agent)] : item.chips;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
-  const [comment, setComment] = useState("");
   const sessionAction = item.actions.find((action) => ACTION_SESSION[action]);
   const sessionKind = sessionAction ? ACTION_SESSION[sessionAction] : undefined;
   const main = item.actions[0];
-  const facts = [`#${item.number}`, ...(actions.showRepo ? [item.repo.split("/")[1]] : [])];
   // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
-  const icon = stateIcon(item, styles.c);
   const open = () => setSheet("item");
   const copy = useCopy();
   const history = item.section === "done" || item.section === "reviewed";
@@ -537,67 +531,64 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
   // A menu with one action is a wasted tap: show that action instead of ⋯. The card still opens the sheet [ATT-06].
   const entries = sheetEntries(item, agent, actions, handlers);
   const only = entries.length === 1 ? entries[0] : undefined;
-
-  const buttons = (
-    <View style={styles.wrap}>
-      {actions.busy === item.key ? (
-        <Text style={styles.muted}>working…</Text>
-      ) : agent && sessionKind ? (
-        <Button label={CONTINUE_LABELS[sessionKind]} icon="agent" variant="calm" onPress={() => actions.openAgent(agent.id)} />
-      ) : main ? (
-        <Button label={actionLabel(main, item)} icon={ACTION_ICONS[main]} variant="calm" onPress={() => perform(main)} />
-      ) : null}
-      {only ? (
-        <Button icon={only.icon} variant="ghost" accessibilityLabel={only.label} onPress={only.onPress} />
-      ) : (
-        <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={open} />
-      )}
-      {/* History is where I report from, so its cards copy their link in one tap [ATT-15]. */}
-      {history ? <Button icon="copy" variant="ghost" accessibilityLabel={`Copy link to #${item.number}`} onPress={() => copy(item.url, `Copied link to #${item.number}`)} /> : null}
-    </View>
-  );
+  const confirmed = (action: "merge" | "close") => (comment: string) => (setConfirm(null), actions.confirm(item, action, comment));
 
   return (
-    <View style={first ? null : styles.divider}>
-      <View style={styles.item}>
-        <View style={{ paddingTop: 3 }}>
-          <TablerIcon name={icon.name} color={icon.color} size={18} />
-        </View>
-        <View style={styles.body}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}, more`} onPress={open} style={{ gap: 6 }}>
-            <Text style={styles.title} numberOfLines={styles.compact ? 2 : 1}>
-              {item.title}
-            </Text>
-            <Meta facts={facts} chips={chips} />
+    <CardRow
+      first={first}
+      mark={stateMark(item)}
+      title={item.title}
+      meta={{
+        place: `${item.repo.split("/")[1]} #${item.number}`,
+        when: item.closedAt ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago` : undefined,
+        signals: chips,
+      }}
+      extra={
+        item.person || children.length > 0 ? (
+          <>
             {item.person ? <PersonQuote person={item.person} expanded={false} /> : null}
             {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} /> : null}
-          </Pressable>
-          {styles.compact ? buttons : null}
-          {confirm ? (
-            <View style={styles.panel}>
-              <Text style={styles.text}>
-                {confirm === "merge"
-                  ? `Merge PR ${item.target.number} into ${item.target.baseRefName} (${item.target.mergeMethod})?`
-                  : `Close PR ${item.target.number}? A comment is only posted if you write one.`}
-              </Text>
-              {confirm === "close" ? (
-                <TextInput style={styles.input} placeholder="Closing comment (optional)" placeholderTextColor={styles.c.foregroundMuted} value={comment} onChangeText={setComment} multiline />
-              ) : null}
-              <View style={styles.wrap}>
-                <Button label={confirm === "merge" ? "Merge" : "Close PR"} icon={confirm} variant="solid" onPress={() => (setConfirm(null), actions.confirm(item, confirm, comment))} />
-                <Button label="Cancel" onPress={() => setConfirm(null)} />
-              </View>
-            </View>
-          ) : null}
-        </View>
-        {styles.compact ? null : buttons}
-      </View>
-      {sheet === "item" ? (
-        <ItemSheet item={item} agent={agent} actions={actions} {...handlers} />
-      ) : null}
-      {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
-      {sheet && typeof sheet === "object" ? <SessionOptions item={item} kind={sheet.options} actions={actions} onClose={() => setSheet(null)} /> : null}
-    </View>
+          </>
+        ) : null
+      }
+      onOpen={open}
+      busy={actions.busy === item.key}
+      primary={
+        agent && sessionKind
+          ? { label: CONTINUE_LABELS[sessionKind], icon: "agent", onPress: () => actions.openAgent(agent.id) }
+          : main
+            ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], onPress: () => perform(main) }
+            : undefined
+      }
+      secondary={[
+        only ? { label: only.label, icon: only.icon, onPress: only.onPress } : { label: "More actions", icon: "dots", onPress: open },
+        // History is where I report from, so its cards copy their link in one tap [ATT-15].
+        ...(history ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
+      ]}
+      confirm={
+        confirm === "merge"
+          ? {
+              text: `Merge PR ${item.target.number} into ${item.target.baseRefName} (${item.target.mergeMethod})?`,
+              choices: [{ label: "Merge", icon: "merge", solid: true, onConfirm: confirmed("merge") }],
+              onCancel: () => setConfirm(null),
+            }
+          : confirm === "close"
+            ? {
+                text: `Close PR ${item.target.number}? A comment is only posted if you write one.`,
+                comment: true,
+                choices: [{ label: "Close PR", icon: "close", solid: true, onConfirm: confirmed("close") }],
+                onCancel: () => setConfirm(null),
+              }
+            : null
+      }
+      overlay={
+        <>
+          {sheet === "item" ? <ItemSheet item={item} agent={agent} actions={actions} {...handlers} /> : null}
+          {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
+          {sheet && typeof sheet === "object" ? <SessionOptions item={item} kind={sheet.options} actions={actions} onClose={() => setSheet(null)} /> : null}
+        </>
+      }
+    />
   );
 }
 
@@ -756,13 +747,12 @@ function Sections({ sections, actions, empty }: { sections: Section[]; actions: 
 }
 
 function Card({ items, actions }: { items: Item[]; actions: Actions }) {
-  const styles = useStyles();
   return (
-    <View style={styles.card}>
+    <CardList>
       {items.map((item, index) => (
         <ItemRow key={item.key} item={item} first={index === 0} actions={actions} />
       ))}
-    </View>
+    </CardList>
   );
 }
 
@@ -842,7 +832,7 @@ function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: bo
         <StackRow key={row.key} url={row.url} number={row.number} link={links}>
           <View style={{ width: 16, alignItems: "center" }}>
             <View style={{ width: 2, flex: 1, backgroundColor: index === 0 ? "transparent" : styles.c.border }} />
-            <TablerIcon name={merged ? "merge" : row.draft ? "draft" : "pr"} size={14} color={merged ? styles.c.accent : row.draft ? styles.c.foregroundMuted : styles.c.statusSuccess} />
+            <TablerIcon name={merged ? "merge" : row.draft ? "draft" : "pr"} size={14} color={merged ? styles.c.statusSuccess : row.draft ? styles.c.foregroundMuted : styles.c.statusSuccess} />
             <View style={{ width: 2, flex: 1, backgroundColor: index === rows.length - 1 ? "transparent" : styles.c.border }} />
           </View>
           <View style={{ flex: 1, paddingVertical: 3, gap: 2 }}>

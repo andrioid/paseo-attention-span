@@ -7,8 +7,9 @@ import type { AgentSummary, Chip, IssueCloseReason, NextUpIssue, UnclaimedSource
 import type { NextUpSource } from "../shared/config";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
+import { CardList, CardRow, type Tone } from "./card";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
-import { Modal, TextInput } from "@getpaseo/plugin/client/ui";
+import { Modal } from "@getpaseo/plugin/client/ui";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
@@ -164,19 +165,17 @@ function FilterOption({ label, checked, first, onPress }: { label: string; check
 }
 
 function IssueList({ issues, claim, ...rowProps }: RowProps & { issues: NextUpIssue[]; claim: boolean }) {
-  const styles = useStyles();
   return (
-    <View style={styles.card}>
+    <CardList>
       {issues.map((issue, index) => (
         <IssueRow key={issue.key} issue={issue} claim={claim} first={index === 0} {...rowProps} />
       ))}
-    </View>
+    </CardList>
   );
 }
 
 // What tells me whether to pick it up: where it lives and how old it is, then priority, effort and scope as tags [NXT-10].
-// The type is the icon. The sheet has the full values.
-const facts = (issue: NextUpIssue) => [`${issue.repo.split("/")[1]} #${issue.number}`, `${ago(issue.createdAt)} old`];
+// The type is the mark. The sheet has the full values.
 const fullFacts = (issue: NextUpIssue) => [
   `${issue.repo}#${issue.number}`,
   `${ago(issue.createdAt)} old`,
@@ -222,81 +221,64 @@ function Tags({ issue }: { issue: NextUpIssue }) {
   );
 }
 
-// The type as a tinted badge: red bugs, green features and epics, amber debt, the rest quiet. Theme colors only.
-function TypeMark({ issue }: { issue: NextUpIssue }) {
-  const styles = useStyles();
-  const type = issue.type?.toLowerCase() ?? "";
-  const color = { bug: styles.c.statusDanger, feature: styles.c.statusSuccess, debt: styles.c.statusWarning, epic: styles.c.accent }[type] ?? styles.c.foregroundMuted;
-  return (
-    <View style={{ width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" }}>
-      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 8, backgroundColor: color, opacity: 0.16 }} />
-      <TablerIcon name={TYPE_ICONS[type] ?? "issue"} size={17} color={color} />
-    </View>
-  );
-}
+// The type as the card's mark: red bugs, green features and epics, amber debt, the rest quiet.
+const TYPE_TONES: Record<string, Tone> = { bug: "bad", feature: "good", epic: "good", debt: "warn" };
 
 // Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
 function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
-  const styles = useStyles();
   const [open, setOpen] = useState(false);
   // Closing asks first, with the reason and an optional comment [NXT-11, SAFE-01].
   const [closing, setClosing] = useState(false);
-  const [comment, setComment] = useState("");
-  const confirmClose = (reason: IssueCloseReason) => {
-    setClosing(false);
-    onCloseIssue(issue, reason, comment);
-    setComment("");
-  };
   const agent = agents[issue.key];
   const startLabel = claim ? "Claim & start" : "Start";
+  const type = issue.type?.toLowerCase() ?? "";
+  const close = (reason: IssueCloseReason) => (comment: string) => (setClosing(false), onCloseIssue(issue, reason, comment));
   return (
-    <View style={[styles.item, first ? null : styles.divider]}>
-      <TypeMark issue={issue} />
-      <View style={styles.body}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`} onPress={() => setOpen(true)} style={{ gap: 6 }}>
-          <Text style={styles.title} numberOfLines={2}>
-            {issue.title}
-          </Text>
-          <Meta facts={facts(issue)} chips={prSignal(issue)} />
-          <Tags issue={issue} />
-        </Pressable>
-        {closing ? (
-          <View style={styles.panel}>
-            <Text style={styles.text}>Close #{issue.number}? A comment is only posted if you write one.</Text>
-            <TextInput style={styles.input} placeholder="Closing comment (optional)" placeholderTextColor={styles.c.foregroundMuted} value={comment} onChangeText={setComment} multiline />
-            <View style={styles.wrap}>
-              <Button label="Completed" icon="issueClosed" variant="solid" onPress={() => confirmClose("completed")} />
-              <Button label="Not planned" icon="close" onPress={() => confirmClose("not_planned")} />
-              <Button label="Cancel" variant="ghost" onPress={() => setClosing(false)} />
-            </View>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.wrap}>
-        {busy === issue.key ? (
-          <Text style={styles.muted}>working…</Text>
-        ) : agent ? (
-          <Button label={styles.compact ? undefined : "Continue"} icon="agent" variant="calm" onPress={() => onOpenAgent(agent.id)} />
-        ) : (
-          // Claim first so teammates see it's taken [NXT-05].
-          <Button label={styles.compact ? undefined : startLabel} accessibilityLabel={`${startLabel} ${issue.title}`} icon="agent" variant="calm" onPress={() => onStart(issue, claim)} />
-        )}
-        <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={() => setOpen(true)} />
-      </View>
-      {open ? (
-        <IssueSheet
-          issue={issue}
-          claim={claim}
-          agent={agent}
-          fetchDetails={fetchDetails}
-          onStart={onStart}
-          onClaim={onClaim}
-          onOpenAgent={onOpenAgent}
-          onCloseIssue={() => setClosing(true)}
-          onClose={() => setOpen(false)}
-        />
-      ) : null}
-    </View>
+    <CardRow
+      first={first}
+      mark={{ icon: TYPE_ICONS[type] ?? "issue", tone: TYPE_TONES[type] ?? "neutral" }}
+      title={issue.title}
+      accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
+      meta={{ place: `${issue.repo.split("/")[1]} #${issue.number}`, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
+      extra={<Tags issue={issue} />}
+      onOpen={() => setOpen(true)}
+      busy={busy === issue.key}
+      primary={
+        agent
+          ? { label: "Continue", icon: "agent", onPress: () => onOpenAgent(agent.id) }
+          : // Claim first so teammates see it's taken [NXT-05].
+            { label: startLabel, accessibilityLabel: `${startLabel} ${issue.title}`, icon: "agent", onPress: () => onStart(issue, claim) }
+      }
+      secondary={[{ label: "More actions", icon: "dots", onPress: () => setOpen(true) }]}
+      confirm={
+        closing
+          ? {
+              text: `Close #${issue.number}? A comment is only posted if you write one.`,
+              comment: true,
+              choices: [
+                { label: "Completed", icon: "issueClosed", solid: true, onConfirm: close("completed") },
+                { label: "Not planned", icon: "close", onConfirm: close("not_planned") },
+              ],
+              onCancel: () => setClosing(false),
+            }
+          : null
+      }
+      overlay={
+        open ? (
+          <IssueSheet
+            issue={issue}
+            claim={claim}
+            agent={agent}
+            fetchDetails={fetchDetails}
+            onStart={onStart}
+            onClaim={onClaim}
+            onOpenAgent={onOpenAgent}
+            onCloseIssue={() => setClosing(true)}
+            onClose={() => setOpen(false)}
+          />
+        ) : null
+      }
+    />
   );
 }
 
