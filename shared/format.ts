@@ -19,3 +19,13 @@ export function daysSince(iso: string, now: Date): number {
 export function linkList(items: { title: string; url: string }[]): string {
   return items.map(({ title, url }) => `- [${title.replace(/[[\]\\]/g, "\\$&")}](${url})`).join("\n");
 }
+
+// An issue field value for a card: "🐟 Tiny (< 4h)" -> "Tiny", "🏕P2 Medium" -> "P2 Medium" [NXT-10]. The sheet keeps the full value.
+export function shortValue(value: string): string {
+  return (
+    value
+      .replace(/^[^\p{L}\p{N}]+/u, "")
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .trim() || value
+  );
+}

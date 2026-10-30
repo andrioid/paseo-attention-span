@@ -138,6 +138,10 @@ export interface NextUpIssue {
   defaultBranch?: string;
   // Ids of the Next up sources that found it; empty without sources of its own [NXT-09].
   sources: string[];
+  // Its priority's place in the field's order, 0 first; missing when unknown [NXT-02].
+  priorityRank?: number;
+  // Open PRs that close it: someone may already be on it [NXT-10].
+  openPrs: { number: number; url: string; author: string | null }[];
 }
 
 // More about an item, fetched when its sheet opens rather than in every refresh [GH-01].

@@ -2,8 +2,8 @@ import { openExternalUrl } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { ago } from "../shared/format";
-import type { AgentSummary, NextUpIssue, UnclaimedSource } from "../shared/attention";
+import { ago, shortValue } from "../shared/format";
+import type { AgentSummary, Chip, NextUpIssue, UnclaimedSource } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
@@ -172,13 +172,53 @@ function IssueList({ issues, claim, ...rowProps }: RowProps & { issues: NextUpIs
   );
 }
 
-// The repo's name always shows, since where an issue lives is part of deciding to pick it up; the sheet has the owner too.
-const facts = (issue: NextUpIssue) => [
-  `#${issue.number}`,
-  issue.repo.split("/")[1],
+// What tells me whether to pick it up: where it lives and how old it is, then priority, effort and scope as tags [NXT-10].
+// The type is the icon. The sheet has the full values.
+const facts = (issue: NextUpIssue) => [`${issue.repo.split("/")[1]} #${issue.number}`, `${ago(issue.createdAt)} old`];
+const fullFacts = (issue: NextUpIssue) => [
+  `${issue.repo}#${issue.number}`,
   `${ago(issue.createdAt)} old`,
   ...[issue.type, issue.priority, issue.effort, issue.scope].filter((v): v is string => !!v),
 ];
+
+// An open PR that closes it means someone may already be on it [NXT-10].
+function prSignal(issue: NextUpIssue): Chip[] {
+  const [first, ...more] = issue.openPrs;
+  if (!first) return [];
+  return [{ text: `PR by ${first.author ?? "someone"}${more.length ? ` +${more.length}` : ""}`, tone: "warn" }];
+}
+
+// The top priority is warm, the next accent, the rest quiet; unknown order stays quiet.
+function Tags({ issue }: { issue: NextUpIssue }) {
+  const styles = useStyles();
+  const priorityColor = issue.priorityRank === 0 ? styles.c.statusWarning : issue.priorityRank === 1 ? styles.action : undefined;
+  const tags = [
+    issue.priority ? { key: "priority", text: shortValue(issue.priority), color: priorityColor } : null,
+    issue.effort ? { key: "effort", text: shortValue(issue.effort) } : null,
+    issue.scope ? { key: "scope", text: shortValue(issue.scope) } : null,
+  ].filter((tag): tag is { key: string; text: string; color?: string } => !!tag);
+  if (tags.length === 0) return null;
+  return (
+    <View style={[styles.wrap, { gap: 4, marginTop: 2 }]}>
+      {tags.map((tag) => (
+        <Text
+          key={tag.key}
+          style={{
+            fontSize: 11,
+            color: tag.color ?? styles.c.foregroundMuted,
+            borderWidth: 1,
+            borderColor: tag.color ?? styles.c.border,
+            borderRadius: 4,
+            paddingHorizontal: 5,
+            paddingVertical: 1,
+          }}
+        >
+          {tag.text}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
 // Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
 function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
@@ -191,11 +231,12 @@ function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, on
       <View style={{ paddingTop: 2 }}>
         <TablerIcon name={TYPE_ICONS[issue.type?.toLowerCase() ?? ""] ?? "issue"} size={18} color={issue.type === "Bug" ? styles.c.statusDanger : styles.c.foregroundMuted} />
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${issue.title}, more`} onPress={() => setOpen(true)} style={styles.body}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`} onPress={() => setOpen(true)} style={styles.body}>
         <Text style={styles.title} numberOfLines={2}>
           {issue.title}
         </Text>
-        <Meta facts={facts(issue)} chips={[]} />
+        <Meta facts={facts(issue)} chips={prSignal(issue)} />
+        <Tags issue={issue} />
       </Pressable>
       <View style={styles.wrap}>
         {busy === issue.key ? (
@@ -250,7 +291,7 @@ function IssueSheet({
       onClose={onClose}
       top={
         <>
-          <Meta facts={[`${issue.repo}#${issue.number}`, ...facts(issue).slice(2)]} chips={[]} />
+          <Meta facts={fullFacts(issue)} chips={prSignal(issue)} />
         </>
       }
       entries={entries}

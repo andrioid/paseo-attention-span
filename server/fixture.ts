@@ -183,8 +183,13 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     ],
     // Found by the preview config's Next up sources [NXT-09].
     unclaimed: [
-      { ...pickable(160, fields("🏕P2 Medium", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"), sources: ["org:acme"] },
-      { ...pickable(161, fields("🏝 P3 Low", "🐟 Tiny (< 4h)", "🔙 Backend"), 15, "Bug", "Deleted employee still shows in the calendar"), sources: ["org:acme"] },
+      { ...pickable(160, fields("🌋 P0 Urgent", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"), sources: ["org:acme"] },
+      // Nobody's assigned, but alice has a PR open for it [NXT-10].
+      {
+        ...pickable(161, fields("🏝 P3 Low", "🐟 Tiny (< 4h)", "🔙 Backend"), 15, "Bug", "Deleted employee still shows in the calendar"),
+        closedByPullRequestsReferences: { nodes: [{ number: 190, url: `https://github.com/${REPO}/pull/190`, state: "OPEN", author: { login: "alice" } }] },
+        sources: ["org:acme"],
+      },
       { ...pickable(162, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🔙 Backend"), 30, "Debt", "Merge the two import commands"), sources: ["org:acme"] },
       { ...pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour"), sources: ["org:acme"] },
       { ...pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"), sources: ["org:acme"] },

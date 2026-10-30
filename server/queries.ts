@@ -45,6 +45,7 @@ const FRAGMENTS: Record<string, string> = {
   repository { nameWithOwner isFork defaultBranchRef { name } }
   issueType { name }
   issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } } } }
+  closedByPullRequestsReferences(first: 5, includeClosedPrs: false) { nodes { number url state author { login } } }
 }`,
   pr: `fragment pr on PullRequest {
   id number title url isDraft createdAt updatedAt

@@ -320,6 +320,17 @@ describe("next up", () => {
     expect(attention.unclaimed[0]).toMatchObject({ type: "Bug", priority: "🏔 P1 High", effort: "🦑 Large (1-2w)", defaultBranch: "main" });
   });
 
+  it("NXT-10: says which open PRs already close an issue, and where its priority ranks", () => {
+    const pr = (number: number, state: string) => ({ number, url: `https://github.com/${REPO}/pull/${number}`, state, author: alice });
+    const attention = run(
+      { unclaimed: [{ ...pickable(1, { Priority: "🏔 P1 High" }), closedByPullRequestsReferences: { nodes: [pr(9, "OPEN"), pr(8, "CLOSED")] } }, pickable(2, {})] },
+      {},
+      { config: AttentionConfig.parse({ nextUp }), fieldOptions },
+    );
+    expect(attention.unclaimed[0]).toMatchObject({ priorityRank: 1, openPrs: [{ number: 9, author: "alice" }] });
+    expect(attention.unclaimed[1]).toMatchObject({ priorityRank: undefined, openPrs: [] });
+  });
+
   it("NXT-06: lists issues assigned to me, ranked the same way", () => {
     const attention = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
     expect(attention.assigned.map((issue) => issue.number)).toEqual([8, 7]);

@@ -362,20 +362,27 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
     return index < 0 ? Infinity : index;
   };
   return nodes
-    .map((node) => ({
-      key: prKey(node),
-      repo: node.repository.nameWithOwner,
-      number: node.number,
-      title: node.title,
-      url: node.url,
-      createdAt: node.createdAt,
-      type: node.issueType?.name,
-      priority: valueOf(node, priority?.field),
-      effort: valueOf(node, effort?.field),
-      scope: valueOf(node, scope?.field),
-      defaultBranch: node.repository.defaultBranchRef?.name,
-      sources: node.sources ?? [],
-    }))
+    .map((node) => {
+      const rank = position(valueOf(node, priority?.field), priority);
+      return {
+        key: prKey(node),
+        repo: node.repository.nameWithOwner,
+        number: node.number,
+        title: node.title,
+        url: node.url,
+        createdAt: node.createdAt,
+        type: node.issueType?.name,
+        priority: valueOf(node, priority?.field),
+        effort: valueOf(node, effort?.field),
+        scope: valueOf(node, scope?.field),
+        defaultBranch: node.repository.defaultBranchRef?.name,
+        sources: node.sources ?? [],
+        priorityRank: Number.isFinite(rank) ? rank : undefined,
+        openPrs: (node.closedByPullRequestsReferences?.nodes ?? [])
+          .filter((pr) => pr?.state === "OPEN")
+          .map((pr) => ({ number: pr.number, url: pr.url, author: pr.author?.login ?? null })),
+      };
+    })
     .sort(
       (a, b) =>
         position(a.priority, priority) - position(b.priority, priority) ||

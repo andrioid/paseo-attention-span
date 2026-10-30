@@ -40,7 +40,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-history.png` | History by week, with Reviewed toggles |
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint. Each card shows the GitHub button instead of ⋯, its sheet's only action |
-   | `<layout>-next-up.png` | Assigned, then all of Unclaimed |
+   | `<layout>-next-up.png` | Assigned, then all of Unclaimed. Cards: "shop #160 · 40d old", tags (P0 Urgent warm, P1 High accent), "PR by alice" on #161 |
    | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": Continue, Unclaim, Open issue on GitHub |
    | `<layout>-next-up-filter.png` | The Filter sheet: Source (My repos, acme) and Scope checkboxes, Backend ticked |
    | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope; the button reads "Filter · 1" |

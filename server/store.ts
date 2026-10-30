@@ -24,7 +24,7 @@ export const State = z.object({
   projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
   live: z
-    .object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => (value as Attention)?.unclaimed?.every?.((issue) => Array.isArray(issue.sources))) })
+    .object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => (value as Attention)?.unclaimed?.every?.((issue) => Array.isArray(issue.sources) && Array.isArray(issue.openPrs))) })
     .nullable()
     .catch(null),
   history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().catch(null),
