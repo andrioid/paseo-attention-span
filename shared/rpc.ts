@@ -31,19 +31,20 @@ export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ s
 export const setSources = defineRpc({ name: "next-up.sources", input: z.object({ sources: z.array(z.string()) }), output: done });
 
 // GitHub changes, each from an explicit tap [SAFE-01], answered with the list after it.
-export const updateBranch = defineRpc({ name: "pr.update-branch", input: z.object({ target }), output: view });
-export const mergePullRequest = defineRpc({ name: "pr.merge", input: z.object({ target }), output: view });
-export const closePullRequest = defineRpc({ name: "pr.close", input: z.object({ target, comment: z.string().optional() }), output: view });
-export const claimIssue = defineRpc({ name: "issue.claim", input: z.object({ target }), output: view });
-export const unclaimIssue = defineRpc({ name: "issue.unclaim", input: z.object({ target }), output: view });
+// `key` is the card it was done from, which shows the change until GitHub's search does [FRESH-02].
+export const updateBranch = defineRpc({ name: "pr.update-branch", input: z.object({ key: z.string(), target }), output: view });
+export const mergePullRequest = defineRpc({ name: "pr.merge", input: z.object({ key: z.string(), target }), output: view });
+export const closePullRequest = defineRpc({ name: "pr.close", input: z.object({ key: z.string(), target, comment: z.string().optional() }), output: view });
+export const claimIssue = defineRpc({ name: "issue.claim", input: z.object({ key: z.string(), target }), output: view });
+export const unclaimIssue = defineRpc({ name: "issue.unclaim", input: z.object({ key: z.string(), target }), output: view });
 // Close an issue from Next up; reopen is its Undo [NXT-11].
-export const closeIssue = defineRpc({ name: "issue.close", input: z.object({ target, reason: z.enum(["completed", "not_planned"]), comment: z.string().optional() }), output: view });
-export const reopenIssue = defineRpc({ name: "issue.reopen", input: z.object({ target }), output: view });
+export const closeIssue = defineRpc({ name: "issue.close", input: z.object({ key: z.string(), target, reason: z.enum(["completed", "not_planned"]), comment: z.string().optional() }), output: view });
+export const reopenIssue = defineRpc({ name: "issue.reopen", input: z.object({ key: z.string(), target }), output: view });
 // `ready: false` and `on: false` are the Undo of each.
-export const setReady = defineRpc({ name: "pr.ready", input: z.object({ target, ready: z.boolean() }), output: view });
-export const setAutoMerge = defineRpc({ name: "pr.auto-merge", input: z.object({ target, on: z.boolean() }), output: view });
-export const react = defineRpc({ name: "comment.react", input: z.object({ subjectIds: z.array(z.string()), on: z.boolean() }), output: view });
-export const rerunFailed = defineRpc({ name: "checks.rerun", input: z.object({ repo: z.string(), runIds: z.array(z.number()) }), output: view });
+export const setReady = defineRpc({ name: "pr.ready", input: z.object({ key: z.string(), target, ready: z.boolean() }), output: view });
+export const setAutoMerge = defineRpc({ name: "pr.auto-merge", input: z.object({ key: z.string(), target, on: z.boolean() }), output: view });
+export const react = defineRpc({ name: "comment.react", input: z.object({ key: z.string(), subjectIds: z.array(z.string()), on: z.boolean() }), output: view });
+export const rerunFailed = defineRpc({ name: "checks.rerun", input: z.object({ key: z.string(), repo: z.string(), runIds: z.array(z.number()) }), output: view });
 
 // What an item's sheet shows beyond the card [ATT-06]. `checks` asks for failing checks too, for Rerun.
 export const itemDetails = defineRpc({

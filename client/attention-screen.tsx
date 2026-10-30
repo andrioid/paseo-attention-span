@@ -316,25 +316,25 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
       const { target } = item;
       if (action === "reply") return void openExternalUrl(item.person?.url ?? item.url);
       if (session) return void startWithDefaults(item.key, session, target);
-      if (action === "update") change(item.key, "Update", () => update({ target }), `Updating PR ${target.number} with ${target.baseRefName}`);
+      if (action === "update") change(item.key, "Update", () => update({ key: item.key, target }), `Updating PR ${target.number} with ${target.baseRefName}`);
       // [PRS-11]
       if (action === "ready")
-        change(item.key, "Ready for review", () => setReady({ target, ready: true }), `PR ${target.number} is ready for review`, () => setReady({ target, ready: false }));
+        change(item.key, "Ready for review", () => setReady({ key: item.key, target, ready: true }), `PR ${target.number} is ready for review`, () => setReady({ key: item.key, target, ready: false }));
       // [PRS-10]
       if (action === "automerge")
-        change(item.key, "Auto-merge", () => setAutoMerge({ target, on: true }), `PR ${target.number} merges once checks pass`, () => setAutoMerge({ target, on: false }));
+        change(item.key, "Auto-merge", () => setAutoMerge({ key: item.key, target, on: true }), `PR ${target.number} merges once checks pass`, () => setAutoMerge({ key: item.key, target, on: false }));
     },
     // [PRS-09]
-    rerun: (item, runIds) => change(item.key, "Rerun", () => rerunFailed({ repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
+    rerun: (item, runIds) => change(item.key, "Rerun", () => rerunFailed({ key: item.key, repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
     // [MEN-07]
     acknowledge: (item, ids) =>
-      change(item.key, "👍", () => react({ subjectIds: ids, on: true }), `Reacted 👍 to ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
-        react({ subjectIds: ids, on: false }),
+      change(item.key, "👍", () => react({ key: item.key, subjectIds: ids, on: true }), `Reacted 👍 to ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
+        react({ key: item.key, subjectIds: ids, on: false }),
       ),
     confirm: (item, action, comment) =>
       action === "merge"
-        ? change(item.key, "Merge", () => merge({ target: item.target }), `PR ${item.target.number} merged`)
-        : change(item.key, "Close", () => close({ target: item.target, comment }), `PR ${item.target.number} closed`),
+        ? change(item.key, "Merge", () => merge({ key: item.key, target: item.target }), `PR ${item.target.number} merged`)
+        : change(item.key, "Close", () => close({ key: item.key, target: item.target, comment }), `PR ${item.target.number} closed`),
     dismiss: (item) => change(item.key, "Dismiss", () => dismiss({ key: item.key }), `Dismissed “${item.title}”`, () => undismiss({ key: item.key }), true),
   };
 
@@ -431,19 +431,19 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
           onOpenAgent={openAgent}
           onStart={(issue, claimFirst) => {
             const target = issueTarget(issue);
-            void startWithDefaults(issue.key, "start", target, claimFirst ? async () => attention.setView(await claim({ target })) : undefined);
+            void startWithDefaults(issue.key, "start", target, claimFirst ? async () => attention.setView(await claim({ key: issue.key, target })) : undefined);
           }}
           // Claim without starting, or give it back; each undoes the other [NXT-07].
           onClaim={(issue, on) => {
             const target = issueTarget(issue);
-            const [take, giveBack] = [() => claim({ target }), () => unclaim({ target })];
+            const [take, giveBack] = [() => claim({ key: issue.key, target }), () => unclaim({ key: issue.key, target })];
             change(issue.key, on ? "Claim" : "Unclaim", on ? take : giveBack, `${on ? "Claimed" : "Unclaimed"} #${issue.number}`, on ? giveBack : take);
           }}
           // Undo reopens; a comment already posted stays [NXT-11].
           onCloseIssue={(issue, reason, comment) => {
             const target = issueTarget(issue);
             const done = `Closed #${issue.number} as ${reason === "completed" ? "completed" : "not planned"}`;
-            change(issue.key, "Close", () => closeIssue({ target, reason, comment: comment || undefined }), done, () => reopenIssue({ target }));
+            change(issue.key, "Close", () => closeIssue({ key: issue.key, target, reason, comment: comment || undefined }), done, () => reopenIssue({ key: issue.key, target }));
           }}
         />
       ) : null}

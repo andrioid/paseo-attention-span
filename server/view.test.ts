@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Attention, Item } from "../shared/attention";
+import type { Attention, Item, NextUpIssue } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { renderPrompt } from "../shared/prompts";
-import { buildView } from "./view";
+import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
 const config = AttentionConfig.parse({});
 const feed = { fetchedAt: null, refreshing: false, error: null };
-const meta = { feeds: { live: feed, history: feed }, scopes: [], sources: [], config };
+const meta = { feeds: { live: feed, history: feed }, scopes: [], sources: [], config, pending: 0 };
 
 function item(key: string, section: Item["section"], othersActivityAt: string): Item {
   return {
@@ -47,6 +47,62 @@ describe("dismiss", () => {
     expect(view.doing.map((section) => section.title)).toEqual(["Waiting for your reply", "My drafts"]);
     expect(view.waiting.map((section) => section.id)).toEqual(["wait_ci"]);
     expect(view.history.map((h) => h.key)).toEqual(["d"]);
+  });
+});
+
+describe("pending changes", () => {
+  const at = "2026-10-30T12:00:00.000Z";
+  const time = new Date(at).getTime();
+  const after = (ms: number) => new Date(time + ms).toISOString();
+  const issue = (key: string): NextUpIssue => ({ key, repo: "o/r", number: 2, title: key, url: "https://x/2", createdAt: at, sources: [], openPrs: [] });
+  const pending = (effect: Pending["effect"]): Pending => ({ at, effect });
+  const lists = (items: Item[], assigned: NextUpIssue[] = [], unclaimed: NextUpIssue[] = []): Attention => ({ login: "me", items, assigned, unclaimed });
+
+  it("FRESH-02: a merged PR leaves Doing and shows in History at once", () => {
+    const pr = item("a", "ready", "x");
+    const { attention, history } = applyPending(lists([pr, item("b", "ci", "x")]), [item("old", "done", "x")], { a: pending({ kind: "done", item: doneItem(pr, at) }) });
+    expect(attention!.items.map((i) => i.key)).toEqual(["b"]);
+    expect(history.map((i) => [i.key, i.section, i.closedAt])).toEqual([["a", "done", at], ["old", "done", undefined]]);
+  });
+
+  it("FRESH-02: once History has it, the prediction isn't shown twice", () => {
+    const pr = item("a", "ready", "x");
+    const { history } = applyPending(lists([]), [item("a", "done", "x")], { a: pending({ kind: "done", item: doneItem(pr, at) }) });
+    expect(history).toHaveLength(1);
+  });
+
+  it("FRESH-02: an issue closed as not planned says so in History", () => {
+    expect(doneItem(issue("i"), at, true)).toMatchObject({ kind: "issue", section: "done", chips: [{ text: "not planned" }] });
+  });
+
+  it("FRESH-02: a closed item leaves every list; claim and unclaim move the issue", () => {
+    const shown = applyPending(lists([item("pr", "drafts", "x")], [issue("mine"), issue("back")], [issue("take"), issue("shut")]), [], {
+      pr: pending({ kind: "gone" }),
+      take: pending({ kind: "claimed" }),
+      back: pending({ kind: "unclaimed" }),
+      shut: pending({ kind: "gone" }),
+    }).attention!;
+    expect(shown.items).toEqual([]);
+    expect(shown.assigned.map((i) => i.key)).toEqual(["mine", "take"]);
+    expect(shown.unclaimed.map((i) => i.key)).toEqual(["back"]);
+  });
+
+  it("FRESH-02: a change whose outcome is uncertain keeps the card in place, with a chip", () => {
+    const chip = { text: "rerunning", tone: "neutral" as const };
+    const shown = applyPending(lists([item("a", "ci", "x")]), [], { a: pending({ kind: "chip", chip }) }).attention!;
+    expect(shown.items[0]).toMatchObject({ section: "ci", chips: [chip] });
+    const again = applyPending(shown, [], { a: pending({ kind: "chip", chip }) }).attention!;
+    expect(again.items[0].chips).toHaveLength(1);
+  });
+
+  it("FRESH-02: shown until a fetch begun after GitHub caught up, or ten minutes at most", () => {
+    const gone = pending({ kind: "gone" });
+    expect(isPending(gone, { live: after(1_000), history: null }, time + 5_000)).toBe(true);
+    expect(isPending(gone, { live: after(SETTLE_MS), history: null }, time + SETTLE_MS + 5_000)).toBe(false);
+    expect(isPending(gone, { live: null, history: null }, time + 10 * 60_000)).toBe(false);
+    const done = pending({ kind: "done", item: doneItem(item("a", "ready", "x"), at) });
+    expect(isPending(done, { live: after(SETTLE_MS), history: after(1_000) }, time + SETTLE_MS + 5_000)).toBe(true);
+    expect(isPending(done, { live: after(SETTLE_MS), history: after(SETTLE_MS) }, time + SETTLE_MS + 5_000)).toBe(false);
   });
 });
 

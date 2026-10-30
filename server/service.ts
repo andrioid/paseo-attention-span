@@ -7,12 +7,15 @@ import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
 import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveNextUpSources, saveState, State } from "./store";
-import { buildView } from "./view";
+import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
 const HISTORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 // A failed refresh is retried at most this often, except on ⟳.
 const RETRY_MS = 5 * 60_000;
+
+// What a change does to the lists: an effect, Finished (merged or closed, so off the lists and maybe into History), or nothing.
+export type Change = Effect | { kind: "finished"; notPlanned?: boolean } | null;
 
 interface Feed {
   inFlight: Promise<void> | null;
@@ -33,6 +36,7 @@ export class AttentionService {
   };
   private saving: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private followUps: Partial<Record<FeedId, ReturnType<typeof setTimeout>>> = {};
   private intervalMinutes = 0;
   // The app's connection to Paseo, from its last request; background refreshes have none of their own.
   private paseo: PluginHandlerContext["paseo"] | null = null;
@@ -52,6 +56,7 @@ export class AttentionService {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    for (const timeout of Object.values(this.followUps)) clearTimeout(timeout);
   }
 
   // ⟳ fetches its tab's feed now; otherwise feeds older than their schedule are fetched first.
@@ -112,10 +117,31 @@ export class AttentionService {
   }
 
   // A change on GitHub from one tap [SAFE-01], answered with the list as it is after it.
-  async act(work: () => Promise<void>, feeds: FeedId[] = ["live"]): Promise<AttentionView> {
+  // GitHub's search takes seconds to show it, so its effect shows until a fetch can [FRESH-02]; no change (Undo) clears it.
+  async act(key: string, work: () => Promise<void>, change: Change): Promise<AttentionView> {
     await work();
-    await Promise.all(feeds.map((id) => this.refresh(id, true).catch(() => {})));
+    const before = this.state.pending[key];
+    const at = new Date().toISOString();
+    if (change) this.state.pending[key] = { at, effect: change.kind === "finished" ? this.finished(key, at, change.notPlanned) : change };
+    else delete this.state.pending[key];
+    await this.save();
+    const history = change?.kind === "finished" || before?.effect.kind === "done";
+    this.followUp("live");
+    if (history) this.followUp("history");
     return this.view();
+  }
+
+  // Into History if it's mine: a PR in my lists, or an issue assigned to me [HIS-01]. Else just off the lists.
+  private finished(key: string, at: string, notPlanned?: boolean): Effect {
+    const live = this.state.live?.attention;
+    const source = live?.items.find((item) => item.key === key) ?? live?.assigned.find((issue) => issue.key === key);
+    return source ? { kind: "done", item: doneItem(source, at, notPlanned) } : { kind: "gone" };
+  }
+
+  // One fetch once GitHub's search has caught up with the latest change, which ends what's pending.
+  private followUp(id: FeedId): void {
+    clearTimeout(this.followUps[id]);
+    this.followUps[id] = setTimeout(() => void this.refresh(id, true).catch(() => {}), SETTLE_MS);
   }
 
   // Concurrent callers share one refresh per feed. `fresh` won't share one that began before the call, which can't show a change just made.
@@ -146,6 +172,8 @@ export class AttentionService {
       // Forget dismissals of items that are gone.
       const keys = new Set(this.items().map((item) => item.key));
       for (const key of Object.keys(this.state.dismissed)) if (!keys.has(key)) delete this.state.dismissed[key];
+      // And changes GitHub now shows for itself.
+      for (const [key, pending] of Object.entries(this.state.pending)) if (!isPending(pending, this.fetchedAt(), Date.now())) delete this.state.pending[key];
       feed.error = null;
       await this.save();
     } catch (error) {
@@ -269,17 +297,25 @@ export class AttentionService {
     return this.saving;
   }
 
+  private fetchedAt(): Record<FeedId, string | null> {
+    return { live: this.state.live?.fetchedAt ?? null, history: this.state.history?.fetchedAt ?? null };
+  }
+
   private view(): AttentionView {
     const status = (id: FeedId): FeedStatus => ({
       fetchedAt: this.state[id]?.fetchedAt ?? null,
       refreshing: this.feeds[id].inFlight !== null,
       error: this.feeds[id].error ?? this.configError,
     });
-    return buildView(this.state.live?.attention ?? null, this.state.history?.items ?? [], this.state.dismissed, {
+    const now = Date.now();
+    const pending = Object.fromEntries(Object.entries(this.state.pending).filter(([, entry]) => isPending(entry, this.fetchedAt(), now)));
+    const shown = applyPending(this.state.live?.attention ?? null, this.state.history?.items ?? [], pending);
+    return buildView(shown.attention, shown.history, this.state.dismissed, {
       feeds: { live: status("live"), history: status("history") },
       scopes: this.state.scopes,
       sources: this.state.sources,
       config: this.config,
+      pending: Object.keys(pending).length,
       ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),
     });
   }

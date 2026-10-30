@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { Attention, Item, SectionId } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
+import type { Pending } from "./view";
 
 // Local files in ~/.config/paseo-attention-span/ [PRIV-01].
 const CHOSEN_DIR = process.env.PASEO_ATTENTION_SPAN_DIR ?? process.env.PASEO_GITHUB_ATTENTION_DIR;
@@ -16,6 +17,8 @@ const STATE = join(DIR, "state.json");
 export const State = z.object({
   // Item key -> others' activity and section when dismissed [ATT-08].
   dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>() })).default({}),
+  // Item key -> what I just changed on GitHub, until a fetch shows it [FRESH-02].
+  pending: z.record(z.string(), z.custom<Pending>((value) => typeof (value as Pending)?.at === "string" && !!(value as Pending)?.effect)).default({}).catch({}),
   // Scopes ticked in Next up's filter; none means all [NXT-03].
   scopes: z.array(z.string()).default([]),
   // Sources ticked in Next up's filter; none means all [NXT-09].

@@ -13,7 +13,8 @@ export function useAttention() {
   const query = useQuery({
     queryKey: VIEW_QUERY_KEY,
     queryFn: () => fetchAttention({}),
-    refetchInterval: 60_000,
+    // Sooner while a change waits on GitHub, so the list shows GitHub's own word on it soon after [FRESH-02].
+    refetchInterval: (query) => (query.state.data?.pending ? 10_000 : 60_000),
   });
   const setView = useCallback((view: AttentionView) => queryClient.setQueryData(VIEW_QUERY_KEY, view), [queryClient]);
   // ⟳ fetches only the feed behind the tab I'm on.

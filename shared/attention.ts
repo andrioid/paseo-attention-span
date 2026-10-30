@@ -214,6 +214,8 @@ export interface AttentionView {
   // Sources ticked in Next up's filter; none means all [NXT-09].
   sources: string[];
   config: AttentionConfig;
+  // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
+  pending: number;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
   fixtureAgents?: Record<string, AgentSummary>;
 }

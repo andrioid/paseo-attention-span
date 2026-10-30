@@ -110,6 +110,7 @@ non_functional:
     REACH-01: works in Paseo on both phone and desktop; so that I can triage from anywhere.
   freshness:
     FRESH-01: stays current without me refreshing it; so that its count can be trusted.
+    FRESH-02: shows what I just did on GitHub right away, and keeps showing it until GitHub's search catches up; so that I never refresh to see it.
 
 docs:
   CONTRIBUTING.md: how to check, preview the screens in isolation, and install — read before changing UI or tooling.
