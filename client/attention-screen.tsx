@@ -17,7 +17,7 @@ import { NextUpList } from "./next-up";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
-import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
+import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -197,7 +197,8 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   const fetchDefaultBranch = useRpc(rpc.defaultBranch);
   const defaultBranch: DefaultBranch = async (repo) => (await fetchDefaultBranch({ repo })).name;
   const [tab, setTab] = useState<TabId>("doing");
-  const [busy, setBusy] = useState<string | null>(null);
+  // Every card with a change still running: each runs on its own.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const view = attention.data;
@@ -208,13 +209,13 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   const [checking, setChecking] = useState(false);
 
   async function run(key: string, label: string, work: () => Promise<unknown>) {
-    setBusy(key);
+    setBusy((keys) => new Set(keys).add(key));
     try {
       await work();
     } catch (error) {
       toast.error(`${label} failed: ${(error as Error).message}`);
     } finally {
-      setBusy(null);
+      setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
     }
   }
 
@@ -285,13 +286,14 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   if (!view) {
     return (
       <View style={[styles.screen, styles.content]}>
-        <Text style={attention.error ? styles.danger : styles.muted}>{attention.error ? `Couldn't load Attention Span: ${(attention.error as Error).message}` : "Loading…"}</Text>
+        {attention.error ? <Text style={styles.danger}>Couldn't load Attention Span: {(attention.error as Error).message}</Text> : <Loading text="Loading…" />}
       </View>
     );
   }
 
   // Each tab shows how fresh its own feed is.
   const feed = view.feeds[TAB_FEED[tab]];
+  const refreshing = feed.refreshing || attention.isFetching;
   const tooLong = view.doing.find((section) => section.id === "too_long")?.items.length ?? 0;
   const counts: Record<TabId, number> = {
     history: view.history.filter((item) => item.section === "done").length,
@@ -350,9 +352,15 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
           ))}
         </View>
         <View style={[styles.row, { gap: 16 }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Refresh now" style={styles.row} onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}>
-            <TablerIcon name="update" size={14} />
-            <Text style={styles.muted}>{feed.refreshing || attention.isFetching ? "refreshing…" : feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh now"
+            accessibilityState={{ busy: refreshing }}
+            style={styles.row}
+            onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}
+          >
+            <SpinningIcon name="update" size={14} spinning={refreshing} />
+            <Text style={styles.muted}>{feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
           </Pressable>
           {openSettings ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
@@ -465,7 +473,7 @@ function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: s
 
 interface Actions {
   agents: Record<string, AgentSummary>;
-  busy: string | null;
+  busy: ReadonlySet<string>;
   config: AttentionConfig;
   fetchContext: FetchContext;
   fetchDetails: FetchDetails;
@@ -536,7 +544,7 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
         ) : null
       }
       onOpen={open}
-      busy={actions.busy === item.key}
+      busy={actions.busy.has(item.key)}
       primary={
         agent && sessionKind
           ? { label: CONTINUE_LABELS[sessionKind], icon: "agent", onPress: () => actions.openAgent(agent.id) }
@@ -897,7 +905,7 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
     <Modal title={`${actionLabel(item.actions.find((a) => ACTION_SESSION[a] === kind) ?? "start", item)}: ${item.title}`} open onOpenChange={(open) => (open ? null : onClose())}>
       <Modal.Content>
         <KeepStyles styles={styles}>
-        {options.isLoading ? <Text style={styles.muted}>Loading context…</Text> : null}
+        {options.isLoading ? <Loading text="Loading context…" /> : null}
         {!options.isLoading && !data ? <Text style={styles.danger}>{(options.error as Error)?.message ?? "No options"}</Text> : null}
         {data && !data.checkout.project ? <Text style={styles.danger}>{noProjectMessage(data.checkout, target)}</Text> : null}
         {data?.checkout.project ? (
@@ -941,7 +949,7 @@ function CodeRepoPicker({ issueRepo, missing, onPick, onClose }: { issueRepo: st
         <KeepStyles styles={styles}>
           <View style={{ gap: 10 }}>
             <Text style={styles.text}>No Paseo project has {missing} as its GitHub remote. Pick the project that holds the code for issues in {issueRepo}.</Text>
-            {projects.isLoading ? <Text style={styles.muted}>Loading projects…</Text> : null}
+            {projects.isLoading ? <Loading text="Loading projects…" /> : null}
             {projects.data?.length === 0 ? <Text style={styles.danger}>No Paseo project has a GitHub remote. Add the code repository as a project first.</Text> : null}
             <View style={styles.wrap}>
               {projects.data?.map((project) => (

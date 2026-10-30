@@ -1,6 +1,6 @@
 import { TextInput } from "@getpaseo/plugin/client/ui";
 import { type ReactNode, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
 import { Button, Meta, TablerIcon, toneColor, useStyles } from "./ui";
@@ -63,10 +63,10 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
   const styles = useStyles();
   const actions = (
     <View style={styles.wrap}>
-      {busy ? (
-        <Text style={styles.muted}>working…</Text>
-      ) : primary ? (
-        <Button label={primary.label} accessibilityLabel={primary.accessibilityLabel} icon={primary.icon} variant="calm" onPress={primary.onPress} />
+      {primary ? (
+        <Button label={primary.label} accessibilityLabel={primary.accessibilityLabel} icon={primary.icon} variant="calm" busy={busy} onPress={primary.onPress} />
+      ) : busy ? (
+        <ActivityIndicator size="small" color={styles.c.foregroundMuted} />
       ) : null}
       {secondary.map((action) => (
         <Button key={action.accessibilityLabel ?? action.label} icon={action.icon} variant="ghost" accessibilityLabel={action.accessibilityLabel ?? action.label} onPress={action.onPress} />

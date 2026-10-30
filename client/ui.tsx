@@ -1,7 +1,7 @@
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
-import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Easing, Image, Platform, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import { ICONS, type IconName } from "./icons";
 
@@ -54,6 +54,34 @@ export function TablerIcon({ name, size = 16, color }: { name: IconName; size?: 
   return <Icon icon={ICONS[name]} size={size} color={color ?? c.foregroundMuted} />;
 }
 
+// An icon that turns while something runs, like ⟳ while its feed is fetched.
+export function SpinningIcon({ name, size = 16, color, spinning }: { name: IconName; size?: number; color?: string; spinning: boolean }) {
+  const turn = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!spinning) return;
+    const loop = Animated.loop(Animated.timing(turn, { toValue: 1, duration: 1000, easing: Easing.linear, useNativeDriver: Platform.OS !== "web" }));
+    loop.start();
+    return () => (loop.stop(), turn.setValue(0));
+  }, [spinning, turn]);
+  const rotate = turn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  return (
+    <Animated.View style={{ transform: [{ rotate }] }}>
+      <TablerIcon name={name} size={size} color={color} />
+    </Animated.View>
+  );
+}
+
+// What's loading, with a spinner so it doesn't read as stuck.
+export function Loading({ text }: { text: string }) {
+  const styles = useStyles();
+  return (
+    <View style={styles.row}>
+      <ActivityIndicator size="small" color={styles.c.foregroundMuted} />
+      <Text style={styles.muted}>{text}</Text>
+    </View>
+  );
+}
+
 export function toneColor(styles: Styles, tone: Chip["tone"]): string {
   return { good: styles.c.statusSuccess, bad: styles.c.statusDanger, warn: styles.c.statusWarning, neutral: styles.c.foregroundMuted }[tone];
 }
@@ -100,12 +128,14 @@ export function useHover() {
 }
 
 // Calm by default: accent text on a subtle surface. Solid accent is for confirmations.
+// Busy: a spinner in place of the icon, and no second press while it runs.
 export function Button({
   label,
   icon,
   onPress,
   variant = "plain",
   disabled,
+  busy,
   accessibilityLabel,
 }: {
   label?: string;
@@ -113,6 +143,7 @@ export function Button({
   onPress: () => void;
   variant?: Variant;
   disabled?: boolean;
+  busy?: boolean;
   accessibilityLabel?: string;
 }) {
   const styles = useStyles();
@@ -123,7 +154,8 @@ export function Button({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label ?? icon}
-      disabled={disabled}
+      accessibilityState={{ disabled: disabled || busy, busy }}
+      disabled={disabled || busy}
       onPress={onPress}
       {...hover}
       style={({ pressed }) => ({
@@ -137,7 +169,7 @@ export function Button({
         opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
       })}
     >
-      {icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
+      {busy ? <ActivityIndicator size="small" color={color} style={{ width: 15, height: 15 }} /> : icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
       {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
     </Pressable>
   );

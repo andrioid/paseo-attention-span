@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemDetails } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, KeepStyles, TablerIcon, useCopy, useHover, useStyles } from "./ui";
+import { Button, KeepStyles, Loading, TablerIcon, useCopy, useHover, useStyles } from "./ui";
 
 // Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
@@ -77,7 +77,7 @@ function Entry({ entry, first }: { entry: SheetEntry; first: boolean }) {
 // The PR's size and the linked issues or PRs, once fetched.
 export function DetailLines({ details, loading, error, linkedLabel }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string }) {
   const styles = useStyles();
-  if (loading) return <Text style={styles.muted}>Loading details…</Text>;
+  if (loading) return <Loading text="Loading details…" />;
   if (!details) return error ? <Text style={styles.muted}>Couldn't load details: {(error as Error).message}</Text> : null;
   return (
     <>

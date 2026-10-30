@@ -26,7 +26,7 @@ interface Props {
   selectedSources: string[];
   onSelectSources: (sources: string[]) => void;
   agents: Record<string, AgentSummary>;
-  busy: string | null;
+  busy: ReadonlySet<string>;
   fetchDetails: FetchDetails;
   onStart: (issue: NextUpIssue, claim: boolean) => void;
   // Claim without starting, or give an assigned issue back [NXT-07].
@@ -242,7 +242,7 @@ function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, on
       meta={{ place: `${issue.repo.split("/")[1]} #${issue.number}`, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
       extra={<Tags issue={issue} />}
       onOpen={() => setOpen(true)}
-      busy={busy === issue.key}
+      busy={busy.has(issue.key)}
       primary={
         agent
           ? { label: "Continue", icon: "agent", onPress: () => onOpenAgent(agent.id) }
