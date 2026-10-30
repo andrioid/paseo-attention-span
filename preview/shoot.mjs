@@ -103,7 +103,7 @@ for (const layout of layouts) {
       await closeSheet();
       await openSheet("Publish security.txt");
       await page.getByRole("button", { name: "Acknowledge" }).last().click();
-      await page.getByText(/👍 2 comments/).waitFor({ timeout: 10000 });
+      await page.getByRole("button", { name: "Acknowledge 2 comments" }).waitFor({ timeout: 10000 });
       await page.waitForTimeout(400);
       await modalShot("doing-acknowledge");
       await page.getByRole("button", { name: "Cancel" }).last().click();

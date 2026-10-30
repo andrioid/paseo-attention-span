@@ -67,7 +67,7 @@ function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): string {
   return {
     reply: item.person ? `Opens ${item.person.login}'s comment on GitHub` : "Opens it on GitHub",
     acknowledge:
-      comments.length === 1 ? `Reacts 👍 to ${comments[0].author}'s comment, which clears it` : `Pick which of the ${comments.length} waiting comments get a 👍`,
+      comments.length === 1 ? `Reacts to ${comments[0].author}'s comment, which clears it` : `Pick which of the ${comments.length} waiting comments to react to`,
     review: "An agent reviews the PR in a checkout and reports back. Nothing is posted",
     fix: "An agent reads the failing logs and commits a fix, without pushing",
     address: "An agent works through the unresolved comments and applies the trivial ones, without pushing",
@@ -328,7 +328,7 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     rerun: (item, runIds) => change(item.key, "Rerun", () => rerunFailed({ key: item.key, repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
     // [MEN-07]
     acknowledge: (item, ids) =>
-      change(item.key, "👍", () => react({ key: item.key, subjectIds: ids, on: true }), `Reacted 👍 to ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
+      change(item.key, "Acknowledge", () => react({ key: item.key, subjectIds: ids, on: true }), `Acknowledged ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
         react({ key: item.key, subjectIds: ids, on: false }),
       ),
     confirm: (item, action, comment) =>
@@ -672,7 +672,10 @@ function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (id
     <Modal title={`Acknowledge: ${item.title}`} open onOpenChange={(open) => (open ? null : onClose())}>
       <Modal.Content>
         <KeepStyles styles={styles}>
-          <Text style={styles.muted}>A 👍 tells them you've seen it, and clears it from your list.</Text>
+          <View style={styles.row}>
+            <TablerIcon name="thumbUp" size={14} />
+            <Text style={[styles.muted, { flexShrink: 1 }]}>Tells them you've seen it, and clears it from your list.</Text>
+          </View>
           {comments.map((c) => (
             <Pressable
               key={c.id}
@@ -693,7 +696,9 @@ function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (id
           ))}
           <View style={styles.wrap}>
             <Button
-              label={`👍 ${picked.size} comment${picked.size === 1 ? "" : "s"}`}
+              label={`${picked.size} comment${picked.size === 1 ? "" : "s"}`}
+              icon="thumbUp"
+              accessibilityLabel={`Acknowledge ${picked.size} comment${picked.size === 1 ? "" : "s"}`}
               variant="solid"
               disabled={picked.size === 0}
               onPress={() => onReact(comments.filter((c) => picked.has(c.id)).map((c) => c.id))}
