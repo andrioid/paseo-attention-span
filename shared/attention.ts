@@ -50,6 +50,8 @@ export type ActionId =
 export interface Chip {
   text: string;
   tone: "good" | "bad" | "warn" | "neutral";
+  // In place of the dot, where a picture says it better.
+  icon?: "thumbUp";
 }
 
 // The person (or bot) I'm waiting on, or who is waiting on me.

@@ -86,13 +86,13 @@ export function toneColor(styles: Styles, tone: Chip["tone"]): string {
   return { good: styles.c.statusSuccess, bad: styles.c.statusDanger, warn: styles.c.statusWarning, neutral: styles.c.foregroundMuted }[tone];
 }
 
-// A state that matters, as a colored dot and text.
-export function Signal({ text, tone }: Chip) {
+// A state that matters, as a colored dot (or its icon) and text.
+export function Signal({ text, tone, icon }: Chip) {
   const styles = useStyles();
   const color = toneColor(styles, tone);
   return (
     <View style={[styles.row, { gap: 5 }]}>
-      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
+      {icon ? <TablerIcon name={icon} size={13} color={color} /> : <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />}
       <Text style={{ color, fontSize: 12, fontWeight: "500" }}>{text}</Text>
     </View>
   );
@@ -101,8 +101,9 @@ export function Signal({ text, tone }: Chip) {
 // The line under a title: facts as quiet text joined by "·", then signals [ATT-05].
 export function Meta({ facts, chips }: { facts: string[]; chips: Chip[] }) {
   const styles = useStyles();
-  const text = [...facts, ...chips.filter((chip) => chip.tone === "neutral").map((chip) => chip.text)];
-  const signals = chips.filter((chip) => chip.tone !== "neutral");
+  const quiet = (chip: Chip) => chip.tone === "neutral" && !chip.icon;
+  const text = [...facts, ...chips.filter(quiet).map((chip) => chip.text)];
+  const signals = chips.filter((chip) => !quiet(chip));
   return (
     <View style={[styles.wrap, { columnGap: 10, rowGap: 4 }]}>
       {text.length ? <Text style={styles.muted}>{text.join(" · ")}</Text> : null}

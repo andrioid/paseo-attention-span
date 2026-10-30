@@ -16,7 +16,7 @@ export default function contribute(server: PluginServerContext) {
 
   // A change on GitHub, answered with the list after it; what it does to the card shows right away [FRESH-02].
   const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, work, change));
-  const chip = (text: string, tone: Chip["tone"] = "neutral"): Change => ({ kind: "chip", chip: { text, tone } });
+  const chip = (text: string, tone: Chip["tone"] = "neutral", icon?: Chip["icon"]): Change => ({ kind: "chip", chip: { text, tone, ...(icon ? { icon } : {}) } });
 
   // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08].
   server.handle(rpc.getAttention, ({ refresh }, { paseo }) => ready(() => (attention.connect(paseo), attention.get(refresh))));
@@ -41,7 +41,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.reopenIssue, ({ key, target }) => act(key, () => reopenIssue(target), null));
   server.handle(rpc.setReady, ({ key, target, ready }) => act(key, () => setReady(target, ready), ready ? chip("ready for review", "good") : null));
   server.handle(rpc.setAutoMerge, ({ key, target, on }) => act(key, () => setAutoMerge(target, on), on ? chip("auto-merge on", "good") : null));
-  server.handle(rpc.react, ({ key, subjectIds, on }) => act(key, () => react(subjectIds, on), on ? chip("👍 sent") : null));
+  server.handle(rpc.react, ({ key, subjectIds, on }) => act(key, () => react(subjectIds, on), on ? chip("acknowledged", "neutral", "thumbUp") : null));
   server.handle(rpc.rerunFailed, ({ key, repo, runIds }) => act(key, () => rerunFailed(repo, runIds), chip("rerunning")));
   server.handle(rpc.itemDetails, ({ subject, target, checks }) => (FIXTURE ? Promise.resolve(fixtureDetails(subject, target, checks)) : itemDetails(subject, target, checks)));
   server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: FIXTURE ? "main" : await defaultBranch(repo) }));
