@@ -3,12 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ago, shortValue } from "../shared/format";
-import type { AgentSummary, Chip, NextUpIssue, UnclaimedSource } from "../shared/attention";
+import type { AgentSummary, Chip, IssueCloseReason, NextUpIssue, UnclaimedSource } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
-import { Modal } from "@getpaseo/plugin/client/ui";
+import { Modal, TextInput } from "@getpaseo/plugin/client/ui";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
@@ -30,6 +30,8 @@ interface Props {
   onStart: (issue: NextUpIssue, claim: boolean) => void;
   // Claim without starting, or give an assigned issue back [NXT-07].
   onClaim: (issue: NextUpIssue, on: boolean) => void;
+  // Close it, once I've confirmed the reason [NXT-11].
+  onCloseIssue: (issue: NextUpIssue, reason: IssueCloseReason, comment: string) => void;
   onOpenAgent: (agentId: string) => void;
 }
 
@@ -220,24 +222,56 @@ function Tags({ issue }: { issue: NextUpIssue }) {
   );
 }
 
+// The type as a tinted badge: red bugs, green features and epics, amber debt, the rest quiet. Theme colors only.
+function TypeMark({ issue }: { issue: NextUpIssue }) {
+  const styles = useStyles();
+  const type = issue.type?.toLowerCase() ?? "";
+  const color = { bug: styles.c.statusDanger, feature: styles.c.statusSuccess, debt: styles.c.statusWarning, epic: styles.c.accent }[type] ?? styles.c.foregroundMuted;
+  return (
+    <View style={{ width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 8, backgroundColor: color, opacity: 0.16 }} />
+      <TablerIcon name={TYPE_ICONS[type] ?? "issue"} size={17} color={color} />
+    </View>
+  );
+}
+
 // Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
-function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
+function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
   const styles = useStyles();
   const [open, setOpen] = useState(false);
+  // Closing asks first, with the reason and an optional comment [NXT-11, SAFE-01].
+  const [closing, setClosing] = useState(false);
+  const [comment, setComment] = useState("");
+  const confirmClose = (reason: IssueCloseReason) => {
+    setClosing(false);
+    onCloseIssue(issue, reason, comment);
+    setComment("");
+  };
   const agent = agents[issue.key];
   const startLabel = claim ? "Claim & start" : "Start";
   return (
     <View style={[styles.item, first ? null : styles.divider]}>
-      <View style={{ paddingTop: 2 }}>
-        <TablerIcon name={TYPE_ICONS[issue.type?.toLowerCase() ?? ""] ?? "issue"} size={18} color={issue.type === "Bug" ? styles.c.statusDanger : styles.c.foregroundMuted} />
+      <TypeMark issue={issue} />
+      <View style={styles.body}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`} onPress={() => setOpen(true)} style={{ gap: 6 }}>
+          <Text style={styles.title} numberOfLines={2}>
+            {issue.title}
+          </Text>
+          <Meta facts={facts(issue)} chips={prSignal(issue)} />
+          <Tags issue={issue} />
+        </Pressable>
+        {closing ? (
+          <View style={styles.panel}>
+            <Text style={styles.text}>Close #{issue.number}? A comment is only posted if you write one.</Text>
+            <TextInput style={styles.input} placeholder="Closing comment (optional)" placeholderTextColor={styles.c.foregroundMuted} value={comment} onChangeText={setComment} multiline />
+            <View style={styles.wrap}>
+              <Button label="Completed" icon="issueClosed" variant="solid" onPress={() => confirmClose("completed")} />
+              <Button label="Not planned" icon="close" onPress={() => confirmClose("not_planned")} />
+              <Button label="Cancel" variant="ghost" onPress={() => setClosing(false)} />
+            </View>
+          </View>
+        ) : null}
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`} onPress={() => setOpen(true)} style={styles.body}>
-        <Text style={styles.title} numberOfLines={2}>
-          {issue.title}
-        </Text>
-        <Meta facts={facts(issue)} chips={prSignal(issue)} />
-        <Tags issue={issue} />
-      </Pressable>
       <View style={styles.wrap}>
         {busy === issue.key ? (
           <Text style={styles.muted}>working…</Text>
@@ -249,7 +283,19 @@ function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, on
         )}
         <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={() => setOpen(true)} />
       </View>
-      {open ? <IssueSheet issue={issue} claim={claim} agent={agent} fetchDetails={fetchDetails} onStart={onStart} onClaim={onClaim} onOpenAgent={onOpenAgent} onClose={() => setOpen(false)} /> : null}
+      {open ? (
+        <IssueSheet
+          issue={issue}
+          claim={claim}
+          agent={agent}
+          fetchDetails={fetchDetails}
+          onStart={onStart}
+          onClaim={onClaim}
+          onOpenAgent={onOpenAgent}
+          onCloseIssue={() => setClosing(true)}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -262,8 +308,9 @@ function IssueSheet({
   onStart,
   onClaim,
   onOpenAgent,
+  onCloseIssue,
   onClose,
-}: Pick<Props, "fetchDetails" | "onStart" | "onClaim" | "onOpenAgent"> & { issue: NextUpIssue; claim: boolean; agent?: AgentSummary; onClose: () => void }) {
+}: Pick<Props, "fetchDetails" | "onStart" | "onClaim" | "onOpenAgent"> & { issue: NextUpIssue; claim: boolean; agent?: AgentSummary; onCloseIssue: () => void; onClose: () => void }) {
   const details = useQuery({
     queryKey: ["attention-span", "details", issue.key, false],
     queryFn: () => fetchDetails({ subject: { kind: "issue", repo: issue.repo, number: issue.number }, checks: false }),
@@ -284,6 +331,7 @@ function IssueSheet({
       ? { key: "claim", icon: "claim", label: "Claim", detail: "Assigns you, without starting a session", onPress: close(() => onClaim(issue, true)) }
       : { key: "unclaim", icon: "unclaim", label: "Unclaim", detail: "Removes you as assignee, so it goes back to Unclaimed", onPress: close(() => onClaim(issue, false)) },
     { key: "github", icon: "github", label: "Open issue on GitHub", detail: `${issue.repo}#${issue.number}`, onPress: close(() => void openExternalUrl(issue.url)) },
+    { key: "close", icon: "issueClosed", label: "Close issue", detail: "Asks first: as completed or not planned, with an optional comment", onPress: close(onCloseIssue) },
   ];
   return (
     <ActionSheet

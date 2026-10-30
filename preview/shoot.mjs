@@ -90,7 +90,7 @@ for (const layout of layouts) {
       const closeSheet = async () => {
         await page.keyboard.press("Escape");
         await page.waitForTimeout(400);
-        if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /close/i }).last().click();
+        if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
       await doing();
@@ -136,6 +136,13 @@ for (const layout of layouts) {
       await openSheet("Orders export times out for big shops");
       await modalShot("next-up-sheet");
       await closeSheet();
+      // Close asks first, on the card: reason and an optional comment [NXT-11]. Cancelled, since it would call GitHub.
+      await openSheet("Merge the two import commands");
+      await page.getByRole("button", { name: "Close issue" }).click();
+      await page.locator('[role="button"][aria-label="Not planned"] >> visible=true').first().waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await shot("next-up-close");
+      await page.locator('[role="button"][aria-label="Cancel"] >> visible=true').first().click();
       // Source and scope filters sit behind one button [NXT-03, NXT-09]. Ticks apply right away.
       const filter = async (ticks) => {
         await page.getByRole("button", { name: /^Filter/ }).click();

@@ -87,6 +87,7 @@ functional:
       NXT-08: see unclaimed issues from the repositories of my Paseo projects when I haven't chosen any; so that Next up is useful without setup and never fills with strangers' issues.
       NXT-09: filter unclaimed issues by where they came from, and have my choice remembered; so that I can focus on one source at a time.
       NXT-10: see on each issue its repository, priority, effort and scope at a glance, and whether an open pull request already closes it and by whom; so that I can judge whether to pick it up without opening it.
+      NXT-11: close an issue from Next up as completed or not planned, with an optional comment, and undo it; so that work that's done or won't be done stops being suggested.
   waiting:
     As a developer, I can:
       WAI-01: see my work that is waiting on others, grouped by what it waits for; so that I know that work is tracked.

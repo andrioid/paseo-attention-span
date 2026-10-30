@@ -180,6 +180,8 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   const restore = useRpc(rpc.restoreDismissed);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
+  const closeIssue = useRpc(rpc.closeIssue);
+  const reopenIssue = useRpc(rpc.reopenIssue);
   const update = useRpc(rpc.updateBranch);
   const merge = useRpc(rpc.mergePullRequest);
   const close = useRpc(rpc.closePullRequest);
@@ -446,6 +448,12 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
             const target = issueTarget(issue);
             const [take, giveBack] = [() => claim({ target }), () => unclaim({ target })];
             onGitHub(issue.key, on ? "Claim" : "Unclaim", on ? take : giveBack, `${on ? "Claimed" : "Unclaimed"} #${issue.number}`, on ? giveBack : take);
+          }}
+          // Undo reopens; a comment already posted stays [NXT-11].
+          onCloseIssue={(issue, reason, comment) => {
+            const target = issueTarget(issue);
+            const done = `Closed #${issue.number} as ${reason === "completed" ? "completed" : "not planned"}`;
+            onGitHub(issue.key, "Close", () => closeIssue({ target, reason, comment: comment || undefined }), done, () => reopenIssue({ target }));
           }}
         />
       ) : null}

@@ -36,6 +36,9 @@ export const mergePullRequest = defineRpc({ name: "pr.merge", input: z.object({ 
 export const closePullRequest = defineRpc({ name: "pr.close", input: z.object({ target, comment: z.string().optional() }), output: done });
 export const claimIssue = defineRpc({ name: "issue.claim", input: z.object({ target }), output: done });
 export const unclaimIssue = defineRpc({ name: "issue.unclaim", input: z.object({ target }), output: done });
+// Close an issue from Next up; reopen is its Undo [NXT-11].
+export const closeIssue = defineRpc({ name: "issue.close", input: z.object({ target, reason: z.enum(["completed", "not_planned"]), comment: z.string().optional() }), output: done });
+export const reopenIssue = defineRpc({ name: "issue.reopen", input: z.object({ target }), output: done });
 // `ready: false` and `on: false` are the Undo of each.
 export const setReady = defineRpc({ name: "pr.ready", input: z.object({ target, ready: z.boolean() }), output: done });
 export const setAutoMerge = defineRpc({ name: "pr.auto-merge", input: z.object({ target, on: z.boolean() }), output: done });

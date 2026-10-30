@@ -1,5 +1,5 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { claimIssue, closePullRequest, mergePullRequest, react, rerunFailed, setAutoMerge, setReady, unclaimIssue, updateBranch } from "./server/actions";
+import { claimIssue, closeIssue, closePullRequest, mergePullRequest, react, reopenIssue, rerunFailed, setAutoMerge, setReady, unclaimIssue, updateBranch } from "./server/actions";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { FIXTURE_CONTEXT, fixtureDetails } from "./server/fixture";
@@ -40,6 +40,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.closePullRequest, ({ target, comment }) => thenRefresh(closePullRequest(target, comment)));
   server.handle(rpc.claimIssue, ({ target }) => thenRefresh(claimIssue(target)));
   server.handle(rpc.unclaimIssue, ({ target }) => thenRefresh(unclaimIssue(target)));
+  server.handle(rpc.closeIssue, ({ target, reason, comment }) => thenRefresh(closeIssue(target, reason, comment)));
+  server.handle(rpc.reopenIssue, ({ target }) => thenRefresh(reopenIssue(target)));
   server.handle(rpc.setReady, ({ target, ready }) => thenRefresh(setReady(target, ready)));
   server.handle(rpc.setAutoMerge, ({ target, on }) => thenRefresh(setAutoMerge(target, on)));
   server.handle(rpc.react, ({ subjectIds, on }) => thenRefresh(react(subjectIds, on)));

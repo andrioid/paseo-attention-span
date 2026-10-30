@@ -1,4 +1,4 @@
-import type { Target } from "../shared/attention";
+import type { IssueCloseReason, Target } from "../shared/attention";
 import { graphql, runGh } from "./gh";
 
 // Each action runs only from an explicit tap in Attention Span [SAFE-01].
@@ -44,6 +44,20 @@ export async function closePullRequest(target: Target, comment?: string): Promis
 export async function claimIssue(target: Target): Promise<void> {
   const { code, stderr } = await runGh(["issue", "edit", String(target.number), "--repo", target.repo, "--add-assignee", "@me"]);
   if (code !== 0) throw new Error(stderr.trim() || "Claiming the issue failed");
+}
+
+// Close an issue I won't pick up, as completed or not planned; comment only when I wrote one [NXT-11].
+export async function closeIssue(target: Target, reason: IssueCloseReason, comment?: string): Promise<void> {
+  const args = ["issue", "close", String(target.number), "--repo", target.repo, "--reason", reason === "not_planned" ? "not planned" : "completed"];
+  if (comment?.trim()) args.push("--comment", comment.trim());
+  const { code, stderr } = await runGh(args);
+  if (code !== 0) throw new Error(stderr.trim() || "Closing the issue failed");
+}
+
+// Undo of Close [NXT-11]. A comment already posted stays.
+export async function reopenIssue(target: Target): Promise<void> {
+  const { code, stderr } = await runGh(["issue", "reopen", String(target.number), "--repo", target.repo]);
+  if (code !== 0) throw new Error(stderr.trim() || "Reopening the issue failed");
 }
 
 // Hand an assigned issue back; also undoes a claim [NXT-07].

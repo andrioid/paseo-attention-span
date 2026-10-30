@@ -73,6 +73,9 @@ export interface WaitingComment {
   url?: string;
 }
 
+// GitHub's reasons for closing an issue that Next up offers [NXT-11].
+export type IssueCloseReason = "completed" | "not_planned";
+
 // What a session or GitHub action works on.
 export interface Target {
   kind: "pr" | "issue";
