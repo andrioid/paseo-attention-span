@@ -172,7 +172,13 @@ function IssueList({ issues, claim, ...rowProps }: RowProps & { issues: NextUpIs
   );
 }
 
-const facts = (issue: NextUpIssue) => [`#${issue.number}`, `${ago(issue.createdAt)} old`, ...[issue.type, issue.priority, issue.effort, issue.scope].filter((v): v is string => !!v)];
+// The repo's name always shows, since where an issue lives is part of deciding to pick it up; the sheet has the owner too.
+const facts = (issue: NextUpIssue) => [
+  `#${issue.number}`,
+  issue.repo.split("/")[1],
+  `${ago(issue.createdAt)} old`,
+  ...[issue.type, issue.priority, issue.effort, issue.scope].filter((v): v is string => !!v),
+];
 
 // Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
 function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
@@ -244,7 +250,7 @@ function IssueSheet({
       onClose={onClose}
       top={
         <>
-          <Meta facts={[`${issue.repo}#${issue.number}`, ...facts(issue).slice(1)]} chips={[]} />
+          <Meta facts={[`${issue.repo}#${issue.number}`, ...facts(issue).slice(2)]} chips={[]} />
         </>
       }
       entries={entries}
