@@ -31,6 +31,7 @@ functional:
       ATT-12: open any item on GitHub; so that I can do what Attention Span doesn't cover.
       ATT-13: tell at a glance which actions start an agent session and which change GitHub right away; so that I know what a tap will do.
       ATT-14: undo a change on GitHub right after making it, where GitHub allows; so that a mis-tap costs nothing without confirming every action.
+      ATT-15: copy any item's GitHub link; so that I can share it without opening GitHub.
   mentions:
     As a developer, I can:
       MEN-01: see open threads where a person mentioned me and is still waiting for my response; so that I only hear about mentions when someone is waiting for me.
@@ -91,6 +92,7 @@ functional:
     As a developer, I can:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.
       HIS-02: see pull requests I reviewed that merged, apart from my own work; so that I can tell others what I got done.
+      HIS-03: copy a week's finished work as a Markdown list of links; so that reporting progress is one paste.
 
 non_functional:
   github_usage:

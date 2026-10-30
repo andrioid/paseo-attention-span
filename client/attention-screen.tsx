@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import type { AttentionConfig, SessionKind } from "../shared/config";
-import { ago } from "../shared/format";
+import { ago, linkList } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { blocks } from "../shared/setup";
@@ -16,7 +16,7 @@ import { NextUpList } from "./next-up";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
-import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useHover, useStyles } from "./ui";
+import { Avatar, Button, KeepStyles, Meta, SectionHeader, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -509,6 +509,8 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
   const icon = stateIcon(item, styles.c);
   const open = () => setSheet("item");
+  const copy = useCopy();
+  const history = item.section === "done" || item.section === "reviewed";
 
   function perform(action: ActionId) {
     setSheet(null);
@@ -535,6 +537,8 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       ) : (
         <Button icon="dots" variant="ghost" accessibilityLabel="More actions" onPress={open} />
       )}
+      {/* History is where I report from, so its cards copy their link in one tap [ATT-15]. */}
+      {history ? <Button icon="copy" variant="ghost" accessibilityLabel={`Copy link to #${item.number}`} onPress={() => copy(item.url, `Copied link to #${item.number}`)} /> : null}
     </View>
   );
 
@@ -647,8 +651,15 @@ function sheetEntries(
       entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), onPress: () => onPerform(action) });
     }
   }
-  // Anything Attention Span doesn't cover [ATT-12].
-  entries.push({ key: "github", icon: "github", label: `Open ${item.kind === "issue" ? "issue" : "PR"} on GitHub`, detail: `${item.repo}#${item.number}`, onPress: close(() => void openExternalUrl(item.url)) });
+  // Anything Attention Span doesn't cover [ATT-12], and its link to share [ATT-15].
+  entries.push({
+    key: "github",
+    icon: "github",
+    label: `Open ${item.kind === "issue" ? "issue" : "PR"} on GitHub`,
+    detail: `${item.repo}#${item.number}`,
+    onPress: close(() => void openExternalUrl(item.url)),
+    copy: { text: item.url, label: `Copy link to #${item.number}`, done: `Copied link to #${item.number}` },
+  });
   if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", onPress: close(() => actions.dismiss(item)) });
   return entries;
 }
@@ -758,8 +769,10 @@ function weekLabel(monday: Date): string {
 }
 
 // What I finished, by week, with reviews tucked away per week [HIS-01, HIS-02].
+// A week copies as a list of links to paste into a report; reviews stay out of it [HIS-03].
 function History({ items, actions }: { items: Item[]; actions: Actions }) {
   const styles = useStyles();
+  const copy = useCopy();
   const [open, setOpen] = useState<string | null>(null);
   if (items.length === 0) return <Text style={styles.text}>Nothing finished in this period.</Text>;
   const weeks = new Map<number, Item[]>();
@@ -774,7 +787,21 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
     const label = weekLabel(new Date(week));
     blocks.push(
       <View key={week} style={{ gap: 8 }}>
-        <SectionHeader icon="clock" title={label} count={done.length} />
+        <SectionHeader
+          icon="clock"
+          title={label}
+          count={done.length}
+          action={
+            done.length > 0 ? (
+              <Button
+                icon="copy"
+                variant="ghost"
+                accessibilityLabel={`Copy links from ${label}`}
+                onPress={() => copy(linkList(done), `Copied ${done.length} link${done.length === 1 ? "" : "s"} from ${label}`)}
+              />
+            ) : null
+          }
+        />
         {done.length > 0 ? <Card items={done} actions={actions} /> : null}
         {reviewed.length > 0 ? (
           <View style={{ gap: 8 }}>

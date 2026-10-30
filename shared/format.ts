@@ -14,3 +14,8 @@ export function ago(iso: string, now: Date = new Date()): string {
 export function daysSince(iso: string, now: Date): number {
   return (now.getTime() - new Date(iso).getTime()) / 86_400_000;
 }
+
+// A Markdown bullet list of links, for pasting a week's work into a report [HIS-03].
+export function linkList(items: { title: string; url: string }[]): string {
+  return items.map(({ title, url }) => `- [${title.replace(/[[\]\\]/g, "\\$&")}](${url})`).join("\n");
+}

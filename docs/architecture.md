@@ -46,7 +46,7 @@ The tabs tell the story of my work, left to right: what I finished, what needs m
 
 | Tab | Shows |
 |---|---|
-| History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. |
+| History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. The copy icon on a week's heading copies its finished items, not the reviews, as a Markdown list of links; an issue and the PRs that closed it are one line, linking the issue [HIS-03]. |
 | Doing | The sections below |
 | Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (with the requested reviewer), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where I commented last) |
 | Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
@@ -92,10 +92,10 @@ A second tab lists open issues nobody is assigned to [NXT-01], in `nextUp.repos`
 
 ## Actions
 
-A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet**, a bottom sheet on phones and a dialog on desktop [ATT-06]. When the sheet would hold a single action, as on Waiting and History cards where it's only Open PR (or issue) on GitHub, the card shows that action instead of ⋯; tapping the card still opens the sheet. Top to bottom, the sheet has:
+A card shows its main action and ⋯. Tapping the card or ⋯ opens its **sheet**, a bottom sheet on phones and a dialog on desktop [ATT-06]. When the sheet would hold a single action, as on Waiting and History cards where it's only Open PR (or issue) on GitHub, the card shows that action instead of ⋯; tapping the card still opens the sheet. History cards also have a copy icon that copies the item's URL [ATT-15]. Top to bottom, the sheet has:
 
 1. **What the card knows:** repo#number, its chips, the full quote and the full stack. Each PR in the stack opens on GitHub, so an issue's PRs are a tap away [ATT-12].
-2. **Every action,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open issue or Open PR on GitHub [ATT-12] and Dismiss [ATT-08].
+2. **Every action,** each with a line saying what it will do, then "… with options" for session actions [SES-02], Open issue or Open PR on GitHub [ATT-12], with a copy icon at its end that copies the URL without adding a line [ATT-15], and Dismiss [ATT-08].
 3. **What's fetched when it opens,** in one GraphQL request, so the refresh stays as light as before [GH-01]: the PR's size and the linked issue or PRs, leaving out PRs the stack already shows. It comes last so the actions don't move when it arrives. The description isn't shown; making sense of it takes GitHub anyway.
 
 An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every action that starts or continues an agent session, marked *(agent)* below; the rest change GitHub right away [ATT-13]. GitHub actions don't ask first, apart from Merge and Close. Instead an Undo row appears, where GitHub can take it back, until I switch tabs [ATT-14].

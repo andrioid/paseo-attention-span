@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ItemDetails } from "../shared/attention";
 import type { IconName } from "./icons";
-import { KeepStyles, TablerIcon, useHover, useStyles } from "./ui";
+import { Button, KeepStyles, TablerIcon, useCopy, useHover, useStyles } from "./ui";
 
 // Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
@@ -16,6 +16,8 @@ export interface SheetEntry {
   detail?: string;
   disabled?: boolean;
   onPress: () => void;
+  // A copy icon at the end of the line, so copying adds no line to the sheet [ATT-15].
+  copy?: { text: string; label: string; done: string };
 }
 
 export function ActionSheet({ title, top, entries, bottom, onClose }: { title: string; top: ReactNode; entries: SheetEntry[]; bottom: ReactNode; onClose: () => void }) {
@@ -40,28 +42,35 @@ export function ActionSheet({ title, top, entries, bottom, onClose }: { title: s
 function Entry({ entry, first }: { entry: SheetEntry; first: boolean }) {
   const styles = useStyles();
   const { hovered, hover } = useHover();
+  const copy = useCopy();
   const muted = styles.c.foregroundMuted;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={entry.label}
-      disabled={entry.disabled}
-      onPress={entry.onPress}
-      {...hover}
-      style={({ pressed }) => [
-        styles.row,
-        { alignItems: "flex-start", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: pressed || hovered ? styles.c.border : "transparent" },
-        first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 },
-      ]}
-    >
-      <View style={{ paddingTop: 1 }}>
-        <TablerIcon name={entry.icon} size={16} color={entry.disabled ? muted : styles.action} />
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ color: entry.disabled ? muted : styles.c.foreground, fontSize: 14, fontWeight: "600" }}>{entry.label}</Text>
-        {entry.detail ? <Text style={styles.muted}>{entry.detail}</Text> : null}
-      </View>
-    </Pressable>
+    <View style={[styles.row, { gap: 0, alignItems: "stretch" }, first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={entry.label}
+        disabled={entry.disabled}
+        onPress={entry.onPress}
+        {...hover}
+        style={({ pressed }) => [
+          styles.row,
+          { flex: 1, alignItems: "flex-start", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: pressed || hovered ? styles.c.border : "transparent" },
+        ]}
+      >
+        <View style={{ paddingTop: 1 }}>
+          <TablerIcon name={entry.icon} size={16} color={entry.disabled ? muted : styles.action} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ color: entry.disabled ? muted : styles.c.foreground, fontSize: 14, fontWeight: "600" }}>{entry.label}</Text>
+          {entry.detail ? <Text style={styles.muted}>{entry.detail}</Text> : null}
+        </View>
+      </Pressable>
+      {entry.copy ? (
+        <View style={{ paddingHorizontal: 6, justifyContent: "center" }}>
+          <Button icon="copy" variant="ghost" accessibilityLabel={entry.copy.label} onPress={() => copy(entry.copy!.text, entry.copy!.done)} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 

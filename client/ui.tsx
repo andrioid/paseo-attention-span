@@ -1,5 +1,5 @@
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
-import { Icon } from "@getpaseo/plugin/client/ui";
+import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
 import { Image, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
@@ -144,17 +144,28 @@ export function Button({
 }
 
 // Sentence case, with the count as quiet text.
-export function SectionHeader({ icon, title, count }: { icon: IconName; title: string; count: number }) {
+export function SectionHeader({ icon, title, count, action }: { icon: IconName; title: string; count: number; action?: ReactNode }) {
   const styles = useStyles();
   return (
     <View style={[styles.row, { marginBottom: 10 }]}>
       <TablerIcon name={icon} size={15} />
-      <Text style={{ color: styles.c.foreground, fontSize: 13, fontWeight: "600" }}>
+      <Text style={{ color: styles.c.foreground, fontSize: 13, fontWeight: "600", flex: 1 }}>
         {title}
         <Text style={{ color: styles.c.foregroundMuted, fontWeight: "400" }}> · {count}</Text>
       </Text>
+      {action}
     </View>
   );
+}
+
+// Copy text and say so, since an icon-only button gives no other sign it worked.
+export function useCopy() {
+  const toast = useToast();
+  return (text: string, done: string) =>
+    void copyText(text).then(
+      () => toast.show(done, { variant: "success" }),
+      () => toast.error("Couldn't copy"),
+    );
 }
 
 // Choice chips for options and filters: the only pills, because they're tappable.

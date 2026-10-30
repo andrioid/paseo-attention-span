@@ -1,11 +1,10 @@
 import { openExternalUrl, usePaseo } from "@getpaseo/plugin/client";
-import { copyText, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Text, View } from "react-native";
 import { AttentionConfig } from "../shared/config";
 import type { SetupStatus } from "../shared/setup";
 import { githubProjects, listProfiles } from "./sessions";
-import { Button, useStyles } from "./ui";
+import { Button, useCopy, useStyles } from "./ui";
 
 type State = "done" | "missing" | "optional";
 
@@ -35,16 +34,10 @@ export function SetupChecklist({
 }) {
   const styles = useStyles();
   const paseo = usePaseo();
-  const toast = useToast();
+  const copy = useCopy();
   const projects = useQuery({ queryKey: ["attention-span", "github-projects"], queryFn: () => githubProjects(paseo) });
   const profiles = useQuery({ queryKey: ["attention-span", "profiles"], queryFn: () => listProfiles(paseo) });
   const { gh, config } = status;
-
-  const copy = (command: string) =>
-    void copyText(command).then(
-      () => toast.show(`Copied ${command}`, { variant: "success" }),
-      () => toast.error("Couldn't copy"),
-    );
 
   const lines: Line[] = [];
   lines.push(
@@ -67,7 +60,7 @@ export function SetupChecklist({
             state: "missing",
             title: "Sign in to GitHub",
             detail: `Run gh auth login on the machine that runs Paseo. gh says: ${gh.error}`,
-            action: { label: "Copy command", onPress: () => copy("gh auth login") },
+            action: { label: "Copy command", onPress: () => copy("gh auth login", "Copied gh auth login") },
           },
     );
   lines.push(
