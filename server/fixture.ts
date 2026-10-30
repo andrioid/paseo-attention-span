@@ -8,7 +8,9 @@ export const REPO = "acme/shop";
 export const ISSUES_REPO = "acme/issues";
 // What the settings screen can add in previews [SRC-02]; anything else isn't found.
 export const FIXTURE_ORGS = ["acme"];
-export const FIXTURE_REPOS = [REPO, ISSUES_REPO, "acme/web"];
+export const FIXTURE_REPOS = [REPO, ISSUES_REPO, "acme/web", "me/tool"];
+// The orgs Next up's org picker offers in previews [NXT-04].
+export const FIXTURE_MY_ORGS = ["acme", "globex"];
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
 
@@ -179,13 +181,14 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"),
       pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO),
     ],
+    // Found by the preview config's Next up sources [NXT-09].
     unclaimed: [
-      pickable(160, fields("🏕P2 Medium", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"),
-      pickable(161, fields("🏝 P3 Low", "🐟 Tiny (< 4h)", "🔙 Backend"), 15, "Bug", "Deleted employee still shows in the calendar"),
-      pickable(162, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🔙 Backend"), 30, "Debt", "Merge the two import commands"),
-      pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour"),
-      pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"),
-      pickable(165, {}, 3, "Task", "Devcontainers for pull requests"),
+      { ...pickable(160, fields("🏕P2 Medium", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"), sources: ["org:acme"] },
+      { ...pickable(161, fields("🏝 P3 Low", "🐟 Tiny (< 4h)", "🔙 Backend"), 15, "Bug", "Deleted employee still shows in the calendar"), sources: ["org:acme"] },
+      { ...pickable(162, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🔙 Backend"), 30, "Debt", "Merge the two import commands"), sources: ["org:acme"] },
+      { ...pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour"), sources: ["org:acme"] },
+      { ...pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"), sources: ["org:acme"] },
+      { ...pickable(165, {}, 3, "Task", "Devcontainers for pull requests", "me/tool"), sources: ["mine"] },
     ],
     merged: [merged(170, "Nightly backup check", 1, 171), merged(172, "Fix VAT on credit notes", 3), merged(173, "Speed up the order list", 9, 174), merged(175, "Remove the old importer", 16)],
     reviewed: [

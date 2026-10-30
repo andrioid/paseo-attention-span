@@ -136,14 +136,32 @@ for (const layout of layouts) {
       await openSheet("Orders export times out for big shops");
       await modalShot("next-up-sheet");
       await closeSheet();
-      await page.getByText("🔙 Backend", { exact: true }).click();
-      await page.waitForTimeout(400);
+      // Source and scope filters sit behind one button [NXT-03, NXT-09]. Ticks apply right away.
+      const filter = async (ticks) => {
+        await page.getByRole("button", { name: /^Filter/ }).click();
+        await page.getByText("Source", { exact: true }).waitFor({ timeout: 10000 });
+        for (const name of ticks) await page.getByRole("checkbox", { name }).click();
+      };
+      const done = async () => {
+        await page.getByRole("button", { name: "Done" }).click();
+        await page.waitForTimeout(400);
+      };
+      await filter(["🔙 Backend"]);
+      await page.waitForTimeout(300);
+      await modalShot("next-up-filter");
+      await done();
       await shot("next-up-filtered");
-      await page.getByText("All", { exact: true }).click(); // the pick is saved, so clear it for the next layout
+      await filter(["🔙 Backend", "My repos"]);
+      await done();
+      await shot("next-up-source");
+      // Picks are saved, so clear them for the next layout.
+      await page.getByRole("button", { name: /^Filter/ }).click();
+      await page.getByRole("button", { name: "Clear" }).click();
+      await done();
       // Settings from the gear: a typo is caught, then a repo is added and saved to config.json [SRC-02].
       await doing();
       await page.getByRole("button", { name: "Attention Span settings" }).click();
-      const addRepo = page.getByLabel("Add a repository");
+      const addRepo = page.getByLabel("Add a repository").first();
       await addRepo.waitFor({ timeout: 15000 });
       await addRepo.fill("acme/shpo");
       await addRepo.press("Enter");
@@ -156,6 +174,22 @@ for (const layout of layouts) {
       await top("settings");
       const withRepo = JSON.parse(await readFile(configPath, "utf8"));
       if (withRepo.repos?.[0] !== "acme/web" || withRepo.orgs?.[0] !== "acme" || !withRepo.nextUp) throw new Error(`config.json after adding: ${JSON.stringify(withRepo)}`);
+      // Next up's own sources, below: a repo added there lands in nextUp, beside its fields [NXT-04].
+      const addNextUpRepo = page.getByLabel("Add a repository").last();
+      await addNextUpRepo.fill("me/tool");
+      await addNextUpRepo.press("Enter");
+      await page.getByText("me/tool", { exact: true }).waitFor({ timeout: 10000 });
+      await page.getByText("My repos", { exact: true }).scrollIntoViewIfNeeded();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `/out/${prefix}-settings-next-up.png` });
+      // Only orgs I belong to, minus those already added [NXT-04].
+      await page.getByText("Choose…", { exact: true }).click();
+      await page.getByText("globex", { exact: true }).waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `/out/${prefix}-settings-org-picker.png` });
+      await page.keyboard.press("Escape");
+      const withSource = JSON.parse(await readFile(configPath, "utf8"));
+      if (withSource.nextUp?.repos?.[0] !== "me/tool" || !withSource.nextUp.mine || !withSource.nextUp.priority) throw new Error(`config.json after adding to Next up: ${JSON.stringify(withSource)}`);
       // The setup checklist, from a config.json that doesn't parse; fixed, Check again brings the tabs back [SET-01].
       await writeFile(configPath, "{ broken");
       // Out of Paseo's settings: phones have only a back arrow, so start over from the app.

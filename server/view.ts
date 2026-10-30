@@ -5,6 +5,7 @@ import type { State } from "./store";
 export interface ViewMeta {
   feeds: Record<FeedId, FeedStatus>;
   scopes: string[];
+  sources: string[];
   config: AttentionConfig;
 }
 

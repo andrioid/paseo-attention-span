@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../shared/attention";
-import { AttentionConfig } from "../shared/config";
+import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
-import { HISTORY_SEARCHES, LIVE_SEARCHES, searchQuery, searchVariables, unclaimedScope } from "./queries";
+import { HISTORY_SEARCHES, LIVE_SEARCHES, mergeUnclaimed, searchQuery, searchVariables, unclaimedSearches } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = AttentionConfig.parse({ orgs: ["acme"] });
@@ -328,19 +328,46 @@ describe("next up", () => {
   it("NXT-04: reads only the configured fields and repositories", () => {
     const attention = run({ unclaimed: [pickable(1, { Scope: "🔙 Backend", Other: "x" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
     expect(attention.unclaimed[0]).toMatchObject({ scope: "🔙 Backend", priority: undefined });
-    const variables = searchVariables(AttentionConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), NOW);
-    expect(variables.unclaimed).toBe("is:issue is:open no:assignee repo:acme/shop archived:false");
+    const { searches } = unclaimedSearches(AttentionConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), [], null);
+    expect(searches).toEqual([{ source: "repo:acme/shop", query: "is:issue is:open no:assignee repo:acme/shop archived:false" }]);
+  });
+
+  it("NXT-04: looks in my own repos, whole orgs and single repos, one search each", () => {
+    const config = AttentionConfig.parse({ nextUp: { mine: true, orgs: ["acme"], repos: ["other/tool"] } });
+    expect(unclaimedSearches(config, [], "me")).toEqual({
+      from: "config",
+      searches: [
+        { source: "mine", query: "is:issue is:open no:assignee user:me archived:false" },
+        { source: "org:acme", query: "is:issue is:open no:assignee org:acme archived:false" },
+        { source: "repo:other/tool", query: "is:issue is:open no:assignee repo:other/tool archived:false" },
+      ],
+    });
+    expect(nextUpSources(config).map((source) => source.label)).toEqual(["My repos", "acme", "other/tool"]);
+    expect(() => unclaimedSearches(config, [], null)).toThrow();
+  });
+
+  it("NXT-09: lists an issue found by several sources once, under each, and skips forks for my repos", () => {
+    const fork = { ...pickable(2, {}), repository: { nameWithOwner: "me/fork", isFork: true } };
+    const merged = mergeUnclaimed([
+      { source: "org:acme", nodes: [pickable(1, {})] },
+      { source: "repo:acme/shop", nodes: [pickable(1, {}), null] },
+      { source: "mine", nodes: [fork] },
+    ]);
+    expect(merged.map((node) => [node.number, node.sources])).toEqual([[1, ["org:acme", "repo:acme/shop"]]]);
+    const attention = run({ unclaimed: merged }, {});
+    expect(attention.unclaimed[0].sources).toEqual(["org:acme", "repo:acme/shop"]);
   });
 
   it("NXT-08: without chosen repos, looks in my Paseo projects' repos, and never in all of GitHub", () => {
     const projects = ["acme/shop", "me/tool"];
-    expect(unclaimedScope(AttentionConfig.parse({ nextUp: { repos: ["acme/web"] } }), projects)).toEqual({ from: "config", scope: "repo:acme/web archived:false" });
-    expect(unclaimedScope(AttentionConfig.parse({ orgs: ["acme"] }), projects)).toEqual({ from: "config", scope: "org:acme archived:false" });
-    expect(unclaimedScope(AttentionConfig.parse({}), projects)).toEqual({ from: "projects", scope: "repo:acme/shop repo:me/tool archived:false" });
-    expect(unclaimedScope(AttentionConfig.parse({}), [])).toEqual({ from: "none", scope: null });
-    expect(unclaimedScope(AttentionConfig.parse({ nextUp: { repos: [] } }), projects).scope).toBeNull();
+    const scope = (config: unknown, repos: string[]) => unclaimedSearches(AttentionConfig.parse(config), repos, null);
+    expect(scope({ nextUp: { repos: ["acme/web"] } }, projects).from).toBe("config");
+    expect(scope({ orgs: ["acme"] }, projects)).toEqual({ from: "config", searches: [{ source: null, query: "is:issue is:open no:assignee org:acme archived:false" }] });
+    expect(scope({}, projects)).toEqual({ from: "projects", searches: [{ source: null, query: "is:issue is:open no:assignee repo:acme/shop repo:me/tool archived:false" }] });
+    expect(scope({}, [])).toEqual({ from: "none", searches: [] });
+    // No sources of its own: back to the orgs and repos, then the projects.
+    expect(scope({ nextUp: { mine: false, orgs: [], repos: [] } }, projects).from).toBe("projects");
     const variables = searchVariables(AttentionConfig.parse({}), NOW);
-    expect(variables.unclaimed).toBeNull();
     expect(variables.mine).toBe("is:pr is:open author:@me archived:false"); // the searches about me stay GitHub-wide
   });
 });
@@ -348,7 +375,7 @@ describe("next up", () => {
 describe("GitHub requests", () => {
   it("SRC-01, GH-01: scopes every search to the configured orgs and repos", () => {
     const variables = searchVariables(AttentionConfig.parse({ orgs: ["acme"], repos: ["acme/web"] }), NOW);
-    for (const [alias, query] of Object.entries(variables)) if (alias !== "unclaimed") expect(query).toContain("org:acme repo:acme/web");
+    for (const query of Object.values(variables)) expect(query).toContain("org:acme repo:acme/web");
     expect(variables.reviews).toContain("user-review-requested:@me");
   });
 
@@ -357,7 +384,7 @@ describe("GitHub requests", () => {
     expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
     expect(searchQuery(["commented"])).not.toContain("fragment");
     expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
-    expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].sort());
+    expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].filter((name) => name !== "unclaimed").sort());
   });
 
   it("GH-01: refreshes every 15 minutes by default; the screen never forces a fetch", () => {

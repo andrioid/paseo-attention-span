@@ -42,12 +42,16 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint. Each card shows the GitHub button instead of ⋯, its sheet's only action |
    | `<layout>-next-up.png` | Assigned, then all of Unclaimed |
    | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": Continue, Unclaim, Open issue on GitHub |
-   | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope |
+   | `<layout>-next-up-filter.png` | The Filter sheet: Source (My repos, acme) and Scope checkboxes, Backend ticked |
+   | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope; the button reads "Filter · 1" |
+   | `<layout>-next-up-source.png` | Unclaimed filtered to the My repos source: only "Devcontainers for pull requests" |
    | `<layout>-next-up-code-repo.png` | Start on "Price list import skips quoted rows" (in `acme/issues`, no checkout): the picker asking where its code lives |
    | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping; the start then fails with "No agent provider is ready", as expected in the container |
    | `<layout>-next-up-code-repo-again.png` | Start pressed again: no picker this time |
    | `<layout>-settings-typo.png` | The settings screen from the gear, after adding `acme/shpo`: "wasn't found on GitHub" |
    | `<layout>-settings.png` | After adding `acme/web`: the shooter has checked config.json kept `orgs` and `nextUp` |
+   | `<layout>-settings-next-up.png` | The Next up section after adding `me/tool`: My repos on, `acme`, `me/tool` |
+   | `<layout>-settings-org-picker.png` | The org picker open, offering only `globex` (`acme` is already added) |
    | `<layout>-setup.png` | The setup checklist, from a `config.json` that doesn't parse. The shooter restores it and presses Check again |
 
    Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Sheets and modals are clipped to a band around the dialog, so their thumbnails stay readable. Look for:

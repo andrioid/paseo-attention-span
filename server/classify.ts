@@ -374,6 +374,7 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
       effort: valueOf(node, effort?.field),
       scope: valueOf(node, scope?.field),
       defaultBranch: node.repository.defaultBranchRef?.name,
+      sources: node.sources ?? [],
     }))
     .sort(
       (a, b) =>

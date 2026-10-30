@@ -1,6 +1,8 @@
 {
   "orgs": ["acme"],
   "nextUp": {
+    "mine": true,
+    "orgs": ["acme"],
     "priority": { "field": "Priority" },
     "effort": { "field": "Effort", "order": ["Tiny", "Small", "Medium", "Large"] },
     "scope": { "field": "Scope" }

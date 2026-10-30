@@ -80,9 +80,11 @@ export interface PickableNode {
   title: string;
   url: string;
   createdAt: string;
-  repository: Repo;
+  repository: Repo & { isFork?: boolean };
   issueType: { name: string } | null;
   issueFieldValues: Nodes<{ name?: string; field?: { name: string } }>;
+  // Added after the search: the Next up sources that found it [NXT-09].
+  sources?: string[];
 }
 
 // One request per search, merged [GH-01].

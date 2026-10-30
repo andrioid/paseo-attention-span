@@ -5,6 +5,8 @@ export interface ConfigStatus {
   error: string | null;
   orgs: string[];
   repos: string[];
+  // Where Next up looks; none chosen falls back to `orgs` and `repos`, then my Paseo projects [NXT-04, NXT-08].
+  nextUp: { mine: boolean; orgs: string[]; repos: string[] };
 }
 
 export interface SetupStatus {

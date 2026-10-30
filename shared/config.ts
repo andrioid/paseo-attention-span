@@ -38,17 +38,34 @@ export const AttentionConfig = z.object({
   mentionDays: z.number().positive().default(30),
   // How many weeks History shows [HIS-01].
   historyWeeks: z.number().int().positive().default(4),
-  // Unclaimed issues to pick from [NXT-04]. Repos default to `orgs` and `repos`.
+  // Unclaimed issues to pick from [NXT-04]. With no sources chosen, Next up looks in `orgs` and `repos` [NXT-08].
   nextUp: z
     .object({
-      repos: z.array(z.string()).optional(),
+      // Sources: my own repos (not forks), whole orgs, and single "owner/name" repos.
+      mine: z.boolean().default(false),
+      orgs: z.array(z.string()).default([]),
+      repos: z.array(z.string()).default([]),
       priority: RankedField.optional(),
       effort: RankedField.optional(),
       scope: z.object({ field: z.string() }).optional(),
     })
-    .default({}),
+    .default({ mine: false, orgs: [], repos: [] }),
 });
 export type AttentionConfig = z.infer<typeof AttentionConfig>;
+
+// Where Next up looks, one search each; `id` is what the chips I pick remember [NXT-09].
+export interface NextUpSource {
+  id: string;
+  label: string;
+}
+
+export function nextUpSources({ nextUp }: Pick<AttentionConfig, "nextUp">): NextUpSource[] {
+  return [
+    ...(nextUp.mine ? [{ id: "mine", label: "My repos" }] : []),
+    ...nextUp.orgs.map((org) => ({ id: `org:${org}`, label: org })),
+    ...nextUp.repos.map((repo) => ({ id: `repo:${repo}`, label: repo })),
+  ];
+}
 
 // "owner/name" of a Paseo project with a GitHub remote, from its project key.
 export function githubRepoOf(projectKey: string | null | undefined): string | null {

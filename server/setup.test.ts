@@ -20,7 +20,7 @@ beforeAll(async () => {
 
 const status = (gh: Partial<SetupStatus["gh"]>, error: string | null = null): SetupStatus => ({
   gh: { found: true, login: "me", error: null, ...gh },
-  config: { error, orgs: [], repos: [] },
+  config: { error, orgs: [], repos: [], nextUp: { mine: false, orgs: [], repos: [] } },
 });
 
 describe("setup", () => {

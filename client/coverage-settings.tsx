@@ -1,5 +1,5 @@
 import { type PluginSurfaceProps, useRpc } from "@getpaseo/plugin/client";
-import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, TextInput } from "@getpaseo/plugin/client/ui";
+import { SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect, SettingsSwitch, TextInput } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
@@ -9,8 +9,12 @@ import { VIEW_QUERY_KEY } from "./data";
 import { Button, StylesProvider, useStyles } from "./ui";
 
 const COVERAGE_QUERY_KEY = ["attention-span", "coverage"] as const;
+const MY_ORGS_QUERY_KEY = ["attention-span", "my-orgs"] as const;
+// A caption belongs to the card above it, so it sits closer to that card than to the next heading.
+const CAPTION = { marginTop: -24, marginBottom: 16 };
 
-// Settings → Plugins → Attention Span: which orgs and repos the lists cover, saved to config.json [SRC-02].
+// Settings → Plugins → Attention Span: which orgs and repos the lists cover, and where Next up looks,
+// saved to config.json [SRC-02, NXT-04].
 export function CoverageSettings({ theme, layout }: PluginSurfaceProps) {
   return (
     <StylesProvider theme={theme} compact={layout.compact}>
@@ -24,6 +28,7 @@ function Coverage() {
   const queryClient = useQueryClient();
   const fetchCoverage = useRpc(rpc.getCoverage);
   const save = useRpc(rpc.setCoverage);
+  const saveNextUp = useRpc(rpc.setNextUpSources);
   const coverage = useQuery({ queryKey: COVERAGE_QUERY_KEY, queryFn: () => fetchCoverage({}) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +41,7 @@ function Coverage() {
         </SettingsCard>
       </SettingsSection>
     );
-  const { orgs, repos } = coverage.data;
+  const { orgs, repos, nextUp } = coverage.data;
   // A file that doesn't parse is left for the person who edited it.
   if (coverage.data.error)
     return (
@@ -48,11 +53,11 @@ function Coverage() {
     );
 
   // Saving refreshes the lists on the daemon; the screen picks them up on its next read.
-  async function persist(next: Pick<ConfigStatus, "orgs" | "repos">) {
+  async function write(next: Partial<ConfigStatus>, send: () => Promise<unknown>) {
     setSaving(true);
     setError(null);
     try {
-      await save(next);
+      await send();
       queryClient.setQueryData(COVERAGE_QUERY_KEY, { ...coverage.data!, ...next });
       await queryClient.invalidateQueries({ queryKey: VIEW_QUERY_KEY });
     } catch (failure) {
@@ -61,6 +66,9 @@ function Coverage() {
       setSaving(false);
     }
   }
+  const persist = (next: Pick<ConfigStatus, "orgs" | "repos">) => write(next, () => save(next));
+  const persistNextUp = (next: ConfigStatus["nextUp"]) => write({ nextUp: next }, () => saveNextUp(next));
+  const chosen = nextUp.mine || nextUp.orgs.length > 0 || nextUp.repos.length > 0;
 
   return (
     <View style={{ gap: 24 }}>
@@ -72,21 +80,33 @@ function Coverage() {
           <AddRow kind="org" existing={orgs} disabled={saving} onAdd={(name) => persist({ orgs: [...orgs, name], repos })} />
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection title="Repositories">
-        <SettingsCard>
-          {repos.map((repo) => (
-            <SettingsAction key={repo} label={repo} actionLabel="Remove" disabled={saving} onPress={() => void persist({ orgs, repos: repos.filter((other) => other !== repo) })} />
-          ))}
-          <AddRow kind="repo" existing={repos} disabled={saving} onAdd={(name) => persist({ orgs, repos: [...repos, name] })} />
-        </SettingsCard>
-      </SettingsSection>
+      <View style={{ gap: 8 }}>
+        <SettingsSection title="Repositories">
+          <SettingsCard>
+            {repos.map((repo) => (
+              <SettingsAction key={repo} label={repo} actionLabel="Remove" disabled={saving} onPress={() => void persist({ orgs, repos: repos.filter((other) => other !== repo) })} />
+            ))}
+            <AddRow kind="repo" existing={repos} disabled={saving} onAdd={(name) => persist({ orgs, repos: [...repos, name] })} />
+          </SettingsCard>
+        </SettingsSection>
+        <Text style={[styles.muted, CAPTION]}>
+          {orgs.length || repos.length
+            ? "Attention Span only shows pull requests and issues from the organizations and repositories above."
+            : "With none chosen, Attention Span shows everything on GitHub that involves you."}
+        </Text>
+      </View>
+      <View style={{ gap: 8 }}>
+        <NextUpSources value={nextUp} disabled={saving} onChange={persistNextUp} />
+        <Text style={[styles.muted, CAPTION]}>
+          {chosen
+            ? "Next up suggests unclaimed issues from these."
+            : orgs.length || repos.length
+              ? "None chosen: using the orgs and repos above."
+              : "None chosen: using your Paseo projects."}
+        </Text>
+      </View>
       <View style={{ gap: 4 }}>
         {error ? <Text style={styles.danger}>{error}</Text> : null}
-        <Text style={styles.muted}>
-          {orgs.length || repos.length
-            ? "Attention Span only shows pull requests and issues from the organizations and repositories above. Next up suggests unclaimed issues from them too."
-            : "With none chosen, Attention Span shows everything on GitHub that involves you, and Next up suggests issues from your Paseo projects' repositories."}
-        </Text>
         {/* Until more moves here, point to the file for the rest. */}
         <Text style={styles.muted}>Settings are not complete yet. Until then, check out your ~/.config/paseo-attention-span/config.json for more options.</Text>
       </View>
@@ -94,8 +114,41 @@ function Coverage() {
   );
 }
 
+// Where Next up looks [NXT-04]: my own repos, orgs I belong to, and single repos. Each is its own chip on Next up [NXT-09].
+function NextUpSources({ value, disabled, onChange }: { value: ConfigStatus["nextUp"]; disabled: boolean; onChange: (next: ConfigStatus["nextUp"]) => Promise<void> }) {
+  const fetchOrgs = useRpc(rpc.myOrgs);
+  const myOrgs = useQuery({ queryKey: MY_ORGS_QUERY_KEY, queryFn: () => fetchOrgs({}) });
+  const choosable = (myOrgs.data?.orgs ?? []).filter((org) => !value.orgs.some((added) => added.toLowerCase() === org.toLowerCase()));
+  return (
+    <SettingsSection title="Next up">
+      <SettingsCard>
+        <SettingsSwitch label="My repos" value={value.mine} disabled={disabled} onValueChange={(mine) => void onChange({ ...value, mine })} />
+        {value.orgs.map((org) => (
+          <SettingsAction key={`org:${org}`} label={org} actionLabel="Remove" disabled={disabled} onPress={() => void onChange({ ...value, orgs: value.orgs.filter((other) => other !== org) })} />
+        ))}
+        {value.repos.map((repo) => (
+          <SettingsAction key={`repo:${repo}`} label={repo} actionLabel="Remove" disabled={disabled} onPress={() => void onChange({ ...value, repos: value.repos.filter((other) => other !== repo) })} />
+        ))}
+        {myOrgs.data && myOrgs.data.orgs.length === 0 ? (
+          <SettingsRow label="Add an organization" hint="You're not a member of any organizations" />
+        ) : (
+          <SettingsSelect
+            label="Add an organization"
+            error={myOrgs.error ? (myOrgs.error as Error).message : null}
+            value=""
+            options={[{ label: myOrgs.isLoading ? "Loading…" : "Choose…", value: "" }, ...choosable.map((org) => ({ label: org, value: org }))]}
+            disabled={disabled || choosable.length === 0}
+            onValueChange={(org) => void (org && onChange({ ...value, orgs: [...value.orgs, org] }))}
+          />
+        )}
+        <AddRow kind="repo" placeholder="owner/name" existing={value.repos} disabled={disabled} onAdd={(name) => onChange({ ...value, repos: [...value.repos, name] })} />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
 // Each name is checked on GitHub before it's saved; GitHub's exact name is what's kept.
-function AddRow({ kind, existing, disabled, onAdd }: { kind: CoverageKind; existing: string[]; disabled: boolean; onAdd: (name: string) => Promise<void> }) {
+function AddRow({ kind, placeholder, existing, disabled, onAdd }: { kind: CoverageKind; placeholder?: string; existing: string[]; disabled: boolean; onAdd: (name: string) => Promise<void> }) {
   const styles = useStyles();
   const check = useRpc(rpc.checkCoverage);
   const [text, setText] = useState("");
@@ -130,7 +183,7 @@ function AddRow({ kind, existing, disabled, onAdd }: { kind: CoverageKind; exist
             setText(value);
             setError(null);
           }}
-          placeholder={kind === "org" ? "acme" : "acme/shop"}
+          placeholder={placeholder ?? (kind === "org" ? "acme" : "acme/shop")}
           placeholderTextColor={styles.c.foregroundMuted}
           autoCapitalize="none"
           autoCorrect={false}

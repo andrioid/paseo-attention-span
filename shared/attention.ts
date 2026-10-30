@@ -136,6 +136,8 @@ export interface NextUpIssue {
   effort?: string;
   scope?: string;
   defaultBranch?: string;
+  // Ids of the Next up sources that found it; empty without sources of its own [NXT-09].
+  sources: string[];
 }
 
 // More about an item, fetched when its sheet opens rather than in every refresh [GH-01].
@@ -200,8 +202,10 @@ export interface AttentionView {
   unclaimed: NextUpIssue[];
   unclaimedFrom: UnclaimedSource;
   dismissedCount: number;
-  // Scope chips picked on Next up; none means all [NXT-03].
+  // Scopes ticked in Next up's filter; none means all [NXT-03].
   scopes: string[];
+  // Sources ticked in Next up's filter; none means all [NXT-09].
+  sources: string[];
   config: AttentionConfig;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
   fixtureAgents?: Record<string, AgentSummary>;

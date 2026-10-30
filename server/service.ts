@@ -5,8 +5,8 @@ import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, type SearchName, searchQuery, searchVariables, unclaimedScope } from "./queries";
-import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveState, State } from "./store";
+import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveNextUpSources, saveState, State } from "./store";
 import { buildView } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -93,8 +93,19 @@ export class AttentionService {
     await this.refresh("live").catch(() => {});
   }
 
+  // Where Next up looks, chosen in settings [NXT-04]. Only the live feed has Next up.
+  async setNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<void> {
+    this.config = await saveNextUpSources(sources);
+    await this.refresh("live").catch(() => {});
+  }
+
   async setScopes(scopes: string[]): Promise<void> {
     this.state.scopes = scopes;
+    await this.save();
+  }
+
+  async setSources(sources: string[]): Promise<void> {
+    this.state.sources = sources;
     await this.save();
   }
 
@@ -133,8 +144,15 @@ export class AttentionService {
 
   private async fetchLive(now: Date): Promise<Attention> {
     const projectRepos = FIXTURE ? [] : await this.projectRepos();
-    const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now, projectRepos);
-    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimedScope(this.config, projectRepos).from };
+    const login = FIXTURE ? "me" : this.config.nextUp.mine ? await this.login() : null;
+    const unclaimed = unclaimedSearches(this.config, projectRepos, login);
+    const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now, unclaimed.searches);
+    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from };
+  }
+
+  // The account gh is signed in as, for My repos [NXT-04]. Asked once, unless the last fetch already says.
+  private async login(): Promise<string> {
+    return (this.state.live?.attention.login || (await graphql<{ viewer: { login: string } }>("{ viewer { login } }")).viewer.login);
   }
 
   // My Paseo projects' GitHub repos, where Next up looks when no repos are chosen [NXT-08].
@@ -157,19 +175,25 @@ export class AttentionService {
   }
 
   // One request per search, in parallel. The details request starts once the searches it needs are back [GH-01].
-  private async searchLive(now: Date, projectRepos: string[]): Promise<{ data: LiveResult; details: Details }> {
-    const all = searchVariables(this.config, now, projectRepos);
-    const search = async (name: (typeof LIVE_SEARCHES)[number]): Promise<Partial<LiveResult>> =>
-      all[name] === null ? { [name]: { nodes: [] } } : graphql<Partial<LiveResult>>(searchQuery([name], name === "mine"), { [name]: all[name] });
+  private async searchLive(now: Date, unclaimed: UnclaimedSearch[]): Promise<{ data: LiveResult; details: Details }> {
+    const all = searchVariables(this.config, now);
+    const search = (name: keyof typeof all): Promise<Partial<LiveResult>> => graphql<Partial<LiveResult>>(searchQuery([name], name === "mine"), { [name]: all[name] });
+    // One per Next up source [NXT-09].
+    const searchUnclaimed = async (): Promise<Partial<LiveResult>> => {
+      const results = await Promise.all(
+        unclaimed.map(async ({ source, query }) => ({ source, nodes: (await graphql<Pick<LiveResult, "unclaimed">>(searchQuery(["unclaimed"]), { unclaimed: query })).unclaimed.nodes })),
+      );
+      return { unclaimed: { nodes: mergeUnclaimed(results) } };
+    };
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
-    const forDetails = Promise.all([search("mine"), search("assigned"), search("unclaimed")]);
+    const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
     const others = Promise.all([search("reviews"), search("mentions"), search("commented")]);
     const afterThem = forDetails.then((parts) => this.details(merge(parts)));
     const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
     return { data: merge([...first, ...rest]), details };
   }
 
-  private variables(names: readonly SearchName[], now: Date): Record<string, string | null> {
+  private variables(names: readonly Exclude<SearchName, "unclaimed">[], now: Date): Record<string, string> {
     const all = searchVariables(this.config, now);
     return Object.fromEntries(names.map((name) => [name, all[name]]));
   }
@@ -241,6 +265,7 @@ export class AttentionService {
     return buildView(this.state.live?.attention ?? null, this.state.history?.items ?? [], this.state.dismissed, {
       feeds: { live: status("live"), history: status("history") },
       scopes: this.state.scopes,
+      sources: this.state.sources,
       config: this.config,
       ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),
     });

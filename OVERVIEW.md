@@ -6,7 +6,7 @@ The screen has four tabs. A sidebar entry, Attention, shows how many items need 
 
 - **Doing:** what needs you, in sections: waiting for your reply, review requested, CI failing, changes requested, ready to merge, needs upstream, waiting too long, and your drafts. Each item appears once, under its most urgent reason. An issue and the pull requests that close it are one item, and so is a stack of pull requests.
 - **Waiting:** your work where someone else has the next move.
-- **Next up:** issues assigned to you, then open issues nobody has claimed, ranked by priority and effort when your org uses issue fields for them. Unclaimed issues come from the repositories you choose, or else from your Paseo projects' repositories.
+- **Next up:** issues assigned to you, then open issues nobody has claimed, ranked by priority and effort when your org uses issue fields for them. Unclaimed issues come from the sources you choose (your own repositories, your organizations or single repositories), and can be filtered by source, or else from your Paseo projects' repositories.
 - **History:** what you finished and reviewed in recent weeks.
 
 A mention only counts while the person is still waiting for you; replying or reacting clears it. Mentions of your teams are left out. You can dismiss an item until something new happens on it.
@@ -21,14 +21,14 @@ When `gh` is missing or signed out, or `config.json` can't be read, the screen s
 
 It works without configuration: the lists about you cover everything on GitHub that involves you, and Next up looks for unclaimed issues in your Paseo projects' repositories.
 
-To narrow it down, choose organizations and repositories under Settings, Plugins, Attention Span, or with the gear on the screen. Each one is checked on GitHub as you add it. Next up's unclaimed issues use them too, instead of your projects.
+To narrow it down, choose organizations and repositories under Settings, Plugins, Attention Span, or with the gear on the screen. Each one is checked on GitHub as you add it. Next up's unclaimed issues use them too, instead of your projects, unless you choose Next up's own sources there.
 
 Everything else is set in `~/.config/paseo-attention-span/config.json` on the daemon host, which the settings screen also writes to:
 - `profiles`: the Paseo agent profile per session type. Reviews use `review`, everything else `default`, and a missing profile falls back to Paseo's defaults.
 - `prompts`: your own prompt template per session type, replacing the built-in one.
 - `mergeMethods`: squash, merge or rebase per repository.
 - `codeRepos`: where an issue repository's code lives, for issues kept apart from the code. The screen asks and fills this in when needed.
-- `nextUp`: which repositories to pick from, and the org issue fields for priority, effort and scope.
+- `nextUp`: where to pick from (also in Settings), and the org issue fields for priority, effort and scope.
 - `refreshMinutes` (15), `waitingTooLongDays` (3), `staleDraftDays` (30), `mentionDays` (30) and `historyWeeks` (4).
 
 ## Actions

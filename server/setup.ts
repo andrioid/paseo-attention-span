@@ -1,6 +1,6 @@
 import type { ConfigStatus, CoverageCheck, CoverageKind, SetupStatus } from "../shared/setup";
-import { FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
-import { FIXTURE, runGh } from "./gh";
+import { FIXTURE_MY_ORGS, FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
+import { FIXTURE, graphql, runGh } from "./gh";
 import { loadConfig } from "./store";
 
 // What the setup checklist needs [SET-01]. Asked only when Attention Span can't load.
@@ -21,11 +21,18 @@ async function ghStatus(): Promise<SetupStatus["gh"]> {
 
 export async function configStatus(): Promise<ConfigStatus> {
   try {
-    const { orgs, repos } = await loadConfig();
-    return { error: null, orgs, repos };
+    const { orgs, repos, nextUp } = await loadConfig();
+    return { error: null, orgs, repos, nextUp: { mine: nextUp.mine, orgs: nextUp.orgs, repos: nextUp.repos } };
   } catch (error) {
-    return { error: (error as Error).message, orgs: [], repos: [] };
+    return { error: (error as Error).message, orgs: [], repos: [], nextUp: { mine: false, orgs: [], repos: [] } };
   }
+}
+
+// The orgs I belong to, for Next up's org picker [NXT-04]. Only these can be picked.
+export async function myOrgs(): Promise<string[]> {
+  if (FIXTURE) return FIXTURE_MY_ORGS;
+  const { viewer } = await graphql<{ viewer: { organizations: { nodes: { login: string }[] } } }>("{ viewer { organizations(first: 100) { nodes { login } } } }");
+  return viewer.organizations.nodes.map((org) => org.login).sort((a, b) => a.localeCompare(b));
 }
 
 // An org or repo is checked on GitHub before it's saved, so a typo shows right away [SRC-02].

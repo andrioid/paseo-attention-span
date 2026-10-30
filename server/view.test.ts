@@ -6,7 +6,7 @@ import { buildView } from "./view";
 
 const config = AttentionConfig.parse({});
 const feed = { fetchedAt: null, refreshing: false, error: null };
-const meta = { feeds: { live: feed, history: feed }, scopes: [], config };
+const meta = { feeds: { live: feed, history: feed }, scopes: [], sources: [], config };
 
 function item(key: string, section: Item["section"], othersActivityAt: string): Item {
   return {

@@ -23,8 +23,12 @@ export const setupStatus = defineRpc({ name: "setup.status", input: z.object({})
 export const getCoverage = defineRpc({ name: "config.coverage", input: z.object({}), output: z.custom<ConfigStatus>() });
 export const checkCoverage = defineRpc({ name: "config.check-coverage", input: z.object({ kind: z.enum(["org", "repo"]), name: z.string() }), output: z.custom<CoverageCheck>() });
 export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.object({ orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
-// Remember the scope chips picked on Next up [NXT-03].
+// Where Next up looks, chosen in settings [NXT-04]; orgs are picked from the ones I belong to.
+export const setNextUpSources = defineRpc({ name: "config.set-next-up", input: z.object({ mine: z.boolean(), orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
+export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), output: z.object({ orgs: z.array(z.string()) }) });
+// Remember the scopes and sources ticked in Next up's filter [NXT-03, NXT-09].
 export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });
+export const setSources = defineRpc({ name: "next-up.sources", input: z.object({ sources: z.array(z.string()) }), output: done });
 
 // GitHub changes, each from an explicit tap [SAFE-01].
 export const updateBranch = defineRpc({ name: "pr.update-branch", input: z.object({ target }), output: done });

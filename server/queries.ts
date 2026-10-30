@@ -1,6 +1,6 @@
 import type { UnclaimedSource } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
-import type { PullRequestNode } from "./github-types";
+import type { PickableNode, PullRequestNode } from "./github-types";
 
 // Each search with how many results it asks for and what it reads of each.
 const SEARCHES = {
@@ -42,7 +42,7 @@ const FRAGMENTS: Record<string, string> = {
 }`,
   pickable: `fragment pickable on Issue {
   number title url createdAt
-  repository { nameWithOwner defaultBranchRef { name } }
+  repository { nameWithOwner isFork defaultBranchRef { name } }
   issueType { name }
   issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } } } }
 }`,
@@ -98,18 +98,50 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
-// Where Next up looks for unclaimed issues: the chosen repos, else the configured orgs and repos, else my Paseo
-// projects' repos [NXT-04, NXT-08]. Never all of GitHub: unlike the other searches, this one isn't about me.
-export function unclaimedScope(config: AttentionConfig, projectRepos: string[]): { from: UnclaimedSource; scope: string | null } {
-  if (config.nextUp.repos) return { from: "config", scope: config.nextUp.repos.length ? where([], config.nextUp.repos) : null };
-  if (config.orgs.length || config.repos.length) return { from: "config", scope: where(config.orgs, config.repos) };
-  return projectRepos.length ? { from: "projects", scope: where([], projectRepos) } : { from: "none", scope: null };
+// Where Next up looks for unclaimed issues [NXT-04, NXT-08]: one search per chosen source, so each issue says which
+// sources found it and no query outgrows GitHub's limit [NXT-09]. Without sources, the configured orgs and repos,
+// else my Paseo projects' repos. Never all of GitHub: unlike the other searches, this one isn't about me.
+export function unclaimedSearches(config: AttentionConfig, projectRepos: string[], login: string | null): { from: UnclaimedSource; searches: UnclaimedSearch[] } {
+  const search = (source: string | null, scope: string) => ({ source, query: `is:issue is:open no:assignee ${scope}` });
+  const { mine, orgs, repos } = config.nextUp;
+  if (mine || orgs.length || repos.length) {
+    if (mine && !login) throw new Error("Couldn't tell which GitHub account is yours, for My repos");
+    return {
+      from: "config",
+      searches: [
+        ...(mine ? [search("mine", `user:${login} archived:false`)] : []),
+        ...orgs.map((org) => search(`org:${org}`, where([org], []))),
+        ...repos.map((repo) => search(`repo:${repo}`, where([], [repo]))),
+      ],
+    };
+  }
+  if (config.orgs.length || config.repos.length) return { from: "config", searches: [search(null, where(config.orgs, config.repos))] };
+  return projectRepos.length ? { from: "projects", searches: [search(null, where([], projectRepos))] } : { from: "none", searches: [] };
 }
 
-// Null for a search with nowhere to look.
-export function searchVariables(config: AttentionConfig, now: Date, projectRepos: string[] = []): Record<SearchName, string | null> {
+// One search's query, and the source it stands for; null when Next up has no sources of its own.
+export interface UnclaimedSearch {
+  source: string | null;
+  query: string;
+}
+
+// An issue found by several sources is listed once, under each of them [NXT-09]. Forks don't count as my repos.
+export function mergeUnclaimed(results: { source: string | null; nodes: (PickableNode | null)[] }[]): PickableNode[] {
+  const byKey = new Map<string, PickableNode>();
+  for (const { source, nodes } of results) {
+    for (const node of nodes) {
+      if (!node?.repository || (source === "mine" && node.repository.isFork)) continue;
+      const seen = byKey.get(prKey(node)) ?? { ...node, sources: [] };
+      if (source && !seen.sources!.includes(source)) seen.sources!.push(source);
+      byKey.set(prKey(node), seen);
+    }
+  }
+  return [...byKey.values()];
+}
+
+// The searches about me. Next up's unclaimed issues have their own [NXT-04].
+export function searchVariables(config: AttentionConfig, now: Date): Record<Exclude<SearchName, "unclaimed">, string> {
   const scope = where(config.orgs, config.repos);
-  const unclaimed = unclaimedScope(config, projectRepos).scope;
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
   // Whole weeks, from a Monday, so the oldest week isn't cut short.
   const history = isoDate(new Date(startOfWeek(now).getTime() - (config.historyWeeks - 1) * 7 * 86_400_000));
@@ -120,8 +152,6 @@ export function searchVariables(config: AttentionConfig, now: Date, projectRepos
     mentions: `is:open mentions:@me updated:>=${since} ${scope}`,
     assigned: `is:issue is:open assignee:@me ${scope}`,
     commented: `is:issue is:open commenter:@me updated:>=${since} ${scope}`,
-    // [NXT-01, NXT-04, NXT-08]
-    unclaimed: unclaimed && `is:issue is:open no:assignee ${unclaimed}`,
     // History [HIS-01, HIS-02]
     merged: `is:pr is:merged author:@me merged:>=${history} ${scope}`,
     reviewed: `is:pr is:merged reviewed-by:@me -author:@me merged:>=${history} ${scope}`,

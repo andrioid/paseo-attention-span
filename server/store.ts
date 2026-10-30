@@ -16,12 +16,17 @@ const STATE = join(DIR, "state.json");
 export const State = z.object({
   // Item key -> others' activity and section when dismissed [ATT-08].
   dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>() })).default({}),
-  // Scope chips picked on Next up; none means all [NXT-03].
+  // Scopes ticked in Next up's filter; none means all [NXT-03].
   scopes: z.array(z.string()).default([]),
+  // Sources ticked in Next up's filter; none means all [NXT-09].
+  sources: z.array(z.string()).default([]),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
   projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
-  live: z.object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => Array.isArray((value as Attention)?.unclaimed)) }).nullable().catch(null),
+  live: z
+    .object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => (value as Attention)?.unclaimed?.every?.((issue) => Array.isArray(issue.sources))) })
+    .nullable()
+    .catch(null),
   history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().catch(null),
 });
 export type State = z.infer<typeof State>;
@@ -66,6 +71,14 @@ export function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<Atten
 // The orgs and repos chosen in settings [SRC-02].
 export function saveCoverage(orgs: string[], repos: string[]): Promise<AttentionConfig> {
   return updateConfig((file) => ({ ...file, orgs, repos }));
+}
+
+// Where Next up looks, chosen in settings [NXT-04]. The fields and the rest of nextUp are kept.
+export function saveNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<AttentionConfig> {
+  return updateConfig((file) => {
+    const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
+    return { ...file, nextUp: { ...nextUp, ...sources } };
+  });
 }
 
 // What the screen writes changes only its own keys; everything else in the file is kept as it is.
