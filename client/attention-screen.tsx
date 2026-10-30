@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -218,17 +218,14 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     }
   }
 
-  function offerUndo(text: string, undo: () => Promise<unknown>, dismissal?: boolean) {
-    setUndoable((rows) => [...rows, { id: Date.now() + Math.random(), text, undo, dismissal }]);
-  }
-
-  // A change on GitHub from one tap, without confirming: Undo instead, where GitHub can take it back [SAFE-01, ATT-14].
-  function onGitHub(key: string, label: string, work: () => Promise<unknown>, done: string, undo?: () => Promise<unknown>) {
+  // A change from one tap, without confirming: Undo instead, where it can be taken back [SAFE-01, ATT-08, ATT-14].
+  // The server answers each with the list after it, so nothing needs a refresh.
+  function change(key: string, label: string, work: () => Promise<AttentionView>, done: string, undo?: () => Promise<AttentionView>, dismissal?: boolean) {
     void run(key, label, async () => {
-      await work();
-      if (undo) offerUndo(done, undo);
-      else toast.show(done, { variant: "success" });
-      void attention.refreshNow("live").catch(() => {}); // the server is already refreshing; this waits for it
+      attention.setView(await work());
+      if (!undo) return toast.show(done, { variant: "success" });
+      const id = Date.now() + Math.random();
+      setUndoable((rows) => [...rows, { id, text: done, undo: async () => attention.setView(await undo()), dismissal }]);
     });
   }
 
@@ -317,38 +314,26 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
       const { target } = item;
       if (action === "reply") return void openExternalUrl(item.person?.url ?? item.url);
       if (session) return void startWithDefaults(item.key, session, target);
-      if (action === "update")
-        void run(item.key, "Update", async () => {
-          await update({ target });
-          toast.show(`Updating PR ${target.number} with ${target.baseRefName}`, { variant: "success" });
-        });
+      if (action === "update") change(item.key, "Update", () => update({ target }), `Updating PR ${target.number} with ${target.baseRefName}`);
       // [PRS-11]
       if (action === "ready")
-        onGitHub(item.key, "Ready for review", () => setReady({ target, ready: true }), `PR ${target.number} is ready for review`, () => setReady({ target, ready: false }));
+        change(item.key, "Ready for review", () => setReady({ target, ready: true }), `PR ${target.number} is ready for review`, () => setReady({ target, ready: false }));
       // [PRS-10]
       if (action === "automerge")
-        onGitHub(item.key, "Auto-merge", () => setAutoMerge({ target, on: true }), `PR ${target.number} merges once checks pass`, () => setAutoMerge({ target, on: false }));
+        change(item.key, "Auto-merge", () => setAutoMerge({ target, on: true }), `PR ${target.number} merges once checks pass`, () => setAutoMerge({ target, on: false }));
     },
     // [PRS-09]
-    rerun: (item, runIds) =>
-      onGitHub(item.key, "Rerun", () => rerunFailed({ repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
+    rerun: (item, runIds) => change(item.key, "Rerun", () => rerunFailed({ repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
     // [MEN-07]
     acknowledge: (item, ids) =>
-      onGitHub(item.key, "👍", () => react({ subjectIds: ids, on: true }), `Reacted 👍 to ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
+      change(item.key, "👍", () => react({ subjectIds: ids, on: true }), `Reacted 👍 to ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
         react({ subjectIds: ids, on: false }),
       ),
     confirm: (item, action, comment) =>
-      void run(item.key, action === "merge" ? "Merge" : "Close", async () => {
-        if (action === "merge") await merge({ target: item.target });
-        else await close({ target: item.target, comment });
-        toast.show(`PR ${item.target.number} ${action === "merge" ? "merged" : "closed"}`, { variant: "success" });
-        await attention.refreshNow("live");
-      }),
-    dismiss: (item) =>
-      void run(item.key, "Dismiss", async () => {
-        attention.setView(await dismiss({ key: item.key }));
-        offerUndo(`Dismissed “${item.title}”`, async () => attention.setView(await undismiss({ key: item.key })), true);
-      }),
+      action === "merge"
+        ? change(item.key, "Merge", () => merge({ target: item.target }), `PR ${item.target.number} merged`)
+        : change(item.key, "Close", () => close({ target: item.target, comment }), `PR ${item.target.number} closed`),
+    dismiss: (item) => change(item.key, "Dismiss", () => dismiss({ key: item.key }), `Dismissed “${item.title}”`, () => undismiss({ key: item.key }), true),
   };
 
   const switchTab = (id: TabId) => {
@@ -390,7 +375,6 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
               void run(String(row.id), "Undo", async () => {
                 await row.undo();
                 setUndoable((rows) => rows.filter((other) => other.id !== row.id));
-                if (!row.dismissal) void attention.refreshNow("live").catch(() => {});
               })
             }
           />
@@ -439,19 +423,19 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
           onOpenAgent={openAgent}
           onStart={(issue, claimFirst) => {
             const target = issueTarget(issue);
-            void startWithDefaults(issue.key, "start", target, claimFirst ? () => claim({ target }) : undefined);
+            void startWithDefaults(issue.key, "start", target, claimFirst ? async () => attention.setView(await claim({ target })) : undefined);
           }}
           // Claim without starting, or give it back; each undoes the other [NXT-07].
           onClaim={(issue, on) => {
             const target = issueTarget(issue);
             const [take, giveBack] = [() => claim({ target }), () => unclaim({ target })];
-            onGitHub(issue.key, on ? "Claim" : "Unclaim", on ? take : giveBack, `${on ? "Claimed" : "Unclaimed"} #${issue.number}`, on ? giveBack : take);
+            change(issue.key, on ? "Claim" : "Unclaim", on ? take : giveBack, `${on ? "Claimed" : "Unclaimed"} #${issue.number}`, on ? giveBack : take);
           }}
           // Undo reopens; a comment already posted stays [NXT-11].
           onCloseIssue={(issue, reason, comment) => {
             const target = issueTarget(issue);
             const done = `Closed #${issue.number} as ${reason === "completed" ? "completed" : "not planned"}`;
-            onGitHub(issue.key, "Close", () => closeIssue({ target, reason, comment: comment || undefined }), done, () => reopenIssue({ target }));
+            change(issue.key, "Close", () => closeIssue({ target, reason, comment: comment || undefined }), done, () => reopenIssue({ target }));
           }}
         />
       ) : null}

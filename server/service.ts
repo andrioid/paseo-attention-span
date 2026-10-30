@@ -16,6 +16,8 @@ const RETRY_MS = 5 * 60_000;
 
 interface Feed {
   inFlight: Promise<void> | null;
+  // A fetch queued to start once the one in flight is done, for callers that need data from after now.
+  next: Promise<void> | null;
   lastAttemptAt: number;
   error: string | null;
 }
@@ -26,8 +28,8 @@ export class AttentionService {
   private config: AttentionConfig = AttentionConfig.parse({});
   private configError: string | null = null;
   private feeds: Record<FeedId, Feed> = {
-    live: { inFlight: null, lastAttemptAt: 0, error: null },
-    history: { inFlight: null, lastAttemptAt: 0, error: null },
+    live: { inFlight: null, next: null, lastAttemptAt: 0, error: null },
+    history: { inFlight: null, next: null, lastAttemptAt: 0, error: null },
   };
   private saving: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -109,9 +111,20 @@ export class AttentionService {
     await this.save();
   }
 
-  // Concurrent callers share one refresh per feed.
-  refresh(id: FeedId): Promise<void> {
+  // A change on GitHub from one tap [SAFE-01], answered with the list as it is after it.
+  async act(work: () => Promise<void>, feeds: FeedId[] = ["live"]): Promise<AttentionView> {
+    await work();
+    await Promise.all(feeds.map((id) => this.refresh(id, true).catch(() => {})));
+    return this.view();
+  }
+
+  // Concurrent callers share one refresh per feed. `fresh` won't share one that began before the call, which can't show a change just made.
+  refresh(id: FeedId, fresh = false): Promise<void> {
     const feed = this.feeds[id];
+    if (fresh && feed.inFlight) {
+      feed.next ??= feed.inFlight.catch(() => {}).then(() => ((feed.next = null), this.refresh(id)));
+      return feed.next;
+    }
     feed.inFlight ??= this.fetch(id).finally(() => (feed.inFlight = null));
     return feed.inFlight;
   }
