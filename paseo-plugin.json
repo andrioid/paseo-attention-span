@@ -5,8 +5,10 @@
   "icon": "assets/icon.png",
   "media": [
     "docs/screenshots/desktop-dark-doing.png",
-    "docs/screenshots/phone-dark-doing.png",
-    "docs/screenshots/desktop-dark-next-up.png"
+    "docs/screenshots/desktop-dark-waiting.png",
+    "docs/screenshots/desktop-dark-next-up.png",
+    "docs/screenshots/desktop-dark-history.png",
+    "docs/screenshots/phone-dark-doing.png"
   ],
   "requirements": {
     "paseo": ">=0.13.0"

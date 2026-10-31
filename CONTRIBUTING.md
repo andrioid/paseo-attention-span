@@ -33,6 +33,8 @@ The previews are react-native-web. Check the iOS and Android apps by hand now an
 
 Only when the owner asks: `paseo plugin install <path>`, or `paseo plugin reload attention-span` after changes.
 
+To try the unreleased latest from `main` instead of the registry release: `paseo plugin add git:andrioid/paseo-attention-span`.
+
 ## Release
 
 Run the Release workflow in GitHub Actions on `main` and pick patch or minor. It runs `npm run check`, publishes `@andrioid/paseo-attention-span` to npm with the next version after the latest `v*` tag, then pushes that tag and a GitHub Release with generated notes. It never commits, so `version` in `package.json` stays a placeholder.
