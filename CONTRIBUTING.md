@@ -45,6 +45,6 @@ npm trusts the workflow through trusted publishing, so there is no npm token.
 
 ## Listing
 
-The registry listing is [OVERVIEW.md](OVERVIEW.md) plus the `media` in `paseo-plugin.json`, which are screenshots from `docs/screenshots/`; the first is the card thumbnail. Keep the overview in step with what the plugin does. It must not contain install commands.
+The registry listing is [OVERVIEW.md](OVERVIEW.md) plus the `media` in `paseo-plugin.json`, which are screenshots from `docs/screenshots/`; the first is the card thumbnail. The registry reads them from the npm package, so every screenshot in `media` or the overview must also be listed in `files` in `package.json`. Keep the overview in step with what the plugin does. It must not contain install commands.
 
 The logo is `assets/logo.svg`. `assets/icon.png` is the manifest's icon: the logo without its white background, 512 px. The sidebar uses a one-colour copy in `client/icons.ts`, so it follows the theme.

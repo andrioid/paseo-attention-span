@@ -22,9 +22,20 @@
     "shared/",
     "!**/*.test.ts",
     "assets/",
+    "docs/screenshots/desktop-dark-doing-acknowledge.png",
+    "docs/screenshots/desktop-dark-doing-session-menu.png",
+    "docs/screenshots/desktop-dark-doing-sheet.png",
+    "docs/screenshots/desktop-dark-doing-too-long.png",
     "docs/screenshots/desktop-dark-doing.png",
+    "docs/screenshots/desktop-dark-history-reviewed.png",
+    "docs/screenshots/desktop-dark-history.png",
+    "docs/screenshots/desktop-dark-next-up-code-repo.png",
+    "docs/screenshots/desktop-dark-next-up.png",
+    "docs/screenshots/desktop-dark-settings.png",
+    "docs/screenshots/desktop-dark-setup.png",
+    "docs/screenshots/desktop-dark-waiting.png",
     "docs/screenshots/phone-dark-doing.png",
-    "docs/screenshots/desktop-dark-next-up.png"
+    "docs/screenshots/phone-light-next-up-filtered.png"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
