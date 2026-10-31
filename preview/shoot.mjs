@@ -84,6 +84,22 @@ for (const layout of layouts) {
         await page.waitForTimeout(800);
         await shot(tab.toLowerCase().replace(" ", "-"));
       }
+      // Work that waited too long leaves Waiting for Doing; follow the link and clip to that section [ATT-11].
+      await page.getByRole("tab", { name: /Waiting/ }).first().click();
+      await page.getByText(/waited too long and moved to Doing/).click();
+      await page.waitForTimeout(800);
+      const band = async (from, to) => {
+        const header = (title) => page.locator(`text=/^${title}/ >> visible=true`).first();
+        await header(from).scrollIntoViewIfNeeded();
+        await page.waitForTimeout(300);
+        const y = Math.max(0, Math.floor((await header(from).boundingBox()).y) - 24);
+        const end = Math.ceil((await header(to).boundingBox()).y) - 16;
+        // Just the list's column, with even margins: the sidebar on desktops is 320 px wide.
+        const sidebar = layout.isMobile ? 0 : 320;
+        const x = Math.max(sidebar, Math.floor((await header(from).boundingBox()).x) - 48);
+        return { x, y, width: layout.viewport.width - x - (x - sidebar), height: Math.min(end - y, MAX_HEIGHT) };
+      };
+      await page.screenshot({ path: `/out/${prefix}-doing-too-long.png`, clip: await band("Waiting too long", "My drafts") });
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
       const openSheet = async (title) => {
