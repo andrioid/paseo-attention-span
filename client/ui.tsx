@@ -138,6 +138,7 @@ export function Button({
   disabled,
   busy,
   accessibilityLabel,
+  joined,
 }: {
   label?: string;
   icon?: IconName;
@@ -146,6 +147,8 @@ export function Button({
   disabled?: boolean;
   busy?: boolean;
   accessibilityLabel?: string;
+  // One half of a split button: square on the side it joins.
+  joined?: "start" | "end";
 }) {
   const styles = useStyles();
   const { hovered, hover } = useHover();
@@ -166,6 +169,7 @@ export function Button({
         height: 30,
         paddingHorizontal: label ? 11 : 8,
         borderRadius: 8,
+        ...(joined === "start" ? { borderTopRightRadius: 0, borderBottomRightRadius: 0 } : joined === "end" ? { borderTopLeftRadius: 0, borderBottomLeftRadius: 0, paddingHorizontal: 6 } : null),
         backgroundColor: variant === "solid" ? c.accent : hovered || (pressed && variant === "ghost") ? c.border : variant === "ghost" ? "transparent" : c.surface2,
         opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
       })}
@@ -173,6 +177,51 @@ export function Button({
       {busy ? <ActivityIndicator size="small" color={color} style={{ width: 15, height: 15 }} /> : icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
       {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
     </Pressable>
+  );
+}
+
+// Where a menu opens from, in window coordinates.
+export interface Anchor {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Measures a view, for a menu that opens under it.
+export function useAnchor() {
+  const ref = useRef<View>(null);
+  const measure = (then: (anchor: Anchor | undefined) => void) => {
+    if (!ref.current) return then(undefined);
+    ref.current.measureInWindow((x, y, width, height) => then(width || height ? { x, y, width, height } : undefined));
+  };
+  return { ref, measure };
+}
+
+// The action, and ▾ for the choices around it [SES-03].
+export function SplitButton({
+  label,
+  icon,
+  onPress,
+  onMenu,
+  menuLabel,
+  busy,
+  accessibilityLabel,
+}: {
+  label: string;
+  icon?: IconName;
+  onPress: () => void;
+  onMenu: (anchor: Anchor | undefined) => void;
+  menuLabel: string;
+  busy?: boolean;
+  accessibilityLabel?: string;
+}) {
+  const { ref, measure } = useAnchor();
+  return (
+    <View ref={ref} collapsable={false} style={{ flexDirection: "row", gap: 1 }}>
+      <Button label={label} icon={icon} variant="calm" busy={busy} accessibilityLabel={accessibilityLabel} onPress={onPress} joined="start" />
+      <Button icon="chevronDown" variant="calm" disabled={busy} accessibilityLabel={menuLabel} onPress={() => measure(onMenu)} joined="end" />
+    </View>
   );
 }
 

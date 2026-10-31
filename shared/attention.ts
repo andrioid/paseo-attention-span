@@ -186,10 +186,27 @@ export interface Section {
 // A Paseo session started from an item [ATT-07].
 export interface AgentSummary {
   id: string;
+  // The item it was started on: an issue or a PR.
+  itemKey: string;
   status: string;
   requiresAttention: boolean;
   title: string | null;
   workspaceId: string | null;
+  lastActivityAt: string | null;
+}
+
+// An item's open sessions: started on it or on any PR under it, until it's merged or closed.
+// One that needs me comes first, then the most recent [SES-03].
+export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "closedAt" | "children">): AgentSummary[] {
+  if (item.closedAt) return [];
+  return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
+}
+
+export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSummary[] {
+  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  return agents
+    .filter((agent) => wanted.has(agent.itemKey.toLowerCase()))
+    .sort((a, b) => Number(b.requiresAttention) - Number(a.requiresAttention) || (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));
 }
 
 export interface FeedStatus {
@@ -219,5 +236,5 @@ export interface AttentionView {
   // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
   pending: number;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
-  fixtureAgents?: Record<string, AgentSummary>;
+  fixtureAgents?: AgentSummary[];
 }

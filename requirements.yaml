@@ -70,7 +70,7 @@ functional:
     As a developer, I can:
       SES-01: start a Paseo session for an item in one step, with defaults suited to why it needs me; so that acting on an item takes no setup.
       SES-02: choose the workspace, agent profile, and prompt before a session starts; so that I can adjust when the defaults don't fit.
-      SES-03: continue an item's existing session instead of starting another; so that work on an item stays in one place.
+      SES-03: open an item's existing session from the item whatever state it is in, including one started on any of its pull requests, and start another only on purpose; so that work on an item stays in one place.
       SES-04: start a session that already has the item's context, such as failing checks or unresolved comments; so that the agent starts informed.
       SES-05: start sessions in my local checkout of the item's repository without configuring paths; so that new repositories work without setup.
       SES-06: start sessions even when no agent profiles are configured; so that Attention Span works before I've set anything up.

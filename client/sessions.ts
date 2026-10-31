@@ -10,23 +10,25 @@ export const ITEM_LABEL = "attention-span-item";
 // Sessions started under the plugin's earlier names, "GitHub attention" and "GitHub inbox".
 const OLD_LABELS = ["github-attention", "github-inbox"];
 
-// Agents started from Attention Span, keyed by item.
-export async function itemAgents(paseo: Paseo): Promise<Record<string, AgentSummary>> {
+// Agents started from Attention Span, each with the item it was started on.
+export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
   const labels = [LABEL, ...OLD_LABELS];
   const lists = await Promise.all(labels.map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } })));
-  const byItem: Record<string, AgentSummary> = {};
+  const byId = new Map<string, AgentSummary>();
   for (const { agent } of lists.flatMap((list) => list.entries)) {
-    const key = labels.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
-    if (!key || agent.archivedAt) continue;
-    byItem[key] = {
+    const itemKey = labels.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
+    if (!itemKey || agent.archivedAt) continue;
+    byId.set(agent.id, {
       id: agent.id,
+      itemKey,
       status: agent.status,
       requiresAttention: !!agent.requiresAttention,
       title: agent.title ?? null,
       workspaceId: agent.workspaceId ?? null,
-    };
+      lastActivityAt: agent.updatedAt ?? null,
+    });
   }
-  return byItem;
+  return [...byId.values()];
 }
 
 export interface ProjectMatch {

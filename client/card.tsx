@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, Meta, TablerIcon, toneColor, useStyles } from "./ui";
+import { type Anchor, Button, Meta, SplitButton, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
 //
@@ -23,6 +23,8 @@ export interface CardAction {
   onPress: () => void;
   // Defaults to the label.
   accessibilityLabel?: string;
+  // ▾ beside it, for the choices around it: a split button [SES-03].
+  menu?: { label: string; onPress: (anchor: Anchor | undefined) => void };
 }
 
 export interface ConfirmSpec {
@@ -63,7 +65,17 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
   const styles = useStyles();
   const actions = (
     <View style={styles.wrap}>
-      {primary ? (
+      {primary?.menu ? (
+        <SplitButton
+          label={primary.label}
+          accessibilityLabel={primary.accessibilityLabel}
+          icon={primary.icon}
+          busy={busy}
+          onPress={primary.onPress}
+          menuLabel={primary.menu.label}
+          onMenu={primary.menu.onPress}
+        />
+      ) : primary ? (
         <Button label={primary.label} accessibilityLabel={primary.accessibilityLabel} icon={primary.icon} variant="calm" busy={busy} onPress={primary.onPress} />
       ) : busy ? (
         <ActivityIndicator size="small" color={styles.c.foregroundMuted} />

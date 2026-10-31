@@ -116,7 +116,9 @@ An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every act
 | Merge | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04]. Asks first. |
 | Close draft | Stale draft, in the sheet | `closePullRequest`, with a comment only if I write one [SAFE-01]. Asks first. |
 
-A tap starts with defaults. An existing workspace for the branch or PR is resumed instead of creating a new one [SES-03, ATT-07]. Collapsed, a stack shows only the PRs that need attention [ATT-04].
+A tap starts with defaults. An existing workspace for the branch or PR is resumed instead of creating a new one.
+
+While an item has an open session, its main action is **Open session** instead, in every tab [SES-03, ATT-07]. A session belongs to an item when it was started on the item or on any PR under it, and isn't archived; none do once the item is merged or closed. With several, it opens one that needs me, else the most recent. Its ▾ lists every session, then starts a new one with the item's session actions, with or without options. Without a session, a session action's ▾ offers it with options; GitHub actions stay plain buttons. The sheet leads with the same split entry. Collapsed, a stack shows only the PRs that need attention [ATT-04].
 
 ## Sessions
 

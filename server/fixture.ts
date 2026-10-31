@@ -207,13 +207,25 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
 }
 
 // Sessions the preview shows as started from items: working, needs me, failed, idle.
-const agent = (id: string, status: string, requiresAttention = false): AgentSummary => ({ id, status, requiresAttention, title: `Fixture session ${id}`, workspaceId: null });
-export const FIXTURE_AGENTS: Record<string, AgentSummary> = {
-  [`${REPO}#101`]: agent("agent-101", "running"),
-  [`${REPO}#102`]: agent("agent-102", "idle", true),
-  [`${REPO}#108`]: agent("agent-108", "error"),
-  [`${REPO}#150`]: agent("agent-150", "idle"),
-};
+// Issue 90 has two, one on the issue and one on its PR, so the card shows the pick. #113 waits on CI while its agent works.
+const agent = (id: string, itemKey: string, status: string, minutesAgo: number, requiresAttention = false): AgentSummary => ({
+  id,
+  itemKey,
+  status,
+  requiresAttention,
+  title: `Fixture session ${id}`,
+  workspaceId: null,
+  lastActivityAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+});
+export const FIXTURE_AGENTS: AgentSummary[] = [
+  agent("agent-101", `${REPO}#101`, "running", 4),
+  agent("agent-102", `${REPO}#102`, "idle", 30, true),
+  agent("agent-108", `${REPO}#108`, "error", 90),
+  agent("agent-150", `${REPO}#150`, "idle", 300),
+  agent("agent-90", `${REPO}#90`, "idle", 120, true),
+  agent("agent-103", `${REPO}#103`, "running", 6),
+  agent("agent-113", `${REPO}#113`, "running", 2),
+];
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
 

@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -14,10 +14,11 @@ import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
-import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
+import { agentSignal, openSessionEntry, sessionsGroup } from "./session-menu";
+import { ActionSheet, DetailLines, type MenuGroup, MenuSheet, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
-import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
+import { type Anchor, Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -95,16 +96,6 @@ function rerunEntry(failing: FailingChecks[] | undefined, loading: boolean): { d
   return { detail: `${names} · ${reruns ? `rerun ${reruns === 1 ? "once" : `${reruns} times`} already` : "not rerun yet"}`, runIds: runs.map((run) => run.id) };
 }
 
-// "Continue review" keeps what the session is for [SES-03].
-const CONTINUE_LABELS: Record<SessionKind, string> = {
-  review: "Continue review",
-  fix: "Continue fix",
-  address: "Continue comments",
-  rebase: "Continue rebase",
-  refresh: "Continue refresh",
-  start: "Continue",
-};
-
 const SECTION_ICONS: Record<SectionId, IconName> = {
   reply: "reply",
   review: "review",
@@ -143,20 +134,22 @@ interface Placing {
   before?: () => Promise<unknown>;
 }
 
+// Session options, before it starts [SES-02].
+export interface OptionsSpec {
+  itemKey: string;
+  title: string;
+  kind: SessionKind;
+  target: Target;
+  // Claims an issue first [NXT-05].
+  before?: () => Promise<unknown>;
+}
+
 // Something I just did, offered for undo until the tab changes [ATT-08, ATT-14].
 interface Undoable {
   id: number;
   text: string;
   dismissal?: boolean;
   undo: () => Promise<unknown>;
-}
-
-// A session started from the item, as a signal [ATT-07].
-function agentSignal(agent: AgentSummary): Chip {
-  if (agent.requiresAttention) return { text: "agent needs you", tone: "warn" };
-  if (agent.status === "running" || agent.status === "initializing") return { text: "agent working", tone: "good" };
-  if (agent.status === "error") return { text: "agent failed", tone: "bad" };
-  return { text: "agent idle", tone: "neutral" };
 }
 
 // `openSettings` opens the orgs and repos settings [SRC-02].
@@ -201,6 +194,7 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   const [placing, setPlacing] = useState<Placing | null>(null);
+  const [options, setOptions] = useState<OptionsSpec | null>(null);
   const view = attention.data;
   // Only when something fails: is it setup, and what's missing [SET-01]?
   const fetchSetup = useRpc(rpc.setupStatus);
@@ -240,10 +234,8 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     openAgent(agentId);
   }
 
-  // One tap: continue the item's session, or start one with defaults [SES-01, SES-03].
+  // One tap: start a session with defaults [SES-01]. An open one is offered first, by the card [SES-03].
   async function startWithDefaults(itemKey: string, kind: SessionKind, target: Target, before?: () => Promise<unknown>) {
-    const existing = (view?.fixtureAgents ?? agents.data)?.[itemKey];
-    if (existing) return openAgent(existing.id);
     if (!view) return;
     await run(itemKey, "Starting the session", () => startNow(itemKey, kind, target, view.config, before));
   }
@@ -303,7 +295,8 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   };
 
   const actions: Actions = {
-    agents: view.fixtureAgents ?? agents.data ?? {},
+    agents: view.fixtureAgents ?? agents.data ?? [],
+    startWithOptions: setOptions,
     busy,
     config: view.config,
     login: view.login,
@@ -435,6 +428,10 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
             const target = issueTarget(issue);
             void startWithDefaults(issue.key, "start", target, claimFirst ? async () => attention.setView(await claim({ key: issue.key, target })) : undefined);
           }}
+          onOptions={(issue, claimFirst, label) => {
+            const target = issueTarget(issue);
+            setOptions({ itemKey: issue.key, title: `${label}: ${issue.title}`, kind: "start", target, before: claimFirst ? async () => attention.setView(await claim({ key: issue.key, target })) : undefined });
+          }}
           // Claim without starting, or give it back; each undoes the other [NXT-07].
           onClaim={(issue, on) => {
             const target = issueTarget(issue);
@@ -449,6 +446,7 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
           }}
         />
       ) : null}
+      {options ? <SessionOptions spec={options} actions={actions} onClose={() => setOptions(null)} /> : null}
       {placing ? <CodeRepoPicker issueRepo={placing.target.repo} missing={placing.missing} onPick={place} onClose={() => setPlacing(null)} /> : null}
     </ScrollView>
   );
@@ -474,7 +472,8 @@ function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: s
 }
 
 interface Actions {
-  agents: Record<string, AgentSummary>;
+  agents: AgentSummary[];
+  startWithOptions: (spec: OptionsSpec) => void;
   busy: ReadonlySet<string>;
   config: AttentionConfig;
   login: string | null;
@@ -500,16 +499,20 @@ function stateMark(item: Item): CardProps["mark"] {
 // A card that works collapsed: its main action and ⋯. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
 const isRed = (chips: Chip[]) => chips.some((chip) => chip.tone === "bad");
 
-type Sheet = "item" | "acknowledge" | { options: SessionKind } | null;
+// The sheet, Acknowledge, or a split button's menu: for the open sessions, or for starting one of `kind`.
+type Sheet = "item" | "acknowledge" | { anchor?: Anchor; kind?: SessionKind } | null;
+
+// A session on an item that has no session action of its own starts with this prompt; it's editable first.
+const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
 
 function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions: Actions }) {
-  const agent = actions.agents[item.key];
-  const chips = agent ? [...item.chips, agentSignal(agent)] : item.chips;
+  // An open session leads; without one, the item's own action does [SES-03].
+  const sessions = itemSessions(actions.agents, item);
+  const chips = sessions[0] ? [...item.chips, agentSignal(sessions[0])] : item.chips;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
-  const sessionAction = item.actions.find((action) => ACTION_SESSION[action]);
-  const sessionKind = sessionAction ? ACTION_SESSION[sessionAction] : undefined;
   const main = item.actions[0];
+  const mainKind = main ? ACTION_SESSION[main] : undefined;
   // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
   const open = () => setSheet("item");
@@ -522,11 +525,13 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
     else if (action === "acknowledge") setSheet("acknowledge");
     else actions.act(item, action);
   }
-  const handlers: SheetHandlers = { onPerform: perform, onOptions: (kind) => setSheet({ options: kind }), onClose: () => setSheet(null) };
+  const onMenu = (kind?: SessionKind) => (anchor: Anchor | undefined) => setSheet({ anchor, kind });
+  const handlers: SheetHandlers = { onPerform: perform, onMenu, onClose: () => setSheet(null) };
   // A menu with one action is a wasted tap: show that action instead of ⋯. The card still opens the sheet [ATT-06].
-  const entries = sheetEntries(item, agent, actions, handlers);
+  const entries = sheetEntries(item, sessions, actions, handlers);
   const only = entries.length === 1 ? entries[0] : undefined;
   const confirmed = (action: "merge" | "close") => (comment: string) => (setConfirm(null), actions.confirm(item, action, comment));
+  const sessionMenu = { label: "Session choices", onPress: onMenu() };
 
   return (
     <CardRow
@@ -549,10 +554,15 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       onOpen={open}
       busy={actions.busy.has(item.key)}
       primary={
-        agent && sessionKind
-          ? { label: CONTINUE_LABELS[sessionKind], icon: "agent", onPress: () => actions.openAgent(agent.id) }
+        sessions[0]
+          ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id), menu: sessionMenu }
           : main
-            ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], onPress: () => perform(main) }
+            ? {
+                label: actionLabel(main, item),
+                icon: ACTION_ICONS[main],
+                onPress: () => perform(main),
+                menu: mainKind ? { label: `${actionLabel(main, item)} choices`, onPress: onMenu(mainKind) } : undefined,
+              }
             : undefined
       }
       secondary={[
@@ -578,23 +588,59 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       }
       overlay={
         <>
-          {sheet === "item" ? <ItemSheet item={item} agent={agent} actions={actions} {...handlers} /> : null}
+          {sheet === "item" ? <ItemSheet item={item} sessions={sessions} actions={actions} {...handlers} /> : null}
           {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
-          {sheet && typeof sheet === "object" ? <SessionOptions item={item} kind={sheet.options} actions={actions} onClose={() => setSheet(null)} /> : null}
+          {sheet && typeof sheet === "object" ? (
+            <MenuSheet title={item.title} anchor={sheet.anchor} groups={menuGroups(item, sessions, sheet.kind, actions, perform, () => setSheet(null))} onClose={() => setSheet(null)} />
+          ) : null}
         </>
       }
     />
   );
 }
 
+// A split button's menu. With sessions open: each of them, then starting a new one. Without: the action with options [SES-02, SES-03].
+function menuGroups(
+  item: Item,
+  sessions: AgentSummary[],
+  kind: SessionKind | undefined,
+  actions: Actions,
+  perform: (action: ActionId) => void,
+  close: () => void,
+): MenuGroup[] {
+  const withOptions = (action: ActionId | undefined, sessionKind: SessionKind): SheetEntry => {
+    const label = action ? actionLabel(action, item) : "Start session";
+    return {
+      key: `${action ?? "start"}-options`,
+      icon: "agent",
+      label: `${label} with options…`,
+      detail: "Choose the workspace, agent profile and prompt first",
+      onPress: () => (close(), actions.startWithOptions({ itemKey: item.key, title: `${label}: ${item.title}`, kind: sessionKind, target: item.target })),
+    };
+  };
+  const sessionActions = item.actions.filter((action) => ACTION_SESSION[action]);
+  if (sessions.length === 0) {
+    const action = sessionActions.find((candidate) => ACTION_SESSION[candidate] === kind);
+    return [{ entries: [withOptions(action, kind ?? fallbackKind(item))] }];
+  }
+  const start = sessionActions.flatMap((action): SheetEntry[] => [
+    { key: action, icon: "agent", label: actionLabel(action, item), detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: () => perform(action) },
+    withOptions(action, ACTION_SESSION[action]!),
+  ]);
+  return [
+    sessionsGroup(sessions, (agentId) => (close(), actions.openAgent(agentId))),
+    { title: "Start a new one", entries: start.length ? start : [withOptions(undefined, fallbackKind(item))] },
+  ];
+}
+
 interface SheetHandlers {
   onPerform: (action: ActionId) => void;
-  onOptions: (kind: SessionKind) => void;
+  onMenu: (kind?: SessionKind) => (anchor: Anchor | undefined) => void;
   onClose: () => void;
 }
 
 // What the card already knows on top, then every action, then what's fetched when it opens, so nothing jumps as it loads [ATT-06, GH-01].
-function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: AgentSummary; actions: Actions } & SheetHandlers) {
+function ItemSheet({ item, sessions, actions, ...handlers }: { item: Item; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
   const checks = item.actions.includes("rerun");
   const details = useQuery({
     queryKey: ["attention-span", "details", item.key, checks],
@@ -616,7 +662,7 @@ function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: 
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
         </>
       }
-      entries={sheetEntries(item, agent, actions, handlers, details)}
+      entries={sheetEntries(item, sessions, actions, handlers, details)}
       bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />}
     />
   );
@@ -625,26 +671,31 @@ function ItemSheet({ item, agent, actions, ...handlers }: { item: Item; agent?: 
 // Everything an item's sheet offers, each saying what it will do [ATT-06]. Rerun's line needs the fetched checks.
 function sheetEntries(
   item: Item,
-  agent: AgentSummary | undefined,
+  sessions: AgentSummary[],
   actions: Actions,
-  { onPerform, onOptions, onClose }: SheetHandlers,
+  { onPerform, onMenu, onClose }: SheetHandlers,
   details?: { data?: { failing: FailingChecks[] }; isLoading: boolean },
 ): SheetEntry[] {
   const inDoing = !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed";
   const close = (then: () => void) => () => (onClose(), then());
 
-  const entries: SheetEntry[] = [];
-  let continued = false;
+  // An open session first; starting another is in its menu [SES-03].
+  const entries: SheetEntry[] = sessions.length
+    ? [openSessionEntry(sessions, (agentId) => close(() => actions.openAgent(agentId))(), { label: "Session choices", onPress: onMenu() })]
+    : [];
   for (const action of item.actions) {
     const kind = ACTION_SESSION[action];
     const label = actionLabel(action, item);
-    if (kind && agent) {
-      // One session per item: continue it instead of starting another [SES-03].
-      if (!continued) entries.push({ key: action, icon: "agent", label: CONTINUE_LABELS[kind], detail: `Opens the session (${agentSignal(agent).text})`, onPress: close(() => actions.openAgent(agent.id)) });
-      continued = true;
-    } else if (kind) {
-      entries.push({ key: action, icon: "agent", label, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: () => onPerform(action) });
-      entries.push({ key: `${action}-options`, icon: "agent", label: `${label} with options…`, detail: "Choose the workspace, agent profile and prompt first", onPress: () => onOptions(kind) });
+    if (kind && sessions.length) continue;
+    else if (kind) {
+      entries.push({
+        key: action,
+        icon: "agent",
+        label,
+        detail: actionDetail(action as Exclude<ActionId, "rerun">, item),
+        onPress: () => onPerform(action),
+        menu: { label: `${label} choices`, onPress: onMenu(kind) },
+      });
     } else if (action === "rerun") {
       const { detail, runIds } = rerunEntry(details?.data?.failing, details?.isLoading ?? true);
       entries.push({ key: action, icon: ACTION_ICONS.rerun, label, detail, disabled: runIds.length === 0, onPress: close(() => actions.rerun(item, runIds)) });
@@ -870,13 +921,13 @@ function StackRow({ url, number, link, children }: { url: string; number: number
 }
 
 // Session options in a modal: a bottom sheet on phones [SES-02].
-function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: SessionKind; actions: Actions; onClose: () => void }) {
+function SessionOptions({ spec, actions, onClose }: { spec: OptionsSpec; actions: Actions; onClose: () => void }) {
   const styles = useStyles();
   const paseo = usePaseo();
   const toast = useToast();
-  const { target } = item;
+  const { itemKey, kind, target } = spec;
   const options = useQuery({
-    queryKey: ["attention-span", "options", item.key, kind],
+    queryKey: ["attention-span", "options", itemKey, kind],
     queryFn: async () => {
       const [{ context }, profiles, checkout, defaults] = await Promise.all([
         actions.fetchContext({ kind, target }),
@@ -900,7 +951,8 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
     if (!data) return;
     setStarting(true);
     try {
-      await actions.started(await startSession(paseo, { itemKey: item.key, kind, target, prompt: prompt ?? data.prompt, config: actions.config, checkout: data.checkout, profileId, workspaceId }));
+      await spec.before?.();
+      await actions.started(await startSession(paseo, { itemKey, kind, target, prompt: prompt ?? data.prompt, config: actions.config, checkout: data.checkout, profileId, workspaceId }));
       onClose();
     } catch (error) {
       toast.error(`Starting the session failed: ${(error as Error).message}`);
@@ -910,7 +962,7 @@ function SessionOptions({ item, kind, actions, onClose }: { item: Item; kind: Se
   }
 
   return (
-    <Modal title={`${actionLabel(item.actions.find((a) => ACTION_SESSION[a] === kind) ?? "start", item)}: ${item.title}`} open onOpenChange={(open) => (open ? null : onClose())}>
+    <Modal title={spec.title} open onOpenChange={(open) => (open ? null : onClose())}>
       <Modal.Content>
         <KeepStyles styles={styles}>
         {options.isLoading ? <Loading text="Loading context…" /> : null}

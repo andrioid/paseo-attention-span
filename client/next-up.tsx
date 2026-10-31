@@ -3,14 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { ago, repoLabel, shortValue } from "../shared/format";
-import type { AgentSummary, Chip, IssueCloseReason, NextUpIssue, UnclaimedSource } from "../shared/attention";
+import { type AgentSummary, type Chip, type IssueCloseReason, matchSessions, type NextUpIssue, type UnclaimedSource } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
-import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
+import { openSessionEntry, sessionsGroup } from "./session-menu";
+import { ActionSheet, DetailLines, type MenuGroup, MenuSheet, type SheetEntry } from "./sheet";
 import { Modal } from "@getpaseo/plugin/client/ui";
-import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
+import { type Anchor, Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
@@ -25,12 +26,14 @@ interface Props {
   sources: NextUpSource[];
   selectedSources: string[];
   onSelectSources: (sources: string[]) => void;
-  agents: Record<string, AgentSummary>;
+  agents: AgentSummary[];
   // Mine, so my repos show without the owner.
   login: string | null;
   busy: ReadonlySet<string>;
   fetchDetails: FetchDetails;
   onStart: (issue: NextUpIssue, claim: boolean) => void;
+  // The same, choosing the workspace, profile and prompt first [SES-02]; `label` names it.
+  onOptions: (issue: NextUpIssue, claim: boolean, label: string) => void;
   // Claim without starting, or give an assigned issue back [NXT-07].
   onClaim: (issue: NextUpIssue, on: boolean) => void;
   // Close it, once I've confirmed the reason [NXT-11].
@@ -227,14 +230,31 @@ function Tags({ issue }: { issue: NextUpIssue }) {
 const TYPE_TONES: Record<string, Tone> = { bug: "bad", feature: "good", epic: "good", debt: "warn" };
 
 // Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
-function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
-  const [open, setOpen] = useState(false);
+function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onOptions, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
+  // The sheet, or the split button's menu.
+  const [sheet, setSheet] = useState<"item" | { anchor?: Anchor } | null>(null);
   // Closing asks first, with the reason and an optional comment [NXT-11, SAFE-01].
   const [closing, setClosing] = useState(false);
-  const agent = agents[issue.key];
+  // An open session leads; without one, Start does [SES-03].
+  const sessions = matchSessions(agents, [issue.key]);
   const startLabel = claim ? "Claim & start" : "Start";
   const type = issue.type?.toLowerCase() ?? "";
   const close = (reason: IssueCloseReason) => (comment: string) => (setClosing(false), onCloseIssue(issue, reason, comment));
+  const onMenu = (anchor: Anchor | undefined) => setSheet({ anchor });
+  const done = (then: () => void) => () => (setSheet(null), then());
+  const withOptions: SheetEntry = {
+    key: "start-options",
+    icon: "agent",
+    label: `${startLabel} with options…`,
+    detail: "Choose the workspace, agent profile and prompt first",
+    onPress: done(() => onOptions(issue, claim, startLabel)),
+  };
+  const groups: MenuGroup[] = sessions.length
+    ? [
+        sessionsGroup(sessions, (agentId) => done(() => onOpenAgent(agentId))()),
+        { title: "Start a new one", entries: [{ ...startEntry(claim), onPress: done(() => onStart(issue, claim)) }, withOptions] },
+      ]
+    : [{ entries: [withOptions] }];
   return (
     <CardRow
       first={first}
@@ -243,15 +263,15 @@ function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onSt
       accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
       meta={{ place: `${repoLabel(issue.repo, login)} #${issue.number}`, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
       extra={<Tags issue={issue} />}
-      onOpen={() => setOpen(true)}
+      onOpen={() => setSheet("item")}
       busy={busy.has(issue.key)}
       primary={
-        agent
-          ? { label: "Continue", icon: "agent", onPress: () => onOpenAgent(agent.id) }
+        sessions[0]
+          ? { label: "Open session", icon: "agent", onPress: () => onOpenAgent(sessions[0].id), menu: { label: "Session choices", onPress: onMenu } }
           : // Claim first so teammates see it's taken [NXT-05].
-            { label: startLabel, accessibilityLabel: `${startLabel} ${issue.title}`, icon: "agent", onPress: () => onStart(issue, claim) }
+            { label: startLabel, accessibilityLabel: `${startLabel} ${issue.title}`, icon: "agent", onPress: () => onStart(issue, claim), menu: { label: `${startLabel} choices`, onPress: onMenu } }
       }
-      secondary={[{ label: "More actions", icon: "dots", onPress: () => setOpen(true) }]}
+      secondary={[{ label: "More actions", icon: "dots", onPress: () => setSheet("item") }]}
       confirm={
         closing
           ? {
@@ -266,35 +286,53 @@ function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onSt
           : null
       }
       overlay={
-        open ? (
+        sheet === "item" ? (
           <IssueSheet
             issue={issue}
             claim={claim}
-            agent={agent}
+            sessions={sessions}
             fetchDetails={fetchDetails}
             onStart={onStart}
             onClaim={onClaim}
             onOpenAgent={onOpenAgent}
+            onMenu={onMenu}
             onCloseIssue={() => setClosing(true)}
-            onClose={() => setOpen(false)}
+            onClose={() => setSheet(null)}
           />
+        ) : sheet ? (
+          <MenuSheet title={issue.title} anchor={sheet.anchor} groups={groups} onClose={() => setSheet(null)} />
         ) : null
       }
     />
   );
 }
 
+const startEntry = (claim: boolean): Omit<SheetEntry, "onPress"> => ({
+  key: "start",
+  icon: "agent",
+  label: claim ? "Claim & start" : "Start",
+  detail: `${claim ? "Assigns you, then an agent" : "An agent"} reads the issue and proposes a plan`,
+});
+
 function IssueSheet({
   issue,
   claim,
-  agent,
+  sessions,
   fetchDetails,
   onStart,
   onClaim,
   onOpenAgent,
+  onMenu,
   onCloseIssue,
   onClose,
-}: Pick<Props, "fetchDetails" | "onStart" | "onClaim" | "onOpenAgent"> & { issue: NextUpIssue; claim: boolean; agent?: AgentSummary; onCloseIssue: () => void; onClose: () => void }) {
+}: Pick<Props, "fetchDetails" | "onStart" | "onClaim" | "onOpenAgent"> & {
+  issue: NextUpIssue;
+  claim: boolean;
+  sessions: AgentSummary[];
+  onMenu: (anchor: Anchor | undefined) => void;
+  onCloseIssue: () => void;
+  onClose: () => void;
+}) {
   const details = useQuery({
     queryKey: ["attention-span", "details", issue.key, false],
     queryFn: () => fetchDetails({ subject: { kind: "issue", repo: issue.repo, number: issue.number }, checks: false }),
@@ -302,15 +340,9 @@ function IssueSheet({
   });
   const close = (then: () => void) => () => (onClose(), then());
   const entries: SheetEntry[] = [
-    agent
-      ? { key: "start", icon: "agent", label: "Continue", detail: "Opens the session started on this issue", onPress: close(() => onOpenAgent(agent.id)) }
-      : {
-          key: "start",
-          icon: "agent",
-          label: claim ? "Claim & start" : "Start",
-          detail: `${claim ? "Assigns you, then an agent" : "An agent"} reads the issue and proposes a plan`,
-          onPress: close(() => onStart(issue, claim)),
-        },
+    sessions.length
+      ? openSessionEntry(sessions, (agentId) => close(() => onOpenAgent(agentId))(), { label: "Session choices", onPress: onMenu })
+      : { ...startEntry(claim), onPress: close(() => onStart(issue, claim)), menu: { label: `${claim ? "Claim & start" : "Start"} choices`, onPress: onMenu } },
     claim
       ? { key: "claim", icon: "claim", label: "Claim", detail: "Assigns you, without starting a session", onPress: close(() => onClaim(issue, true)) }
       : { key: "unclaim", icon: "unclaim", label: "Unclaim", detail: "Removes you as assignee, so it goes back to Unclaimed", onPress: close(() => onClaim(issue, false)) },

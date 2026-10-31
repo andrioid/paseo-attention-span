@@ -33,7 +33,7 @@ Everything else is set in `~/.config/paseo-attention-span/config.json` on the da
 
 ## Actions
 
-Each item has a main action, and opening it shows every action with a line saying what it will do. An agent icon marks the actions that start an agent session; the rest change GitHub right away.
+Each item has a main action, and opening it shows every action with a line saying what it will do. While an item has an agent session, its main action opens that session; its ▾ picks another session or starts a new one. An agent icon marks the actions that start an agent session; the rest change GitHub right away.
 
 Agent sessions run in a worktree of the registered project, or resume the existing workspace for that branch:
 

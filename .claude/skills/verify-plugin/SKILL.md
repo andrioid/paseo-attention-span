@@ -31,17 +31,19 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | File | Shows |
    |---|---|
    | `<layout>-doing.png` | Doing tab, every section |
-   | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, then Continue fix and Rerun failed jobs with the made-up failing checks, then the fetched size |
+   | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, then Open session with its ▾ and Rerun failed jobs with the made-up failing checks, then the fetched size |
+   | `<layout>-doing-session-menu.png` | The first card's Open session ▾ (a bottom sheet on phones): its session, ticked, then Start a new one with Fix CI and Fix CI with options… |
+   | `<layout>-doing-issue-session-menu.png` | The same menu from the sheet of "Supplier prices are a week out of date": two sessions, the one that needs you ticked first, then Rebase stack with and without options |
    | `<layout>-doing-issue-sheet.png` | The sheet of the issue "Supplier prices are a week out of date": Open issue on GitHub, and its stack of PRs, each with a GitHub icon and opening that PR |
    | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, rendered as Markdown, both ticked |
-   | `<layout>-doing-options.png` | The Options modal from "Address comments with options…" in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
+   | `<layout>-doing-options.png` | The Options modal from "Address comments with options…", under the ▾ of Address comments in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
    | `<layout>-doing-merge-confirm.png` | The Merge confirmation on "Dialog focus returns to the trigger" |
    | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
    | `<layout>-history.png` | History by week, with Reviewed toggles |
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
-   | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint. Each card shows the GitHub button instead of ⋯, its sheet's only action |
+   | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint. Each card shows the GitHub button instead of ⋯, its sheet's only action, except "Upgrade the payment SDK": its agent is working, so it shows Open session ▾ and ⋯ |
    | `<layout>-next-up.png` | Assigned, then all of Unclaimed. Cards: a tinted type badge, "acme/shop #160 · 40d old" (my own `me/tool` shows as "tool #165"), tags (P0 Urgent warm, P1 High accent), "PR by alice" on #161 |
-   | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": Continue, Unclaim, Open issue on GitHub |
+   | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": Open session with its ▾, Unclaim, Open issue on GitHub |
    | `<layout>-next-up-close.png` | Close issue on "Merge the two import commands": the confirm bar with a comment field, Completed, Not planned, Cancel |
    | `<layout>-next-up-filter.png` | The Filter sheet: Source (My repos, acme) and Scope checkboxes, Backend ticked |
    | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope; the button reads "Filter · 1" |
