@@ -9,6 +9,8 @@ const layouts = [
   { name: "desktop", viewport: { width: 1280, height: 3000 }, isMobile: false },
   { name: "phone", viewport: { width: 390, height: 4200 }, isMobile: true },
 ];
+// No screenshot is taller than a desktop monitor; what's below the fold isn't worth reading.
+const MAX_HEIGHT = 1080;
 const schemes = ["dark", "light"];
 const tabs = ["Doing", "History", "Waiting", "Next up"];
 // Each layout starts without the code-repo mapping that an earlier layout saved.
@@ -22,6 +24,8 @@ for (const layout of layouts) {
   for (const colorScheme of schemes) {
     const prefix = `${layout.name}-${colorScheme}`;
     if (filter && !prefix.includes(filter)) continue;
+    // The top of the page, at most a desktop monitor tall.
+    const fold = () => ({ x: 0, y: 0, width: layout.viewport.width, height: Math.min(layout.viewport.height, MAX_HEIGHT) });
     const page = await browser.newPage({ viewport: layout.viewport, isMobile: layout.isMobile, hasTouch: layout.isMobile, colorScheme });
     // Clip to where the plugin's scrolled content ends, so tall viewports don't leave empty space.
     const shot = async (name) => {
@@ -31,10 +35,10 @@ for (const layout of layouts) {
         return node?.firstElementChild?.getBoundingClientRect().bottom ?? 0;
       });
       const { width, height } = page.viewportSize();
-      const clip = bottom > 0 ? { x: 0, y: 0, width, height: Math.min(height, Math.ceil(bottom) + 16) } : undefined;
+      const clip = { x: 0, y: 0, width, height: Math.min(height, MAX_HEIGHT, bottom > 0 ? Math.ceil(bottom) + 16 : MAX_HEIGHT) };
       await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip });
     };
-    // A sheet or modal sits over the whole page: clip to a band around it, so the thumbnail stays readable.
+    // A sheet, modal or menu sits over the whole page: clip to a band around it, so the thumbnail stays readable.
     // On phones it's a bottom sheet: a draggable container, taller than what it shows, so end at its last text.
     const modalShot = async (name) => {
       const box = layout.isMobile
@@ -45,10 +49,10 @@ for (const layout of layouts) {
             const y = sheet.getBoundingClientRect().y;
             return { y, height: Math.max(...texts(sheet).map((n) => n.getBoundingClientRect().bottom)) - y };
           })
-        : await page.getByRole("dialog").last().boundingBox().catch(() => null);
+        : await page.getByRole("dialog").or(page.getByRole("menu")).last().boundingBox().catch(() => null);
       const { width, height } = page.viewportSize();
       const y = box ? Math.max(0, Math.floor(box.y) - 80) : 0;
-      const clip = box ? { x: 0, y, width, height: Math.min(height - y, Math.ceil(box.height) + 160) } : undefined;
+      const clip = { x: 0, y, width, height: Math.min(height - y, MAX_HEIGHT, box ? Math.ceil(box.height) + 160 : MAX_HEIGHT) };
       await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip });
     };
     try {
@@ -57,7 +61,7 @@ for (const layout of layouts) {
       await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
       await page.waitForTimeout(3000);
       // Screens without tabs: the top of the page is enough.
-      const top = (name) => page.screenshot({ path: `/out/${prefix}-${name}.png`, clip: { x: 0, y: 0, width: layout.viewport.width, height: layout.isMobile ? 1100 : 900 } });
+      const top = (name) => page.screenshot({ path: `/out/${prefix}-${name}.png`, clip: { ...fold(), height: layout.isMobile ? 1080 : 900 } });
       // On phones the sidebar sits behind a menu button. Wait for the entry first, so a slow load doesn't look like a phone.
       const openAttention = async () => {
         const entry = page.getByText("Attention", { exact: true }).first();
@@ -93,6 +97,16 @@ for (const layout of layouts) {
         if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
+      // The ▾ menu: a backdrop to tap on desktop, a bottom sheet with × on phones.
+      const closeMenu = async () => {
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(300);
+        if (await page.getByText("Start a new one").last().isVisible()) {
+          if (layout.isMobile) await page.getByRole("button", { name: /close/i }).last().click();
+          else await page.getByRole("button", { name: "Close menu" }).click();
+        }
+        await page.waitForTimeout(300);
+      };
       await doing();
       await openSheet("Show delivery dates on the order page");
       await modalShot("doing-sheet");
@@ -108,7 +122,22 @@ for (const layout of layouts) {
       await modalShot("doing-acknowledge");
       await page.getByRole("button", { name: "Cancel" }).last().click();
       await page.waitForTimeout(300);
+      // A card's ▾ lists its sessions, then starting a new one [SES-03].
+      await page.getByRole("button", { name: "Session choices" }).first().click();
+      await page.getByText("Start a new one").last().waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("doing-session-menu");
+      await closeMenu();
+      // Two sessions on one item: one on the issue, one on its PR. The sheet's split entry opens the same menu.
+      await openSheet("Supplier prices are a week out of date");
+      await page.getByRole("button", { name: "Session choices" }).last().click();
+      await page.getByText("Start a new one").last().waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("doing-issue-session-menu");
+      await closeMenu();
+      // Without a session, a session action's ▾ offers it with options [SES-02].
       await openSheet("Harden the upload endpoint");
+      await page.getByRole("button", { name: "Address comments choices" }).last().click();
       await page.getByRole("button", { name: "Address comments with options…" }).last().click();
       await page.getByText("Agent profile").waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
@@ -188,12 +217,12 @@ for (const layout of layouts) {
       await page.getByText("me/tool", { exact: true }).waitFor({ timeout: 10000 });
       await page.getByText("My repos", { exact: true }).scrollIntoViewIfNeeded();
       await page.waitForTimeout(500);
-      await page.screenshot({ path: `/out/${prefix}-settings-next-up.png` });
+      await page.screenshot({ path: `/out/${prefix}-settings-next-up.png`, clip: fold() });
       // Only orgs I belong to, minus those already added [NXT-04].
       await page.getByText("Choose…", { exact: true }).click();
       await page.getByText("globex", { exact: true }).waitFor({ timeout: 10000 });
       await page.waitForTimeout(400);
-      await page.screenshot({ path: `/out/${prefix}-settings-org-picker.png` });
+      await page.screenshot({ path: `/out/${prefix}-settings-org-picker.png`, clip: fold() });
       await page.keyboard.press("Escape");
       const withSource = JSON.parse(await readFile(configPath, "utf8"));
       if (withSource.nextUp?.repos?.[0] !== "me/tool" || !withSource.nextUp.mine || !withSource.nextUp.priority) throw new Error(`config.json after adding to Next up: ${JSON.stringify(withSource)}`);
@@ -229,14 +258,14 @@ for (const layout of layouts) {
       await page.waitForTimeout(3000);
       const saved = JSON.parse(await readFile(configPath, "utf8"));
       if (saved.codeRepos?.["acme/issues"] !== "acme/shop" || saved.orgs?.[0] !== "acme") throw new Error(`config.json after picking: ${JSON.stringify(saved)}`);
-      await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-after.png` });
+      await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-after.png`, clip: fold() });
       // Still on the list means the start stopped later (no agent provider in here); press it again.
       if (await page.getByRole("tab", { name: /Next up/ }).first().isVisible()) {
         await nextUp();
         await startIssue();
         await page.waitForTimeout(3000);
         if (await picker.isVisible()) throw new Error("asked where the code lives a second time");
-        await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-again.png` });
+        await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-again.png`, clip: fold() });
       }
       console.log(`ok ${prefix}`);
     } catch (error) {
