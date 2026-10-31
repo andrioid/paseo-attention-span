@@ -20,6 +20,12 @@ export function linkList(items: { title: string; url: string }[]): string {
   return items.map(({ title, url }) => `- [${title.replace(/[[\]\\]/g, "\\$&")}](${url})`).join("\n");
 }
 
+// Where a card's item lives: "app" for my own repos, "acme/app" for anyone else's, so same-named repos don't blur [ATT-05, NXT-10].
+export function repoLabel(repo: string, login: string | null): string {
+  const [owner, name] = repo.split("/");
+  return name && login && owner.toLowerCase() === login.toLowerCase() ? name : repo;
+}
+
 // An issue field value for a card: "🐟 Tiny (< 4h)" -> "Tiny", "🏕P2 Medium" -> "P2 Medium" [NXT-10]. The sheet keeps the full value.
 export function shortValue(value: string): string {
   return (

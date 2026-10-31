@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
-import { ago, linkList } from "../shared/format";
+import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { blocks } from "../shared/setup";
@@ -306,6 +306,7 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     agents: view.fixtureAgents ?? agents.data ?? {},
     busy,
     config: view.config,
+    login: view.login,
     fetchContext,
     fetchDetails,
     defaultBranch,
@@ -426,6 +427,7 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
             saveSources({ sources }).catch((error) => toast.error(`Saving the filter failed: ${(error as Error).message}`));
           }}
           agents={actions.agents}
+          login={view.login}
           busy={busy}
           fetchDetails={fetchDetails}
           onOpenAgent={openAgent}
@@ -475,6 +477,7 @@ interface Actions {
   agents: Record<string, AgentSummary>;
   busy: ReadonlySet<string>;
   config: AttentionConfig;
+  login: string | null;
   fetchContext: FetchContext;
   fetchDetails: FetchDetails;
   defaultBranch: DefaultBranch;
@@ -531,7 +534,7 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       mark={stateMark(item)}
       title={item.title}
       meta={{
-        place: `${item.repo.split("/")[1]} #${item.number}`,
+        place: `${repoLabel(item.repo, actions.login)} #${item.number}`,
         when: item.closedAt ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago` : undefined,
         signals: chips,
       }}

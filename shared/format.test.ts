@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkList, shortValue } from "./format";
+import { linkList, repoLabel, shortValue } from "./format";
 
 describe("linkList", () => {
   it("HIS-03: lists each item as a Markdown link, one per line", () => {
@@ -23,5 +23,19 @@ describe("shortValue", () => {
     expect(shortValue("🕵 Full-stack")).toBe("Full-stack");
     expect(shortValue("Backend")).toBe("Backend");
     expect(shortValue("🔥")).toBe("🔥"); // nothing left: keep it as it is
+  });
+});
+
+describe("repoLabel", () => {
+  it("ATT-05: drops the owner from my own repos", () => {
+    expect(repoLabel("andrioid/app", "Andrioid")).toBe("app");
+  });
+
+  it("ATT-05: keeps the owner for an organization's or someone else's repo", () => {
+    expect(repoLabel("acme/app", "andrioid")).toBe("acme/app");
+  });
+
+  it("ATT-05: keeps the owner when the login isn't known yet", () => {
+    expect(repoLabel("andrioid/app", null)).toBe("andrioid/app");
   });
 });

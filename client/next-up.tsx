@@ -2,7 +2,7 @@ import { openExternalUrl } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { ago, shortValue } from "../shared/format";
+import { ago, repoLabel, shortValue } from "../shared/format";
 import type { AgentSummary, Chip, IssueCloseReason, NextUpIssue, UnclaimedSource } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
 import type { IconName } from "./icons";
@@ -26,6 +26,8 @@ interface Props {
   selectedSources: string[];
   onSelectSources: (sources: string[]) => void;
   agents: Record<string, AgentSummary>;
+  // Mine, so my repos show without the owner.
+  login: string | null;
   busy: ReadonlySet<string>;
   fetchDetails: FetchDetails;
   onStart: (issue: NextUpIssue, claim: boolean) => void;
@@ -225,7 +227,7 @@ function Tags({ issue }: { issue: NextUpIssue }) {
 const TYPE_TONES: Record<string, Tone> = { bug: "bad", feature: "good", epic: "good", debt: "warn" };
 
 // Its main action and ⋯; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
-function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
+function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
   const [open, setOpen] = useState(false);
   // Closing asks first, with the reason and an optional comment [NXT-11, SAFE-01].
   const [closing, setClosing] = useState(false);
@@ -239,7 +241,7 @@ function IssueRow({ issue, claim, first, agents, busy, fetchDetails, onStart, on
       mark={{ icon: TYPE_ICONS[type] ?? "issue", tone: TYPE_TONES[type] ?? "neutral" }}
       title={issue.title}
       accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
-      meta={{ place: `${issue.repo.split("/")[1]} #${issue.number}`, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
+      meta={{ place: `${repoLabel(issue.repo, login)} #${issue.number}`, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
       extra={<Tags issue={issue} />}
       onOpen={() => setOpen(true)}
       busy={busy.has(issue.key)}
