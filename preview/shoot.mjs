@@ -268,6 +268,31 @@ for (const layout of layouts) {
         if (await picker.isVisible()) throw new Error("asked where the code lives a second time");
         await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-again.png`, clip: fold() });
       }
+      // Last, because it changes the app's hosts: a second host, offline, so the sidebar and settings name this one [REACH-02].
+      await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
+      const hosts = await page.evaluate(() => {
+        const key = "@paseo:daemon-registry";
+        const list = JSON.parse(localStorage.getItem(key) ?? "[]");
+        if (!list.length) return list;
+        const other = JSON.parse(JSON.stringify(list[0]).replaceAll("127.0.0.1:6767", "127.0.0.1:1").replaceAll("localhost:6767", "127.0.0.1:1"));
+        list.push({ ...other, serverId: "srv_preview_second_host", label: "Second host" });
+        localStorage.setItem(key, JSON.stringify(list));
+        return list;
+      });
+      if (hosts.length < 2) throw new Error(`no host to copy in @paseo:daemon-registry: ${JSON.stringify(hosts)}`);
+      await page.reload({ waitUntil: "networkidle" });
+      await page.waitForTimeout(3000);
+      // The sidebar while it's open: on phones it closes once the entry is pressed.
+      const entry = page.getByText("Attention", { exact: true }).first();
+      await entry.waitFor({ state: "attached", timeout: 15000 });
+      if (!(await entry.isVisible())) await page.getByRole("button", { name: /menu|sidebar/i }).first().click().catch(() => {});
+      await page.waitForTimeout(1500); // the count arrives
+      await page.screenshot({ path: `/out/${prefix}-hosts-sidebar.png`, clip: { ...fold(), width: layout.isMobile ? layout.viewport.width : 320, height: 400 } });
+      await entry.click();
+      await page.getByRole("button", { name: "Attention Span settings" }).click();
+      await page.getByText(/^These settings are for /).waitFor({ timeout: 15000 });
+      await page.waitForTimeout(800);
+      await top("hosts-settings");
       console.log(`ok ${prefix}`);
     } catch (error) {
       failed = true;

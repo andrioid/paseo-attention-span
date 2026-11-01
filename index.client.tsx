@@ -1,15 +1,18 @@
 import type { PluginClientContext, PluginScreenProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { AttentionScreen } from "./client/attention-screen";
 import { CoverageSettings } from "./client/coverage-settings";
 import { useAttention } from "./client/data";
+import { useHostLabel } from "./client/host";
 import { ICONS } from "./client/icons";
 
-// The count, visible from anywhere in Paseo [ATT-09].
-function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProps) {
+// The count, visible from anywhere in Paseo [ATT-09], beside the host's name when there are several [REACH-02].
+function SidebarItem({ theme, host, currentScreen, openScreen }: PluginSidebarItemProps) {
   const { data } = useAttention();
+  const hostLabel = useHostLabel(host);
   const count = data?.count ?? 0;
+  const muted = { color: theme.colors.foregroundMuted, fontSize: 12 };
   return (
     <SidebarRow
       icon={ICONS.logo}
@@ -17,8 +20,15 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
       active={currentScreen?.screenId === "attention"}
       onPress={() => openScreen({ screenId: "attention" })}
       trailing={
-        count > 0 ? (
-          <Text style={{ color: data?.feeds.live.error ? theme.colors.statusDanger : theme.colors.foregroundMuted, fontSize: 12 }}>{count}</Text>
+        hostLabel || count > 0 ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            {hostLabel ? (
+              <Text style={[muted, { maxWidth: 120 }]} numberOfLines={1}>
+                {hostLabel}
+              </Text>
+            ) : null}
+            {count > 0 ? <Text style={[muted, data?.feeds.live.error ? { color: theme.colors.statusDanger } : null]}>{count}</Text> : null}
+          </View>
         ) : undefined
       }
     />
