@@ -1,7 +1,7 @@
-import { type Attention, type Chip, type Item, type NextUpIssue, type Person, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
+import { type Attention, type Chip, type Item, type NextUpIssue, type Person, type Reviewer, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode } from "./github-types";
+import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
 import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions } from "./rules";
@@ -75,6 +75,12 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       ciPending: ci === "PENDING" || ci === "EXPECTED",
       conflicts: pr.mergeable === "CONFLICTING",
       approved: pr.reviewDecision === "APPROVED",
+      // A request counts even when its reviewer can't be seen, like a team I can't read; so does any review [PRS-12].
+      asked:
+        pr.reviewRequests.nodes.length > 0 ||
+        pr.latestReviews.nodes.some((review) => isOther(review.author)) ||
+        pr.reviewDecision === "APPROVED" ||
+        pr.reviewDecision === "CHANGES_REQUESTED",
       autoMerge: !!pr.autoMergeRequest,
       threadsOnMe: onMe.length,
       botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
@@ -120,6 +126,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       behindBy: s.behindBy,
       stacked: stack.length > 1,
       stale: s.stale,
+      asked: s.asked,
       replied,
       tooLong: daysSince(waitingSince, now) >= config.waitingTooLongDays,
     };
@@ -127,9 +134,11 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const section = pick(PR_RULES, flags) ?? "wait_review";
     const rule = PR_RULES[section];
     const actions = rule?.actions?.(flags) ?? [];
+    // Who it waits on: the reviewer who asked for changes, else who's requested, else who reviewed.
     const reviewer = replied
       ? bottom.latestReviews.nodes.find((review) => review.state === "CHANGES_REQUESTED")?.author
-      : bottom.reviewRequests.nodes.find((request) => request.requestedReviewer?.login)?.requestedReviewer;
+      : (bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer)).find(Boolean) ??
+        bottom.latestReviews.nodes.find((review) => isOther(review.author))?.author);
 
     const chips: Chip[] = [];
     if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
@@ -167,6 +176,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const chips: Chip[] = [];
     if (stack.length > 1) chips.push(chip(`${index + 1}/${stack.length}`));
     if (s.approved) chips.push(chip("approved", "good"));
+    if (!pr.isDraft && !s.asked) chips.push(chip("no reviewer", "warn"));
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
     if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName));
@@ -290,6 +300,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   return {
     login: data.viewer.login,
     items,
+    reviewers: recentReviewers(mine, isOther),
     // Assigned issues not already in progress come before unclaimed ones [NXT-06].
     assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
     unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
@@ -313,6 +324,33 @@ export function classifyHistory(data: HistoryResult): Item[] {
   }
   for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });
   return items.sort(order);
+}
+
+// A requested person, or a team by its "org/slug".
+function requested(reviewer: RequestedReviewer | null | undefined): Actor | undefined {
+  const login = reviewer?.login ?? reviewer?.combinedSlug;
+  return login ? { __typename: reviewer!.__typename, login, avatarUrl: reviewer!.avatarUrl } : undefined;
+}
+
+// Who reviewed or was asked on my PRs, per repo, latest review first, for the reviewer picker [PRS-12]. Bots aren't offered.
+function recentReviewers(mine: PullRequestNode[], isOther: (actor: Actor | null | undefined) => boolean): Record<string, Reviewer[]> {
+  const byRepo: Record<string, (Reviewer & { at: string })[]> = {};
+  for (const pr of mine) {
+    const list = (byRepo[pr.repository.nameWithOwner] ??= []);
+    const add = (actor: Actor | undefined, at: string) => {
+      if (!actor || !isOther(actor) || actor.__typename === "Bot") return;
+      const seen = list.find((reviewer) => reviewer.login === actor.login);
+      if (seen) seen.at = seen.at > at ? seen.at : at;
+      else list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", at });
+    };
+    for (const review of pr.latestReviews.nodes) add(review.author ?? undefined, review.submittedAt ?? EPOCH);
+    for (const request of pr.reviewRequests.nodes) add(requested(request.requestedReviewer), EPOCH);
+  }
+  return Object.fromEntries(
+    Object.entries(byRepo)
+      .filter(([, list]) => list.length > 0)
+      .map(([repo, list]) => [repo, list.sort((a, b) => b.at.localeCompare(a.at)).map(({ at: _, ...reviewer }) => reviewer)]),
+  );
 }
 
 // An item with nothing to act on: waiting, history.

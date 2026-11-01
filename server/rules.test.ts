@@ -4,7 +4,7 @@ import { pick, PR_RULES, type PrState } from "./rules";
 
 // Every combination of a PR's flags, so no state falls through to an accidental default.
 function prStates(): PrState[] {
-  const flags = ["draft", "ciFailing", "ciPending", "changes", "approved", "conflicts", "blocked", "autoMerge", "autoMergeAllowed", "stacked", "stale", "replied", "tooLong"] as const;
+  const flags = ["draft", "ciFailing", "ciPending", "changes", "approved", "conflicts", "blocked", "autoMerge", "autoMergeAllowed", "stacked", "stale", "asked", "replied", "tooLong"] as const;
   const states: PrState[] = [];
   for (let bits = 0; bits < 1 << flags.length; bits++) {
     const s = Object.fromEntries(flags.map((flag, index) => [flag, !!(bits & (1 << index))])) as Omit<PrState, "waiting" | "behindBy">;

@@ -56,7 +56,7 @@ const FRAGMENTS: Record<string, string> = {
   assignees(first: 10) { nodes { login } }
   closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
-  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { ...author } } } }
+  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { ...author } ... on Team { __typename combinedSlug avatarUrl } } } }
   latestReviews(first: 10) { nodes { author { ...author } state submittedAt } }
   reviewThreads(last: 30) {
     nodes {

@@ -9,6 +9,13 @@ export interface Actor {
   avatarUrl?: string;
 }
 
+export interface RequestedReviewer {
+  __typename?: string; // "User", "Team", ...
+  login?: string;
+  combinedSlug?: string;
+  avatarUrl?: string;
+}
+
 export interface Comment {
   id?: string;
   author: Actor | null;
@@ -44,7 +51,8 @@ export interface PullRequestNode {
   assignees: Nodes<{ login: string }>;
   closingIssuesReferences: Nodes<{ number: number; title: string; url: string; repository: Repo }>;
   commits: Nodes<{ commit: { committedDate: string; statusCheckRollup: { state: string } | null } }>;
-  reviewRequests: Nodes<{ requestedReviewer: Actor | null }>;
+  // A person, or a team by its "org/slug"; null when it can't be seen.
+  reviewRequests: Nodes<{ requestedReviewer: RequestedReviewer | null }>;
   latestReviews: Nodes<{ author: Actor | null; state: string; submittedAt: string | null }>;
   reviewThreads: Nodes<ReviewThread>;
   comments: Nodes<Comment>;

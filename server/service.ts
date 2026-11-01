@@ -1,4 +1,4 @@
-import type { Attention, AttentionView, FeedId, FeedStatus, Item } from "../shared/attention";
+import type { Attention, AttentionView, FeedId, FeedStatus, Item, Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, githubRepoOf } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
@@ -114,6 +114,12 @@ export class AttentionService {
   async setSources(sources: string[]): Promise<void> {
     this.state.sources = sources;
     await this.save();
+  }
+
+  // Who reviewed or was asked on my PRs in a repo, from the last fetch, and who I am [PRS-12].
+  reviewers(repo: string): { recent: Reviewer[]; login: string | null } {
+    const live = this.state.live?.attention;
+    return { recent: live?.reviewers?.[repo] ?? [], login: live?.login ?? null };
   }
 
   // A change on GitHub from one tap [SAFE-01], answered with the list as it is after it.

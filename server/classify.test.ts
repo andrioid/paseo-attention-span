@@ -15,6 +15,7 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]> } = {}) {
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
+const asked = { nodes: [{ requestedReviewer: bob }] };
 const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => SECTIONS[item.section].tab === "doing");
 
 describe("doing", () => {
@@ -41,7 +42,8 @@ describe("doing", () => {
 
   it("PRS-02: lists unresolved threads waiting on me; a thread I answered waits on the reviewer", () => {
     expect(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(alice, 1)] } })] }).items[0]).toMatchObject({ section: "changes", actions: ["address"] });
-    expect(sections(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(me, 1)] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
+    const reviewed = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1.5) }] };
+    expect(sections(run({ mine: [pr(3, { latestReviews: reviewed, reviewThreads: { nodes: [thread(me, 1)] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
   });
 
   it("PRS-02: requested changes followed by a new push wait on that reviewer", () => {
@@ -82,7 +84,7 @@ describe("ready to merge and behind base", () => {
   });
 
   it("UPS-07: being behind alone never puts a PR in Doing", () => {
-    expect(sections(run({ mine: [pr(1)] }, { [key(1)]: 400 }).items)).toEqual([[1, "wait_review"]]);
+    expect(sections(run({ mine: [pr(1, { reviewRequests: asked })] }, { [key(1)]: 400 }).items)).toEqual([[1, "wait_review"]]);
   });
 
   it("UPS-01: a PR that conflicts with its base needs upstream, with Rebase", () => {
@@ -187,7 +189,7 @@ describe("issues", () => {
 describe("waiting", () => {
   it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
     const attention = run({
-      mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: bob }] } }), pr(2, {}, "PENDING")],
+      mine: [pr(1, { reviewRequests: asked }), pr(2, { reviewRequests: asked }, "PENDING")],
       commented: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
@@ -195,9 +197,57 @@ describe("waiting", () => {
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
-    const attention = run({ mine: [pr(1, { commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
+    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
     expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
+  });
+});
+
+describe("needs a reviewer", () => {
+  it("PRS-12: a PR nobody was asked to review is mine, with Merge once CI passed on the current base", () => {
+    const [item] = run({ mine: [pr(1)] }).items;
+    expect(item).toMatchObject({ section: "needs_reviewer", actions: ["request_review", "merge"], person: undefined });
+    expect(run({ mine: [pr(1)] }, { [key(1)]: 2 }).items[0].actions).toEqual(["request_review"]);
+  });
+
+  it("PRS-12: stays mine while CI runs, and never waits too long", () => {
+    expect(run({ mine: [pr(1, {}, "PENDING")] }).items[0]).toMatchObject({ section: "needs_reviewer", actions: ["request_review"] });
+    expect(chips(run({ mine: [pr(1, {}, "PENDING")] }).items[0])).toContain("CI running");
+    expect(sections(run({ mine: [pr(1, { commits: commit("SUCCESS", 9) })] }).items)).toEqual([[1, "needs_reviewer"]]);
+  });
+
+  it("WAI-01, PRS-12: a request to a team waits for review, showing the team", () => {
+    const team = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: "https://avatars/t" };
+    const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: team }] } })] }).items;
+    expect(item).toMatchObject({ section: "wait_review", person: { login: "acme/frontend", avatarUrl: "https://avatars/t" } });
+  });
+
+  it("PRS-12: a request I can't see the reviewer of still counts", () => {
+    expect(run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0].section).toBe("wait_review");
+  });
+
+  it("WAI-01: after a review that only commented, it keeps waiting on that reviewer", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(1, { latestReviews })] }).items[0]).toMatchObject({ section: "wait_review", person: { login: "alice" } });
+  });
+
+  it("PRS-12: my own review doesn't count as asking", () => {
+    const latestReviews = { nodes: [{ author: me, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(1, { latestReviews })] }).items[0].section).toBe("needs_reviewer");
+  });
+
+  it("ATT-04, PRS-12: the bottom PR decides; a PR above it nobody was asked on says so", () => {
+    const top = pr(11, { baseRefName: "branch-10" });
+    const [item] = run({ mine: [pr(10, { reviewRequests: asked }), top] }).items;
+    expect(item.section).toBe("wait_review");
+    expect(chips(item.children[0])).toContain("no reviewer");
+  });
+
+  it("PRS-12: offers who reviewed or was asked on my PRs in the repo, latest first, without me or bots", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(3) }, { author: me, state: "COMMENTED", submittedAt: daysAgo(1) }, { author: bot, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    const later = { nodes: [{ author: bob, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    const attention = run({ mine: [pr(1, { latestReviews }), pr(2, { latestReviews: later, reviewRequests: { nodes: [{ requestedReviewer: alice }] } })] });
+    expect(attention.reviewers?.[REPO]?.map((reviewer) => reviewer.login)).toEqual(["bob", "alice"]);
   });
 });
 
@@ -410,7 +460,7 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const attention = classify({ data, details, config, now: NOW });
-    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(14);
+    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(15);
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 6]);
   });

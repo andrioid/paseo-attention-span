@@ -56,7 +56,8 @@ functional:
       PRS-08: have my pull requests that are assigned to someone else left out; so that pull requests I've handed over don't count as mine.
       PRS-09: rerun the failed checks of a pull request without an agent, after seeing which failed and whether they were rerun before; so that flaky checks don't cost a session.
       PRS-10: turn on auto-merge for an approved pull request whose checks are still running; so that it ships without me waiting for CI.
-      PRS-11: mark a healthy draft ready for review in one step; so that finished drafts reach reviewers.
+      PRS-11: mark a healthy draft ready for review and pick its reviewers in one step; so that finished drafts reach reviewers.
+      PRS-12: see my pull requests that nobody has been asked to review, and ask people or teams from there, or merge where nobody reviews; so that work doesn't sit as "waiting" when nobody has the next move.
   upstream:
     As a developer, I can:
       UPS-01: see my pull requests that conflict with their base; so that pull requests needing updates from upstream are easy to fix.
@@ -90,7 +91,7 @@ functional:
       NXT-11: close an issue from Next up as completed or not planned, with an optional comment, and undo it; so that work that's done or won't be done stops being suggested.
   waiting:
     As a developer, I can:
-      WAI-01: see my work that is waiting on others, grouped by what it waits for; so that I know that work is tracked.
+      WAI-01: see my work that is waiting on others, grouped by what it waits for, where a pull request waits for review only once someone has been asked; so that I know that work is tracked.
   history:
     As a developer, I can:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.

@@ -6,7 +6,7 @@ There are four tabs. I think of them as a little story: what needs me now, what'
 
 ## Doing: what needs you now
 
-This is the one you'll live in. It's split by reason: someone's waiting for your reply, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, it's waited too long, or it's one of your drafts.
+This is the one you'll live in. It's split by reason: someone's waiting for your reply, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, it's waited too long, nobody's been asked to review it yet, or it's one of your drafts.
 
 ![Doing](docs/screenshots/desktop-dark-doing.png)
 
@@ -25,9 +25,11 @@ Some actions start an agent session:
 - **Rebase** rebases a PR or a whole stack, and pushes only if there were no conflicts.
 - **Refresh draft** rebases a stale draft and tells you what it still needs. Every draft I've abandoned thanks it.
 
-The rest change GitHub right away: rerun failed jobs, update a branch, mark a draft ready, turn on auto-merge, merge, close a draft. Merge and close ask first. **Acknowledge** reacts 👍 to the comments waiting on you, but only after showing you them in full. Thumbs-upping things you haven't read is a hobby, not a workflow.
+The rest change GitHub right away: rerun failed jobs, update a branch, mark a draft ready, request a review, turn on auto-merge, merge, close a draft. Merge and close ask first. **Acknowledge** reacts 👍 to the comments waiting on you, but only after showing you them in full. Thumbs-upping things you haven't read is a hobby, not a workflow.
 
 ![Acknowledge](docs/screenshots/desktop-dark-doing-acknowledge.png)
+
+A PR you opened isn't waiting on anyone until you've asked someone to review it, so it stays here under **Needs a reviewer**. **Request review** offers GitHub's suggestions, whoever reviewed your other PRs in that repo, and its teams, or you can type a name. Marking a draft ready asks the same question. If nobody reviews in that repo, **Merge** is right there once CI is green.
 
 Anything that's sat in Waiting for more than three days moves back here under **Waiting too long**. Usually that means someone forgot, and sometimes the someone is me.
 
@@ -35,7 +37,7 @@ Anything that's sat in Waiting for more than three days moves back here under **
 
 ## Waiting: out of your hands
 
-This is your work where someone else has the next move: waiting for review, waiting for the reviewer to look again, CI running, or a question you asked that nobody's answered yet.
+This is your work where someone else has the next move: waiting for the review you asked for, waiting for the reviewer to look again, CI running, or a question you asked that nobody's answered yet.
 
 There's nothing to do here. That's the point. It's tracked, so you can stop holding it in your head.
 

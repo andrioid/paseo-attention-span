@@ -40,6 +40,8 @@ export interface PrState {
   behindBy: number;
   stacked: boolean;
   stale: boolean;
+  // Someone has the next move: a person or team is requested, or someone else has reviewed [PRS-12].
+  asked: boolean;
   // I replied to the reviewer, or pushed after changes were requested.
   replied: boolean;
   // Waited at least waitingTooLongDays [ATT-11].
@@ -72,12 +74,17 @@ export const PR_RULES: Rules<PrState> = {
   ready: { when: (s) => !s.draft && s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending), actions: readyActions },
   upstream: { when: (s) => !s.draft && s.blocked, actions: () => ["rebase"] },
   // After too long it's mine to nudge [ATT-11].
-  too_long: { when: (s) => !s.draft && s.tooLong, label: waitingFor },
+  too_long: { when: (s) => !s.draft && s.asked && s.tooLong, label: waitingFor },
+  // Mine until I ask someone, even while CI runs. Merge, for repos where nobody reviews, once CI passed on the current base [PRS-12, PRS-04].
+  needs_reviewer: {
+    when: (s) => !s.draft && !s.asked,
+    actions: (s) => (!s.ciFailing && !s.ciPending && s.behindBy === 0 ? ["request_review", "merge"] : ["request_review"]),
+  },
   drafts: { when: (s) => s.draft, actions: draftActions },
   // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01].
-  wait_review: { when: (s) => !s.draft && !s.ciPending && !s.replied, label: waitingFor },
-  wait_reviewer: { when: (s) => !s.draft && !s.ciPending && s.replied, label: waitingFor },
-  wait_ci: { when: (s) => !s.draft && s.ciPending, label: waitingFor },
+  wait_review: { when: (s) => !s.draft && s.asked && !s.ciPending && !s.replied, label: waitingFor },
+  wait_reviewer: { when: (s) => !s.draft && s.asked && !s.ciPending && s.replied, label: waitingFor },
+  wait_ci: { when: (s) => !s.draft && s.asked && s.ciPending, label: waitingFor },
 };
 
 // ---- Issues where I commented [WAI-01] ----

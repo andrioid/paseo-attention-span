@@ -7,7 +7,8 @@ export type TabId = "history" | "doing" | "waiting" | "next";
 export type FeedId = "live" | "history";
 export const TAB_FEED: Record<TabId, FeedId> = { history: "history", doing: "live", waiting: "live", next: "live" };
 
-// Within a tab, top to bottom; an item appears once, under its most urgent reason [ATT-02].
+// Within a tab, top to bottom. The order is also the priority: an item appears once, under the first section whose rule
+// holds, its most urgent reason [ATT-02]. Moving a line here changes which section wins.
 export const SECTIONS = {
   reply: { tab: "doing", title: "Waiting for your reply" },
   review: { tab: "doing", title: "Review requested" },
@@ -16,6 +17,8 @@ export const SECTIONS = {
   ready: { tab: "doing", title: "Ready to merge" },
   upstream: { tab: "doing", title: "Needs upstream" },
   too_long: { tab: "doing", title: "Waiting too long" },
+  // Nobody has the next move until I ask someone [PRS-12].
+  needs_reviewer: { tab: "doing", title: "Needs a reviewer" },
   drafts: { tab: "doing", title: "My drafts" },
   // [WAI-01]
   wait_review: { tab: "waiting", title: "Waiting for review" },
@@ -41,6 +44,7 @@ export type ActionId =
   | "rebase"
   | "refresh"
   | "ready"
+  | "request_review"
   | "automerge"
   | "merge"
   | "close"
@@ -73,6 +77,24 @@ export interface WaitingComment {
   body: string;
   createdAt: string;
   url?: string;
+}
+
+// Someone who can be asked to review: a person, or a team as "org/slug" [PRS-12].
+export interface Reviewer {
+  login: string;
+  avatarUrl?: string;
+  team: boolean;
+}
+
+// What the reviewer picker offers, fetched when it opens [PRS-12, GH-01].
+export interface ReviewerChoices {
+  // GitHub's suggestions, from who touched the changed code.
+  suggested: Reviewer[];
+  // Who reviewed or was asked on my other PRs in the repo.
+  recent: Reviewer[];
+  teams: Reviewer[];
+  // Why teams are missing, when GitHub wouldn't list them.
+  teamsNote?: string;
 }
 
 // GitHub's reasons for closing an issue that Next up offers [NXT-11].
@@ -175,6 +197,8 @@ export interface Attention {
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom?: UnclaimedSource;
+  // Repo -> who reviewed or was asked on my PRs there, latest first, for the reviewer picker [PRS-12].
+  reviewers?: Record<string, Reviewer[]>;
 }
 
 export interface Section {

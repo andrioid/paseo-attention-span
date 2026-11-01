@@ -48,7 +48,7 @@ The tabs tell the story of my work, left to right: what I finished, what needs m
 |---|---|
 | History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. The copy icon on a week's heading copies its finished items, not the reviews, as a Markdown list of links; an issue and the PRs that closed it are one line, linking the issue [HIS-03]. |
 | Doing | The sections below |
-| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (with the requested reviewer), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where I commented last) |
+| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (once a person or team is asked, or someone else has reviewed; with the requested reviewer or team), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where I commented last) |
 | Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
 
 Every card in every tab is the same component, `CardRow` in `client/card.tsx` [ATT-05]: a tinted mark for what it is, a title of at most two lines, then "repo #number", when it happened and signal chips, then content only some lists have (tags, a quote, a stack line), and its actions: on the right on desktop, labelled under the text on phones. A change on GitHub asks first in a `ConfirmBar` on the card [SAFE-01]. Tabs differ only in what they pass in: each maps its data to the card's mark, meta, actions and slots. Marks and signals take a tone, never a raw theme color, because some themes draw `accent` close to white.
@@ -61,7 +61,7 @@ Screenshots, from the preview's made-up data, are in [screenshots/](screenshots/
 
 ### Doing
 
-Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
+Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `server/rules.ts` has one rule per section: a guard over the flags of the item's state (CI, review, mergeability, draft). The first section in `SECTIONS` order whose rule holds wins, so that order is the priority. A test checks that every combination of a PR's flags lands in a section.
 
 | Section | Shows |
 |---|---|
@@ -72,6 +72,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
 | Ready to merge | My approved, mergeable PRs [PRS-03] |
 | Needs upstream | My PRs with conflicts or an out-of-sync stack [UPS-01, UPS-02] |
 | Waiting too long | Waiting items older than `waitingTooLongDays` (default 3); it's mine to nudge [ATT-11] |
+| Needs a reviewer | My PRs nobody has been asked to review, even while CI runs [PRS-12] |
 | My drafts | My drafts, with their own state tags [PRS-05, PRS-06] |
 
 ## Rules
@@ -111,7 +112,9 @@ An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every act
 | Rerun failed jobs | CI failing, in the sheet | `gh run rerun --failed` for each failing GitHub Actions run of the PR, or of every PR in its stack. The sheet names the failed checks and how often they were rerun (`gh api …/runs/<id>`), fetched when it opens. Other status checks can't be rerun from here [PRS-09]. |
 | Update branch | Behind with no conflicts, not stacked | `updatePullRequestBranch` (rebase) [UPS-03] |
 | Rebase / Refresh *(agent)* | Conflicts, any stacked PR, stale draft | Agent rebases the PR, or the whole stack with `git rebase --update-refs` [UPS-04]. A clean rebase is pushed with `--force-with-lease` [UPS-06]. After resolving conflicts it stops and explains, and pushes only when I reply "push" in its session [UPS-05]. |
-| Ready for review | My draft with CI not failing, no conflicts, not stale | `markPullRequestReadyForReview` on the bottom PR; Undo converts it back to a draft [PRS-11] |
+| Ready for review | My draft with CI not failing, no conflicts, not stale | `markPullRequestReadyForReview` on the bottom PR, then the reviewer picker below; Skip leaves it in *Needs a reviewer*. Undo converts it back to a draft [PRS-11] |
+| Request review | Needs a reviewer | Opens a picker: GitHub's `suggestedReviewers` and the repo's teams (`gh api repos/<repo>/teams`), fetched when it opens; people who reviewed or were asked on my other PRs in the repo, from the last refresh; or any login or `org/team` typed in. Without `read:org` the teams are replaced by a line saying so. Sends `POST …/pulls/<n>/requested_reviewers`, which keeps who's already asked; Undo withdraws them with `DELETE` [PRS-12] |
+| Merge (no reviewer) | Needs a reviewer, CI green on the current base | As Merge below, for repos where nobody reviews [PRS-12] |
 | Auto-merge | Approved, CI running, and the repo allows auto-merge | `enablePullRequestAutoMerge` with the merge method below and the head I saw. The PR then waits in *CI running* with an "auto-merge on" chip; Undo turns it off [PRS-10] |
 | Merge | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04]. Asks first. |
 | Close draft | Stale draft, in the sheet | `closePullRequest`, with a comment only if I write one [SAFE-01]. Asks first. |

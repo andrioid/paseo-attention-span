@@ -1,4 +1,4 @@
-import type { IssueCloseReason, Target } from "../shared/attention";
+import type { IssueCloseReason, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import { graphql, runGh } from "./gh";
 
 // Each action runs only from an explicit tap in Attention Span [SAFE-01].
@@ -101,4 +101,34 @@ export async function rerunFailed(repo: string, runIds: number[]): Promise<void>
     const { code, stderr } = await runGh(["run", "rerun", String(id), "--failed", "--repo", repo]);
     if (code !== 0) throw new Error(stderr.trim() || `Rerunning run ${id} failed`);
   }
+}
+
+// Who the reviewer picker suggests: GitHub's picks for the PR and the repo's teams; recent reviewers come from the last fetch [PRS-12].
+// Fetched when the picker opens, not in every refresh [GH-01]. My own repos have no teams, so they aren't asked for.
+export async function reviewerChoices(target: Target, recent: Reviewer[], login: string | null): Promise<ReviewerChoices> {
+  const isMe = (name: string) => !!login && name.toLowerCase() === login.toLowerCase();
+  const [owner] = target.repo.split("/");
+  const [suggested, teams] = await Promise.all([
+    graphql<{ node: { suggestedReviewers: { reviewer: { login: string; avatarUrl?: string } }[] } | null }>(
+      `query($id: ID!) { node(id: $id) { ... on PullRequest { suggestedReviewers { reviewer { login avatarUrl(size: 64) } } } } }`,
+      { id: pullRequestId(target) },
+    ),
+    isMe(owner) ? Promise.resolve({ code: 0, stdout: "[]", stderr: "" }) : runGh(["api", `repos/${target.repo}/teams?per_page=100`]),
+  ]);
+  const people = (suggested.node?.suggestedReviewers ?? []).map(({ reviewer }) => ({ login: reviewer.login, avatarUrl: reviewer.avatarUrl, team: false })).filter((r) => !isMe(r.login));
+  if (teams.code !== 0) return { suggested: people, recent, teams: [], teamsNote: "Teams need the read:org scope (gh auth refresh -s read:org)" };
+  const list = JSON.parse(teams.stdout) as { slug: string }[];
+  return { suggested: people, recent, teams: list.map((team) => ({ login: `${owner}/${team.slug}`, team: true })) };
+}
+
+// Ask people and teams ("org/slug") to review, keeping who's already asked; or withdraw them for Undo [PRS-12, ATT-14].
+export async function requestReviewers(target: Target, reviewers: string[], on: boolean): Promise<void> {
+  if (reviewers.length === 0) return;
+  const body = {
+    reviewers: reviewers.filter((name) => !name.includes("/")),
+    team_reviewers: reviewers.filter((name) => name.includes("/")).map((name) => name.split("/")[1]),
+  };
+  const path = `repos/${target.repo}/pulls/${target.number}/requested_reviewers`;
+  const { code, stderr } = await runGh(["api", "--method", on ? "POST" : "DELETE", path, "--input", "-"], JSON.stringify(body));
+  if (code !== 0) throw new Error(stderr.trim() || (on ? "Requesting reviewers failed" : "Withdrawing the request failed"));
 }

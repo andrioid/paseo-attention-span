@@ -1,4 +1,4 @@
-import type { AgentSummary, ItemDetails, Target } from "../shared/attention";
+import type { AgentSummary, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_ATTENTION_SPAN_FIXTURE=1).
@@ -18,6 +18,7 @@ export const me: Actor = { __typename: "User", login: "me" };
 export const alice: Actor = { __typename: "User", login: "alice", avatarUrl: avatar(1) };
 export const bob: Actor = { __typename: "User", login: "bob", avatarUrl: avatar(2) };
 export const bot: Actor = { __typename: "Bot", login: "reviewbot" };
+const frontend = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: avatar(9919) };
 
 export function builders(now: Date) {
   const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
@@ -140,11 +141,12 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(106, { title: "Keyboard navigation for calendar cards", isDraft: true, baseRefName: "a11y-1", headRefName: "a11y-2", reviewDecision: "APPROVED" }),
       pr(107, { title: "Calendar: jump between weeks with keys", isDraft: true, baseRefName: "a11y-2", headRefName: "a11y-3" }, "FAILURE"),
       pr(108, { title: "Company-scoped database layer", mergeable: "CONFLICTING" }),
-      pr(109, { title: "Store uploads locally in development", commits: commit("SUCCESS", 6) }),
+      // Asked a team, and nobody has looked for 6 days [ATT-11, PRS-12].
+      pr(109, { title: "Store uploads locally in development", reviewRequests: { nodes: [{ requestedReviewer: frontend }] }, commits: commit("SUCCESS", 6) }),
       pr(110, { title: "requirements.yaml for the shop", isDraft: true, updatedAt: daysAgo(64) }),
       pr(111, { title: "Faster product search", reviewRequests: { nodes: [{ requestedReviewer: bob }] }, commits: commit("SUCCESS", 0.3) }),
       pr(112, { title: "Translate the checkout emails", reviewDecision: "CHANGES_REQUESTED", latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] }, commits: commit("SUCCESS", 1) }),
-      pr(113, { title: "Upgrade the payment SDK" }, "PENDING"),
+      pr(113, { title: "Upgrade the payment SDK", reviewRequests: { nodes: [{ requestedReviewer: bob }] } }, "PENDING"),
       pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED" }),
       pr(115, { title: "Split the settings page into tabs", isDraft: true, mergeable: "CONFLICTING" }),
       pr(116, { title: "Try a faster PDF renderer", isDraft: true }, "FAILURE"),
@@ -153,6 +155,11 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(119, { title: "Show stock levels on product cards", isDraft: true }),
       pr(122, { title: "Round VAT per line, not per invoice", reviewDecision: "APPROVED", repository: { ...repository, autoMergeAllowed: true } }, "PENDING"),
       pr(123, { title: "Archive offers older than a year", reviewDecision: "APPROVED", autoMergeRequest: { enabledAt: daysAgo(0.1) } }, "PENDING"),
+      // Nobody asked yet: green, so Merge too; and one still in CI [PRS-12].
+      pr(124, { title: "Export invoices as CSV", commits: commit("SUCCESS", 0.5) }),
+      pr(125, { title: "Log slow database queries" }, "PENDING"),
+      // A review that only commented keeps it waiting on that reviewer.
+      pr(126, { title: "Tidy the admin menu", latestReviews: { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(0.8) }] } }),
     ],
     reviews: [pr(120, { title: "Add a status page", author: bob }), pr(121, { title: "Rework the cart totals", author: alice })],
     mentions: [
@@ -228,6 +235,15 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
 ];
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
+
+// What the reviewer picker offers in previews: GitHub's suggestion, who reviewed my other PRs, and a team [PRS-12].
+export function fixtureReviewerChoices(recent: Reviewer[]): ReviewerChoices {
+  return {
+    suggested: [{ login: "carol", avatarUrl: avatar(3), team: false }],
+    recent,
+    teams: [{ login: "acme/frontend", team: true }, { login: "acme/payments", team: true }],
+  };
+}
 
 // What a sheet shows, made up: a size, the linked issue, and failing checks for Rerun.
 export function fixtureDetails(subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean): ItemDetails {
