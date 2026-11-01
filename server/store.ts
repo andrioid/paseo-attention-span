@@ -85,8 +85,8 @@ export function saveNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine
 }
 
 // Whether replies on others' threads count without a tag, from settings [ATT-17].
-export function saveImplicitReplies(implicitReplies: boolean): Promise<AttentionConfig> {
-  return updateConfig((file) => ({ ...file, implicitReplies }));
+export function saveFollowThreads(followThreads: boolean): Promise<AttentionConfig> {
+  return updateConfig((file) => ({ ...file, followThreads }));
 }
 
 // What the screen writes changes only its own keys; everything else in the file is kept as it is.

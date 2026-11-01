@@ -26,7 +26,7 @@ export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.obj
 // Where Next up looks, chosen in settings [NXT-04]; orgs are picked from the ones I belong to.
 export const setNextUpSources = defineRpc({ name: "config.set-next-up", input: z.object({ mine: z.boolean(), orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
 // Replies on others' threads without a tag, from settings [ATT-17].
-export const setImplicitReplies = defineRpc({ name: "config.set-implicit-replies", input: z.object({ on: z.boolean() }), output: done });
+export const setFollowThreads = defineRpc({ name: "config.set-follow-threads", input: z.object({ on: z.boolean() }), output: done });
 export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), output: z.object({ orgs: z.array(z.string()) }) });
 // Remember the scopes and sources ticked in Next up's filter [NXT-03, NXT-09].
 export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });

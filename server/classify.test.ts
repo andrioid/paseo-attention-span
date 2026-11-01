@@ -16,7 +16,7 @@ function run(parts: Parameters<typeof search>[0], behind: Record<string, number>
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
-const implicit = AttentionConfig.parse({ orgs: ["acme"], implicitReplies: true });
+const follow = AttentionConfig.parse({ orgs: ["acme"], followThreads: true });
 const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => SECTIONS[item.section].tab === "doing");
 
 describe("doing", () => {
@@ -226,12 +226,12 @@ describe("answered", () => {
   it("ATT-17: replies on someone else's thread that don't tag me are left out, unless I allow it", () => {
     const thread = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 0.5)]);
     expect(run({ involved: [thread] }).items).toEqual([]);
-    expect(run({ involved: [thread] }, {}, { config: implicit }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
+    expect(run({ involved: [thread] }, {}, { config: follow }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
   });
 
   it("ATT-16, ATT-17: even when allowed, only comments from the last mentionDays count", () => {
-    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }, {}, { config: implicit }).items).toEqual([]);
-    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }, {}, { config: implicit }).items;
+    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }, {}, { config: follow }).items).toEqual([]);
+    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }, {}, { config: follow }).items;
     expect(item).toMatchObject({ section: "answered", person: { login: "bob" } });
     expect(item.person?.comments?.map((c) => c.author)).toEqual(["bob"]);
   });

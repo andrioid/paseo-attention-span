@@ -363,7 +363,7 @@ export function threadState(
   thread: IssueNode,
   me: string,
   now: Date,
-  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays" | "implicitReplies">,
+  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays" | "followThreads">,
 ): { flags: IssueState; person?: Person; mine: string } | null {
   const authored = thread.author?.login.toLowerCase() === me;
   const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
@@ -375,7 +375,7 @@ export function threadState(
   const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
   const flags: IssueState = {
     authored,
-    implicit: config.implicitReplies,
+    follow: config.followThreads,
     // Opening a thread isn't asking a question; a comment is.
     mineLast: index >= 0 && after.length === 0,
     answered: unread.length > 0,

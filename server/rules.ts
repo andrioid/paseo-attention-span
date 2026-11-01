@@ -95,8 +95,8 @@ export const PR_RULES: Rules<PrState> = {
 export interface IssueState {
   // I opened it.
   authored: boolean;
-  // Replies on others' threads count without a tag: the implicitReplies setting [ATT-17].
-  implicit: boolean;
+  // I follow threads I've commented on, so replies there count without a tag: the followThreads setting [ATT-17].
+  follow: boolean;
   // My comment is the last one from a person; bots don't count [MEN-05].
   mineLast: boolean;
   // A person commented after me (or after I opened it) within mentionDays, and I haven't 👍'd it [MEN-02].
@@ -112,7 +112,7 @@ export interface IssueState {
 export const ISSUE_RULES: Rules<IssueState> = {
   // A recent comment after mine, without mentioning me: mine until I reply, 👍 it or dismiss it [ATT-16].
   // On someone else's thread only when I've allowed replies without a tag [ATT-17].
-  answered: { when: (s) => s.answered && (s.authored || s.implicit) },
+  answered: { when: (s) => s.answered && (s.authored || s.follow) },
   // Nobody answered for too long: mine to nudge. On my own issues however long ago, on others' only while fresh [ATT-11].
   too_long: { when: (s) => s.mineLast && (s.authored || s.fresh) && s.tooLong, label: () => "waiting for an answer" },
   wait_answer: { when: (s) => s.mineLast && (s.authored || s.fresh) },

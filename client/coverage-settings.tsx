@@ -29,7 +29,7 @@ function Coverage() {
   const fetchCoverage = useRpc(rpc.getCoverage);
   const save = useRpc(rpc.setCoverage);
   const saveNextUp = useRpc(rpc.setNextUpSources);
-  const saveImplicit = useRpc(rpc.setImplicitReplies);
+  const saveFollow = useRpc(rpc.setFollowThreads);
   const coverage = useQuery({ queryKey: COVERAGE_QUERY_KEY, queryFn: () => fetchCoverage({}) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ function Coverage() {
         </SettingsCard>
       </SettingsSection>
     );
-  const { orgs, repos, nextUp, implicitReplies } = coverage.data;
+  const { orgs, repos, nextUp, followThreads } = coverage.data;
   // A file that doesn't parse is left for the person who edited it.
   if (coverage.data.error)
     return (
@@ -110,17 +110,17 @@ function Coverage() {
         <SettingsSection title="Replies">
           <SettingsCard>
             <SettingsSwitch
-              label="Allow implicit tagging in replies"
-              value={implicitReplies}
+              label="Follow threads I've commented on"
+              value={followThreads}
               disabled={saving}
-              onValueChange={(on) => void write({ implicitReplies: on }, () => saveImplicit({ on }))}
+              onValueChange={(on) => void write({ followThreads: on }, () => saveFollow({ on }))}
             />
           </SettingsCard>
         </SettingsSection>
         <Text style={[styles.muted, CAPTION]}>
-          {implicitReplies
-            ? "A recent reply after yours on someone else's thread counts as tagging you."
-            : "On other people's threads, only replies that tag you show. Your own issues and PRs show any recent reply."}
+          {followThreads
+            ? "Recent replies after your comment on other people's threads show under Answered."
+            : "Only tags bring other people's threads back. Your own issues and PRs show any recent reply."}
         </Text>
       </View>
       <View style={{ gap: 4 }}>
