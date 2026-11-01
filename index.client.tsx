@@ -4,6 +4,7 @@ import { Text, View } from "react-native";
 import { AttentionScreen } from "./client/attention-screen";
 import { CoverageSettings } from "./client/coverage-settings";
 import { useAttention } from "./client/data";
+import { returnFromFeedback } from "./client/feedback";
 import { useHostLabel } from "./client/host";
 import { ICONS } from "./client/icons";
 
@@ -42,5 +43,5 @@ export default function contribute(client: PluginClientContext) {
   const Screen = (props: PluginScreenProps) => <AttentionScreen {...props} openSettings={() => client.openSettings("coverage")} />;
   client.addScreen({ id: "attention", title: "Attention Span", Component: Screen });
   client.addSidebarHeaderItem({ id: "attention", title: "Attention Span", Component: SidebarItem });
-  return () => {};
+  return returnFromFeedback(client);
 }

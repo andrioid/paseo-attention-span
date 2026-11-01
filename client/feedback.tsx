@@ -1,4 +1,4 @@
-import { openExternalUrl, usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { openExternalUrl, type PluginClientContext, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -97,11 +97,11 @@ export function FeedbackAsk({
     setStarting(true);
     try {
       const info = await fetchInfo({});
-      const prompt = feedbackPrompt(kind, { ...screen, message, dir: info.hasSource ? info.cwd : null, version: info.version });
+      const prompt = feedbackPrompt(kind, { ...screen, message, dir: info.source, version: info.version });
       const { agent } = await resolveAgentConfig(paseo, "start", config);
       const workspace = await paseo.workspaces.open({ cwd: info.cwd });
       const created = await workspace.agents.create({
-        config: { ...agent, modeId: (await readOnlyMode(paseo, agent.provider)) ?? agent.modeId },
+        config: agent,
         title: `Feedback: ${KINDS[kind].label}`,
         prompt,
         labels: { [LABEL]: "1", [ITEM_LABEL]: feedbackItemKey(kind), [KIND_LABEL]: `feedback-${kind}` },
@@ -142,10 +142,32 @@ export function FeedbackAsk({
   );
 }
 
-// The provider's plan or read-only mode, where it has one, so the session reads but doesn't change files.
-async function readOnlyMode(paseo: ReturnType<typeof usePaseo>, provider: string): Promise<string | undefined> {
-  const name = provider.split("/")[0];
-  const snapshot = await paseo.providers.snapshot();
-  const modes = snapshot.entries.find((entry) => entry.provider === name)?.modes ?? [];
-  return modes.find((mode) => /plan|read.?only/i.test(`${mode.id} ${mode.label}`))?.id;
+const isFeedbackDir = (dir: string | undefined) => !!dir && /attention-span-feedback-[^/]*$/.test(dir);
+
+// Once a feedback session posts, it archives its scratch workspace; that would leave "workspace unavailable"
+// on screen, so open Attention Span instead [FB-01]. A removed workspace comes with only its ID,
+// so the feedback ones are remembered as they're seen.
+export function returnFromFeedback(client: Pick<PluginClientContext, "paseo" | "openScreen">): () => void {
+  const feedback = new Set<string>();
+  const remember = (workspace: { id: string; workspaceDirectory?: string; projectRootPath?: string }) => {
+    if (isFeedbackDir(workspace.workspaceDirectory ?? workspace.projectRootPath)) feedback.add(workspace.id);
+  };
+  let stop = () => {};
+  try {
+    stop = client.paseo.workspaces.subscribe((update) => {
+      if (update.kind === "upsert") remember(update.workspace);
+      else if (update.kind === "remove" && feedback.delete(update.id)) client.openScreen({ screenId: "attention" });
+    });
+  } catch {
+    // An older host without workspace updates: the screen just stays where it is.
+  }
+  // Listing with a subscription is what makes the daemon stream workspace updates.
+  const listing = Promise.resolve().then(() => client.paseo.workspaces.list({ subscribe: {} })).then(
+    (result) => (result.entries.forEach(remember), result.subscription),
+    () => null,
+  );
+  return () => {
+    stop();
+    void listing.then((subscription) => subscription?.release());
+  };
 }

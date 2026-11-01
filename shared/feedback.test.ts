@@ -35,6 +35,12 @@ describe("feedbackPrompt", () => {
     expect(feedbackPrompt("idea", input)).toContain("Proposed requirement");
   });
 
+  it("FB-01: reads the source by its path, and closes by archiving its own workspace", () => {
+    const prompt = feedbackPrompt("idea", input);
+    expect(prompt).toContain("The plugin's installed source is at /home/me/plugins/attention-span");
+    expect(prompt).toContain("archive its workspace with Paseo's archive_workspace tool");
+  });
+
   it("FB-01: reads the source from GitHub when it isn't on the host", () => {
     expect(feedbackPrompt("idea", { ...input, dir: null })).toContain("gh api repos/andrioid/paseo-attention-span/contents/<path>");
   });

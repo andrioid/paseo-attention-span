@@ -1,17 +1,17 @@
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { FeedbackInfo } from "../shared/feedback";
 
 const run = promisify(execFile);
 
-// Where this plugin is installed and which version it is [FB-01].
+// A scratch directory for the session, where this plugin is installed and which version it is [FB-01].
 export async function feedbackInfo(): Promise<FeedbackInfo> {
-  const dir = pluginDir();
-  if (!dir) return { cwd: homedir(), hasSource: false, version: null };
-  return { cwd: dir, hasSource: true, version: await version(dir) };
+  const cwd = mkdtempSync(join(tmpdir(), "attention-span-feedback-"));
+  const source = pluginDir();
+  return { cwd, source, version: source ? await version(source) : null };
 }
 
 // Paseo evaluates the server as a bundle, so it has no file location of its own (import.meta.url is undefined).
