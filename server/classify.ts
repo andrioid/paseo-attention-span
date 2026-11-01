@@ -1,9 +1,10 @@
-import { type ActionId, type Attention, type Chip, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/attention";
+import { type Attention, type Chip, type Item, type NextUpIssue, type Person, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode } from "./github-types";
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
+import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions } from "./rules";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
@@ -103,44 +104,35 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const outOfSync = stack.slice(1).some((pr) => state(pr).outOfSync || state(pr).conflicts);
     const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
     const base = bottom.baseRefName;
-
-    const reasons: SectionId[] = [];
-    if (waiting) reasons.push("reply");
-    if (bottom.isDraft) reasons.push("drafts");
-    else {
-      if (s.ciFailing) reasons.push("ci");
-      if (s.changes) reasons.push("changes");
-      // Auto-merge waiting on CI leaves nothing for me to do.
-      if (s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending)) reasons.push("ready");
-      if (s.conflicts || outOfSync) reasons.push("upstream");
-    }
-    // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01].
     const waitingSince = latest(s.lastCommitAt, s.repliedAt);
     const replied = s.repliedAt > EPOCH || bottom.reviewDecision === "CHANGES_REQUESTED";
-    const waitingFor: SectionId = s.ciPending ? "wait_ci" : replied ? "wait_reviewer" : "wait_review";
-    const waitingLabel = { wait_ci: "CI running", wait_reviewer: "waiting for the reviewer", wait_review: "waiting for review" }[waitingFor as "wait_ci"];
-    // After too long it's mine to nudge [ATT-11].
-    if (!bottom.isDraft && reasons.length === 0) reasons.push(daysSince(waitingSince, now) >= config.waitingTooLongDays ? "too_long" : waitingFor);
-    const section = reasons.sort((a, b) => rank(a) - rank(b))[0];
+    const flags: PrState = {
+      draft: bottom.isDraft,
+      waiting,
+      ciFailing: s.ciFailing,
+      ciPending: s.ciPending,
+      changes: s.changes,
+      approved: s.approved,
+      conflicts: s.conflicts,
+      blocked: s.conflicts || outOfSync,
+      autoMerge: s.autoMerge,
+      autoMergeAllowed: !!bottom.repository.autoMergeAllowed,
+      behindBy: s.behindBy,
+      stacked: stack.length > 1,
+      stale: s.stale,
+      replied,
+      tooLong: daysSince(waitingSince, now) >= config.waitingTooLongDays,
+    };
+    // Every PR of mine has a section; the tests check that a rule always holds.
+    const section = pick(PR_RULES, flags) ?? "wait_review";
+    const rule = PR_RULES[section];
+    const actions = rule?.actions?.(flags) ?? [];
     const reviewer = replied
       ? bottom.latestReviews.nodes.find((review) => review.state === "CHANGES_REQUESTED")?.author
       : bottom.reviewRequests.nodes.find((request) => request.requestedReviewer?.login)?.requestedReviewer;
 
-    const actions: ActionId[] = [];
-    if (section === "reply") actions.push(...replyActions(waiting));
-    // Rerun is for flaky checks, without an agent [PRS-09].
-    if (section === "ci") actions.push("fix", "rerun");
-    if (section === "changes") actions.push("address");
-    // Merge only once CI passed against the current base [PRS-04, UPS-07]. Until then, auto-merge if the repo allows it [PRS-10].
-    if (section === "ready")
-      actions.push(...(s.behindBy > 0 ? [stack.length === 1 ? "update" : "rebase"] : s.ciPending ? (bottom.repository.autoMergeAllowed ? ["automerge"] : []) : ["merge"]) as ActionId[]);
-    if (section === "upstream") actions.push("rebase");
-    // A stale draft offers Refresh and Close instead of Rebase [PRS-07]; a healthy one, Ready for review [PRS-11].
-    if (section === "drafts")
-      actions.push(...(s.stale ? ["refresh", "close"] : s.conflicts || outOfSync ? ["rebase"] : s.ciFailing ? ["fix", "rerun"] : ["ready"]) as ActionId[]);
-
     const chips: Chip[] = [];
-    if (section === "too_long") chips.push(chip(`${waitingLabel} · ${ago(waitingSince, now)}`, "warn"));
+    if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
     if (s.autoMerge) chips.push(chip("auto-merge on", "good"));
@@ -159,11 +151,11 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       actions,
       chips,
       // How long it has waited, shown only while it sits in a Waiting section.
-      waited: section.startsWith("wait_") ? chip(ago(waitingSince, now)) : undefined,
+      waited: SECTIONS[section].tab === "waiting" ? chip(ago(waitingSince, now)) : undefined,
       person:
         waiting ??
         (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
-        (section === "too_long" || section.startsWith("wait_") ? person(reviewer, waitingSince) : undefined),
+        (section === "too_long" || SECTIONS[section].tab === "waiting" ? person(reviewer, waitingSince) : undefined),
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since),
     };
   });
@@ -285,13 +277,13 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   for (const issue of compact(data.commented.nodes)) {
     const key = prKey(issue);
     const last = issue.comments.nodes.at(-1);
-    if (listed.has(key) || !last || !isMe(last.author)) continue;
+    if (listed.has(key) || !last) continue;
+    const flags: IssueState = { mineLast: isMe(last.author), tooLong: daysSince(last.createdAt, now) >= config.waitingTooLongDays };
+    const section = pick(ISSUE_RULES, flags);
+    if (!section) continue;
     listed.add(key);
-    const tooLong = daysSince(last.createdAt, now) >= config.waitingTooLongDays;
-    items.push({
-      ...plain(issue, "issue", tooLong ? "too_long" : "wait_answer"),
-      chips: [chip(tooLong ? `waiting for an answer · ${ago(last.createdAt, now)}` : ago(last.createdAt, now), tooLong ? "warn" : "neutral")],
-    });
+    const label = ISSUE_RULES[section]?.label?.(flags);
+    items.push({ ...plain(issue, "issue", section), chips: [label ? chip(`${label} · ${ago(last.createdAt, now)}`, "warn") : chip(ago(last.createdAt, now))] });
   }
 
   items.sort(order);
@@ -392,11 +384,6 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
 }
 
 // ---- Mentions still waiting on me [MEN-01..06] ----
-
-// Reply on GitHub, or 👍 the waiting comments, which clears them too [MEN-02].
-function replyActions(waiting: Person | undefined): ActionId[] {
-  return waiting?.comments?.length ? ["reply", "acknowledge"] : ["reply"];
-}
 
 function mentionsMe(body: string | undefined, me: string): number {
   if (!body) return -1;

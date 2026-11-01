@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Item } from "../shared/attention";
+import { type Item, SECTIONS } from "../shared/attention";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
@@ -15,7 +15,7 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]> } = {}) {
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
-const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => !item.section.startsWith("wait_"));
+const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => SECTIONS[item.section].tab === "doing");
 
 describe("doing", () => {
   it("ATT-02: puts each item once, under its most urgent reason, in section order", () => {

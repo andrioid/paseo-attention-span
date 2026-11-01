@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, type NextUpIssue, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -517,7 +517,7 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
   const open = () => setSheet("item");
   const copy = useCopy();
-  const history = item.section === "done" || item.section === "reviewed";
+  const history = SECTIONS[item.section].tab === "history";
 
   function perform(action: ActionId) {
     setSheet(null);
@@ -676,7 +676,7 @@ function sheetEntries(
   { onPerform, onMenu, onClose }: SheetHandlers,
   details?: { data?: { failing: FailingChecks[] }; isLoading: boolean },
 ): SheetEntry[] {
-  const inDoing = !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed";
+  const inDoing = SECTIONS[item.section].tab === "doing";
   const close = (then: () => void) => () => (onClose(), then());
 
   // An open session first; starting another is in its menu [SES-03].
