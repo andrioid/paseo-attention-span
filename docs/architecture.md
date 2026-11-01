@@ -25,6 +25,7 @@ flowchart LR
 
 - **Paseo plugin**, installed per daemon.
   - Client: one screen and a sidebar header item. React Native primitives only, so it works on phone and desktop [REACH-01].
+  - With more than one host in the app, each host runs its own copy, with its own `gh` login, `config.json` and `state.json`. The sidebar row shows the host's name beside the count, and settings say which host they're for and its GitHub login. The app doesn't say which other hosts have the plugin, so any second host counts [REACH-02].
   - Server: RPC handlers for fetching and for GitHub actions.
 - **GitHub access** goes through the host's existing `gh` login. The plugin stores no token [SEC-01].
 - **Setup checklist** [SET-01]: when a refresh fails, the screen asks the server what setup needs (`gh api user` for whether `gh` is there and who it's signed in as, and whether `config.json` parses). If `gh` is missing or signed out, or the file is broken, a checklist takes the tabs' place. Each line says how to fix it, and Check again refreshes. It also lists what's covered, the Paseo projects with a GitHub remote, and which profile sessions will use. Other failures, like a network error, stay a red line above the tabs.

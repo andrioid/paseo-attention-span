@@ -111,6 +111,7 @@ non_functional:
     PRIV-01: may keep a local copy of the GitHub data it shows; so that Attention Span shows instantly after a restart.
   reach:
     REACH-01: works in Paseo on both phone and desktop; so that I can triage from anywhere.
+    REACH-02: names its host in the sidebar and in settings when Paseo knows more than one host; so that I can tell which host's list and config.json I'm looking at.
   freshness:
     FRESH-01: stays current without me refreshing it; so that its count can be trusted.
     FRESH-02: shows what I just did on GitHub right away, and keeps showing it until GitHub's search catches up; so that I never refresh to see it.

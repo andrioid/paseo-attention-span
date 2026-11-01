@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 import * as rpc from "../shared/rpc";
 import type { ConfigStatus, CoverageKind } from "../shared/setup";
-import { VIEW_QUERY_KEY } from "./data";
+import { useAttention, VIEW_QUERY_KEY } from "./data";
+import { useHostLabel } from "./host";
 import { Button, StylesProvider, useStyles } from "./ui";
 
 const COVERAGE_QUERY_KEY = ["attention-span", "coverage"] as const;
@@ -15,12 +16,24 @@ const CAPTION = { marginTop: -24, marginBottom: 16 };
 
 // Settings → Plugins → Attention Span: which orgs and repos the lists cover, and where Next up looks,
 // saved to config.json [SRC-02, NXT-04].
-export function CoverageSettings({ theme, layout }: PluginSurfaceProps) {
+export function CoverageSettings({ theme, layout, host }: PluginSurfaceProps) {
   return (
     <StylesProvider theme={theme} compact={layout.compact}>
-      <Coverage />
+      <View style={{ gap: 24 }}>
+        <HostLine host={host} />
+        <Coverage />
+      </View>
     </StylesProvider>
   );
+}
+
+// Which host's config.json this edits, and its GitHub account, when there are several hosts [REACH-02].
+function HostLine({ host }: Pick<PluginSurfaceProps, "host">) {
+  const styles = useStyles();
+  const label = useHostLabel(host);
+  const login = useAttention().data?.login;
+  if (!label) return null;
+  return <Text style={styles.muted}>{login ? `These settings are for ${label}, signed in to GitHub as @${login}.` : `These settings are for ${label}.`}</Text>;
 }
 
 function Coverage() {
