@@ -99,6 +99,9 @@ functional:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.
       HIS-02: see pull requests I reviewed that merged, apart from my own work; so that I can tell others what I got done.
       HIS-03: copy a week's finished work as a Markdown list of links; so that reporting progress is one paste.
+  feedback:
+    As a developer, I can:
+      FB-01: tell the Attention Span project what to improve from the bottom of any tab, picking a problem, an idea or that I like it, with an agent that asks until it's clear, checks it against what's planned and already reported, and files it as an issue or a discussion, saying which and why, only once I approve the draft; so that feedback costs a minute and lands where it can be acted on or talked through.
 
 non_functional:
   github_usage:
@@ -115,6 +118,10 @@ non_functional:
   freshness:
     FRESH-01: stays current without me refreshing it; so that its count can be trusted.
     FRESH-02: shows what I just did on GitHub right away, and keeps showing it until GitHub's search catches up; so that I never refresh to see it.
+
+deferred:
+  feedback:
+    "[deferred] FB-02": see replies to discussions I started, the way I see replies on my own issues; so that an answer in a discussion doesn't get lost.
 
 docs:
   CONTRIBUTING.md: how to check, preview the screens in isolation, and install — read before changing UI or tooling.

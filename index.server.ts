@@ -16,6 +16,7 @@ import {
 } from "./server/actions";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
+import { feedbackInfo } from "./server/feedback";
 import { FIXTURE_CONTEXT, fixtureDetails, fixtureReviewerChoices } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
@@ -69,6 +70,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.rerunFailed, ({ key, repo, runIds }) => act(key, () => rerunFailed(repo, runIds), chip("rerunning")));
   server.handle(rpc.itemDetails, ({ subject, target, checks }) => (FIXTURE ? Promise.resolve(fixtureDetails(subject, target, checks)) : itemDetails(subject, target, checks)));
   server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: FIXTURE ? "main" : await defaultBranch(repo) }));
+  server.handle(rpc.feedbackInfo, () => feedbackInfo());
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: FIXTURE ? FIXTURE_CONTEXT : await sessionContext(kind, target) }));
 
   return () => attention.stop();
