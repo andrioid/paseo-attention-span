@@ -140,9 +140,10 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(102, { title: "Retry webhook deliveries with backoff", reviewThreads: { nodes: [thread(alice, 1), thread(bot, 2)] } }),
       pr(103, { title: "Fetch supplier price files nightly", reviewDecision: "APPROVED", closingIssuesReferences: closes(90, "Supplier prices are a week out of date") }),
       pr(104, { title: "Move price-file login into a service", isDraft: true, baseRefName: "branch-103", headRefName: "branch-104" }),
-      pr(105, { title: "Dialog focus returns to the trigger", reviewDecision: "APPROVED", headRefName: "a11y-1" }),
+      // A stack GitHub links to no issue: its descriptions say which [ATT-03].
+      pr(105, { title: "Dialog focus returns to the trigger", body: "First of three stacked PRs for #132.", reviewDecision: "APPROVED", headRefName: "a11y-1" }),
       pr(106, { title: "Keyboard navigation for calendar cards", isDraft: true, baseRefName: "a11y-1", headRefName: "a11y-2", reviewDecision: "APPROVED" }),
-      pr(107, { title: "Calendar: jump between weeks with keys", isDraft: true, baseRefName: "a11y-2", headRefName: "a11y-3" }, "FAILURE"),
+      pr(107, { title: "Calendar: jump between weeks with keys", body: "Closes #132", isDraft: true, baseRefName: "a11y-2", headRefName: "a11y-3" }, "FAILURE"),
       pr(108, { title: "Company-scoped database layer", mergeable: "CONFLICTING" }),
       // Asked a team, and nobody has looked for 6 days [ATT-11, PRS-12].
       pr(109, { title: "Store uploads locally in development", reviewRequests: { nodes: [{ requestedReviewer: frontend }] }, commits: commit("SUCCESS", 6) }),
@@ -224,7 +225,14 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     ],
     closed: [closed(171, "Backups are never verified", 1), closed(174, "Order list takes 8 seconds", 9), closed(176, "Dark mode for the admin", 10, "NOT_PLANNED")],
   });
-  return { data, details: { behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 }, fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] } } };
+  return {
+    data,
+    details: {
+      behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 },
+      fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] },
+      issues: { [key(132)]: { number: 132, title: "The calendar can't be used with a keyboard", url: `https://github.com/${REPO}/issues/132`, repository } },
+    },
+  };
 }
 
 // Sessions the preview shows as started from items: working, needs me, failed, idle.

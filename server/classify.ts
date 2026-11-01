@@ -1,9 +1,10 @@
 import { type Attention, type Chip, type Item, type NextUpIssue, type Person, type Reviewer, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import type { Actor, Comment, Details, HistoryResult, IssueNode, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
+import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
+import { issueFor } from "./references";
 import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions } from "./rules";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
@@ -216,12 +217,15 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     stack: stack.map((p) => ({ number: p.number, head: p.headRefName, base: p.baseRefName })),
   });
 
-  // One item per issue: PRs grouped under the issue they close [ATT-03]. Otherwise one per unit.
-  const groups = new Map<string, { lead?: PullRequestNode["closingIssuesReferences"]["nodes"][number]; units: Unit[] }>();
+  // One item per issue: PRs grouped under the issue they work on [ATT-03]. Otherwise one per unit.
+  const issues = new Map(Object.entries(details.issues));
+  for (const pr of mine) for (const issue of pr.closingIssuesReferences.nodes) issues.set(prKey(issue), issue);
+  const groups = new Map<string, { lead?: LinkedIssue; units: Unit[] }>();
   for (const unit of units) {
-    const issue = unit.stack[0].closingIssuesReferences.nodes[0];
-    const key = issue ? `${issue.repository.nameWithOwner}#${issue.number}` : prKey(unit.stack[0]);
-    groups.set(key, { lead: issue, units: [...(groups.get(key)?.units ?? []), unit] });
+    const prs = unit.stack.map((pr) => ({ repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) }));
+    const issue = issueFor(prs, (key) => issues.has(key));
+    const key = issue ?? prKey(unit.stack[0]);
+    groups.set(key, { lead: issue ? issues.get(issue) : undefined, units: [...(groups.get(key)?.units ?? []), unit] });
   }
   for (const [key, { lead, units: grouped }] of groups) {
     for (const unit of grouped) for (const pr of unit.stack) listed.add(prKey(pr));
@@ -335,7 +339,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   };
 }
 
-// My merged PRs under the issues they closed, closed issues, and reviews [HIS-01, HIS-02].
+// My merged PRs under the closed issues they worked on, closed issues, and reviews [HIS-01, HIS-02, ATT-03].
 export function classifyHistory(data: HistoryResult): Item[] {
   const items: Item[] = [];
   const closed = new Map<string, Item>();
@@ -346,7 +350,9 @@ export function classifyHistory(data: HistoryResult): Item[] {
     items.push(item);
   }
   for (const pr of compact(data.merged.nodes)) {
-    const issue = closed.get(pr.closingIssuesReferences.nodes.map(prKey).find((key) => closed.has(key)) ?? "");
+    // Each merged PR on its own: its branches are gone, so it can't be put back in its stack [ATT-03].
+    const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
+    const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
     if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false });
     else items.push({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt });
   }

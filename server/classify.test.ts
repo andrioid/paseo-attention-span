@@ -3,6 +3,7 @@ import { type Item, SECTIONS } from "../shared/attention";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
+import type { Details } from "./github-types";
 import { HISTORY_SEARCHES, LIVE_SEARCHES, mergeUnclaimed, searchQuery, searchVariables, unclaimedSearches } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
@@ -12,8 +13,12 @@ const key = (n: number) => `${REPO}#${n}`;
 const chips = (item: { chips: { text: string }[] }) => item.chips.map((chip) => chip.text);
 const sections = (items: Item[]) => items.map((item) => [item.number, item.section]);
 
-function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]> } = {}) {
-  return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
+function run(
+  parts: Parameters<typeof search>[0],
+  behind: Record<string, number> = {},
+  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; issues?: Details["issues"] } = {},
+) {
+  return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {}, issues: options.issues ?? {} }, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
 const follow = AttentionConfig.parse({ orgs: ["acme"], followThreads: true });
@@ -185,6 +190,34 @@ describe("issues", () => {
     expect(attention.items[0].children.map((child) => child.number)).toEqual([1, 2]);
     expect(attention.assigned).toEqual([]); // already in progress
   });
+
+  describe("a stack GitHub links to no issue", () => {
+    const issues = { [key(50)]: { number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } } };
+    const bottom = (body: string) => pr(10, { headRefName: "a", body });
+    const top = (body: string) => pr(11, { baseRefName: "a", body });
+
+    it("ATT-03: groups it under the issue its top PR closes", () => {
+      const [item, ...rest] = run({ mine: [bottom("First of two"), top("Closes #50")], assigned: [pickable(50, {})] }, {}, { issues }).items;
+      expect(rest).toEqual([]);
+      expect(item).toMatchObject({ kind: "issue", number: 50, title: "Issue 50", target: { number: 10 } });
+      expect(item.children.map((child) => child.number)).toEqual([10, 11]);
+    });
+
+    it("ATT-03: groups it under the one issue its bottom PR mentions", () => {
+      expect(run({ mine: [bottom("First of two stacked PRs for #50."), top("")] }, {}, { issues }).items[0]).toMatchObject({ kind: "issue", number: 50 });
+    });
+
+    it("ATT-03: leaves it alone when the reference isn't an open issue, or there are several", () => {
+      expect(run({ mine: [bottom("for #50"), top("")] }).items[0]).toMatchObject({ kind: "pr", number: 10 });
+      const more = { ...issues, [key(51)]: { ...issues[key(50)], number: 51 } };
+      expect(run({ mine: [bottom("for #50 and #51"), top("")] }, {}, { issues: more }).items[0]).toMatchObject({ kind: "pr", number: 10 });
+    });
+
+    it("ATT-03: puts PRs that each refer to the issue under one item", () => {
+      const attention = run({ mine: [pr(1, { body: "Part 1 of #50" }), pr(2, { body: "Fixes #50" })] }, {}, { issues });
+      expect(attention.items.map((item) => [item.number, item.children.map((child) => child.number)])).toEqual([[50, [1, 2]]]);
+    });
+  });
 });
 
 describe("waiting", () => {
@@ -343,6 +376,16 @@ describe("history", () => {
       [60, "done", daysAgo(1), [61]],
       [62, "done", daysAgo(2), []],
     ]);
+  });
+
+  it("HIS-01, ATT-03: puts a merged PR under the closed issue its description refers to", () => {
+    const repository = { nameWithOwner: REPO };
+    const merged = (number: number, body: string) => ({ number, title: "Step", url: "u", body, mergedAt: daysAgo(1), repository, closingIssuesReferences: { nodes: [] } });
+    const items = classifyHistory(search({
+      closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
+      merged: [merged(61, "First of two for #60"), merged(62, "Closes #60"), merged(63, "Follow-up to #59")],
+    }));
+    expect(items.map((item) => [item.number, item.children.map((c) => c.number)])).toEqual([[60, [61, 62]], [63, []]]);
   });
 
   it("HIS-02: lists PRs I reviewed apart from my own work, with their author", () => {

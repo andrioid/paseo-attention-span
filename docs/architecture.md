@@ -80,7 +80,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `s
 
 ## Rules
 
-- **One item per issue** [ATT-03]: PRs are grouped under the issues they close (`closingIssuesReferences`, works across repos). A PR without a linked issue is its own item.
+- **One item per issue** [ATT-03]: PRs are grouped under the issue they work on, across repos. GitHub links (`closingIssuesReferences`) only PRs into the default branch, so a stack's upper PRs are read too. For a stack, strongest evidence first: what GitHub links on any of its PRs, bottom first; then a closing keyword ("Closes #N") in any PR's description; then the one issue the bottom PR's description mentions ("First of three for #N"), and none when it mentions several. Code, quotes and template comments don't count. References from descriptions are looked up in the details request, and only open issues count, so a reference to a PR doesn't group. A PR without an issue is its own item. History does the same per merged PR, against the closed issues it lists.
 - **One item per stack** [ATT-04]: a stack is followed through base/head branch names. Its section is decided by the bottom PR; the PRs above it are listed beneath.
 - **Answers** [ATT-16]: on an issue a PR of mine closes, an answer leads the item like a mention does. From the issue itself only what's on me counts; its PRs say how the work is going.
 - **Mentions** [MEN-01..06]: a thread counts when a person @-mentioned me after my last comment, review or reaction there. Team mentions are ignored. A bot counts only when it opened a thread I need to resolve, and is marked with 🤖. The quote on a card is cut around the mention, so it's shown as plain text: links keep their text, Markdown marks and quoted replies go.
@@ -165,7 +165,7 @@ One GraphQL request per search, sent in parallel. GitHub runs the searches in on
 - `is:issue is:open author:@me commenter:@me sort:updated-desc`, 50 at most, no date limit, the same fields (questions on my own issues nobody answered, however old) [ATT-11]
 - `is:issue is:open no:assignee` (Next up, with issue type and field values; one request per source [NXT-09], skipped when there's nowhere to look [NXT-08]). "My repos" needs my login, taken from the last fetch or asked once with `viewer { login }`
 
-Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it. The other searches carry on meanwhile.
+Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, the open issues their descriptions refer to (at most 100), and the option order of org issue fields when Next up needs it. The other searches carry on meanwhile.
 
 A live refresh is 8 requests and about 85 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
 
