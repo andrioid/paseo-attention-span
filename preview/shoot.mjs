@@ -99,7 +99,8 @@ for (const layout of layouts) {
         const x = Math.max(sidebar, Math.floor((await header(from).boundingBox()).x) - 48);
         return { x, y, width: layout.viewport.width - x - (x - sidebar), height: Math.min(end - y, MAX_HEIGHT) };
       };
-      await page.screenshot({ path: `/out/${prefix}-doing-too-long.png`, clip: await band("Waiting too long", "My drafts") });
+      await page.screenshot({ path: `/out/${prefix}-doing-too-long.png`, clip: await band("Waiting too long", "Needs a reviewer") });
+      await page.screenshot({ path: `/out/${prefix}-doing-needs-reviewer.png`, clip: await band("Needs a reviewer", "My drafts") });
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
       const openSheet = async (title) => {
@@ -136,6 +137,14 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: "Acknowledge 2 comments" }).waitFor({ timeout: 10000 });
       await page.waitForTimeout(400);
       await modalShot("doing-acknowledge");
+      await page.getByRole("button", { name: "Cancel" }).last().click();
+      await page.waitForTimeout(300);
+      // Who should review a PR nobody was asked on: suggestions, recent reviewers, teams, a typed name [PRS-12].
+      await page.getByRole("button", { name: "Request review", exact: true }).first().click();
+      await page.getByText("Suggested by GitHub").waitFor({ timeout: 10000 });
+      await page.getByRole("checkbox", { name: "carol" }).click();
+      await page.waitForTimeout(400);
+      await modalShot("doing-reviewers");
       await page.getByRole("button", { name: "Cancel" }).last().click();
       await page.waitForTimeout(300);
       // A card's ▾ lists its sessions, then starting a new one [SES-03].

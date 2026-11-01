@@ -1,6 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import type { AttentionView, ItemDetails, Target } from "./attention";
+import type { AttentionView, ItemDetails, ReviewerChoices, Target } from "./attention";
 import { SessionKind } from "./config";
 import type { ConfigStatus, CoverageCheck, SetupStatus } from "./setup";
 
@@ -25,6 +25,8 @@ export const checkCoverage = defineRpc({ name: "config.check-coverage", input: z
 export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.object({ orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
 // Where Next up looks, chosen in settings [NXT-04]; orgs are picked from the ones I belong to.
 export const setNextUpSources = defineRpc({ name: "config.set-next-up", input: z.object({ mine: z.boolean(), orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
+// Replies on others' threads without a tag, from settings [ATT-17].
+export const setFollowThreads = defineRpc({ name: "config.set-follow-threads", input: z.object({ on: z.boolean() }), output: done });
 export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), output: z.object({ orgs: z.array(z.string()) }) });
 // Remember the scopes and sources ticked in Next up's filter [NXT-03, NXT-09].
 export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });
@@ -43,6 +45,8 @@ export const reopenIssue = defineRpc({ name: "issue.reopen", input: z.object({ k
 // `ready: false` and `on: false` are the Undo of each.
 export const setReady = defineRpc({ name: "pr.ready", input: z.object({ key: z.string(), target, ready: z.boolean() }), output: view });
 export const setAutoMerge = defineRpc({ name: "pr.auto-merge", input: z.object({ key: z.string(), target, on: z.boolean() }), output: view });
+// Ask people or teams ("org/slug") to review; `on: false` withdraws them for Undo [PRS-12].
+export const requestReviewers = defineRpc({ name: "pr.request-reviewers", input: z.object({ key: z.string(), target, reviewers: z.array(z.string()), on: z.boolean() }), output: view });
 export const react = defineRpc({ name: "comment.react", input: z.object({ key: z.string(), subjectIds: z.array(z.string()), on: z.boolean() }), output: view });
 export const rerunFailed = defineRpc({ name: "checks.rerun", input: z.object({ key: z.string(), repo: z.string(), runIds: z.array(z.number()) }), output: view });
 
@@ -52,6 +56,9 @@ export const itemDetails = defineRpc({
   input: z.object({ subject: z.object({ kind: z.enum(["pr", "issue"]), repo: z.string(), number: z.number() }), target: target.optional(), checks: z.boolean() }),
   output: z.custom<ItemDetails>(),
 });
+
+// Who the reviewer picker offers, fetched when it opens [PRS-12].
+export const reviewerChoices = defineRpc({ name: "pr.reviewer-choices", input: z.object({ target }), output: z.custom<ReviewerChoices>() });
 
 // The branch a session on an issue starts from, when its code lives in another repo [SES-07].
 export const defaultBranch = defineRpc({ name: "repo.default-branch", input: z.object({ repo: z.string() }), output: z.object({ name: z.string().nullable() }) });

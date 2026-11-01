@@ -1,4 +1,4 @@
-import type { Attention, AttentionView, FeedId, FeedStatus, Item } from "../shared/attention";
+import type { Attention, AttentionView, FeedId, FeedStatus, Item, Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, githubRepoOf } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
@@ -6,7 +6,7 @@ import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
 import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
-import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveNextUpSources, saveState, State } from "./store";
+import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -106,6 +106,12 @@ export class AttentionService {
     await this.refresh("live").catch(() => {});
   }
 
+  // Replies on others' threads without a tag [ATT-17]. Only the live feed has them.
+  async setFollowThreads(on: boolean): Promise<void> {
+    this.config = await saveFollowThreads(on);
+    await this.refresh("live").catch(() => {});
+  }
+
   async setScopes(scopes: string[]): Promise<void> {
     this.state.scopes = scopes;
     await this.save();
@@ -114,6 +120,12 @@ export class AttentionService {
   async setSources(sources: string[]): Promise<void> {
     this.state.sources = sources;
     await this.save();
+  }
+
+  // Who reviewed or was asked on my PRs in a repo, from the last fetch, and who I am [PRS-12].
+  reviewers(repo: string): { recent: Reviewer[]; login: string | null } {
+    const live = this.state.live?.attention;
+    return { recent: live?.reviewers?.[repo] ?? [], login: live?.login ?? null };
   }
 
   // A change on GitHub from one tap [SAFE-01], answered with the list as it is after it.
@@ -228,7 +240,7 @@ export class AttentionService {
     };
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
     const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
-    const others = Promise.all([search("reviews"), search("mentions"), search("commented")]);
+    const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked")]);
     const afterThem = forDetails.then((parts) => this.details(merge(parts)));
     const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
     return { data: merge([...first, ...rest]), details };

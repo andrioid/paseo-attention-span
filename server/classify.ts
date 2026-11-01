@@ -1,9 +1,10 @@
-import { type ActionId, type Attention, type Chip, type Item, type NextUpIssue, type Person, SECTION_ORDER, type SectionId, type SubRow, type Target } from "../shared/attention";
+import { type Attention, type Chip, type Item, type NextUpIssue, type Person, type Reviewer, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode } from "./github-types";
+import type { Actor, Comment, Details, HistoryResult, IssueNode, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
+import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions } from "./rules";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
@@ -38,6 +39,20 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const waiting = waitingMention(node, me);
     if (waiting) mentions.set(prKey(node), waiting);
   }
+
+  // What each thread I'm in is waiting for: an answer, or me [ATT-16]. Both searches can find one; it's the same thread.
+  const threads = new Map<string, IssueNode>();
+  for (const node of [...compact(data.involved.nodes), ...compact(data.asked.nodes)]) threads.set(prKey(node), node);
+  const answers = new Map<string, { flags: IssueState; person?: Person; mine: string }>();
+  for (const [key, node] of threads) {
+    const found = threadState(node, me, now, config);
+    if (found) answers.set(key, found);
+  }
+  // Who answered, when the rule says that's on me [ATT-16, ATT-17].
+  const answerOn = (key: string) => {
+    const found = answers.get(key);
+    return found && ISSUE_RULES.answered?.when(found.flags) ? found.person : undefined;
+  };
 
   // My PRs, minus those handed over to someone else [PRS-08].
   const mine = compact(data.mine.nodes).filter((pr) => pr.assignees.nodes.length === 0 || pr.assignees.nodes.some(isMe));
@@ -74,6 +89,12 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       ciPending: ci === "PENDING" || ci === "EXPECTED",
       conflicts: pr.mergeable === "CONFLICTING",
       approved: pr.reviewDecision === "APPROVED",
+      // A request counts even when its reviewer can't be seen, like a team I can't read; so does any review [PRS-12].
+      asked:
+        pr.reviewRequests.nodes.length > 0 ||
+        pr.latestReviews.nodes.some((review) => isOther(review.author)) ||
+        pr.reviewDecision === "APPROVED" ||
+        pr.reviewDecision === "CHANGES_REQUESTED",
       autoMerge: !!pr.autoMergeRequest,
       threadsOnMe: onMe.length,
       botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
@@ -102,45 +123,42 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const s = state(bottom);
     const outOfSync = stack.slice(1).some((pr) => state(pr).outOfSync || state(pr).conflicts);
     const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
+    // A conversation comment after mine on any PR in the stack [ATT-16].
+    const answer = stack.map((pr) => answerOn(prKey(pr))).find(Boolean);
     const base = bottom.baseRefName;
-
-    const reasons: SectionId[] = [];
-    if (waiting) reasons.push("reply");
-    if (bottom.isDraft) reasons.push("drafts");
-    else {
-      if (s.ciFailing) reasons.push("ci");
-      if (s.changes) reasons.push("changes");
-      // Auto-merge waiting on CI leaves nothing for me to do.
-      if (s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending)) reasons.push("ready");
-      if (s.conflicts || outOfSync) reasons.push("upstream");
-    }
-    // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01].
     const waitingSince = latest(s.lastCommitAt, s.repliedAt);
     const replied = s.repliedAt > EPOCH || bottom.reviewDecision === "CHANGES_REQUESTED";
-    const waitingFor: SectionId = s.ciPending ? "wait_ci" : replied ? "wait_reviewer" : "wait_review";
-    const waitingLabel = { wait_ci: "CI running", wait_reviewer: "waiting for the reviewer", wait_review: "waiting for review" }[waitingFor as "wait_ci"];
-    // After too long it's mine to nudge [ATT-11].
-    if (!bottom.isDraft && reasons.length === 0) reasons.push(daysSince(waitingSince, now) >= config.waitingTooLongDays ? "too_long" : waitingFor);
-    const section = reasons.sort((a, b) => rank(a) - rank(b))[0];
+    const flags: PrState = {
+      draft: bottom.isDraft,
+      waiting,
+      answer,
+      ciFailing: s.ciFailing,
+      ciPending: s.ciPending,
+      changes: s.changes,
+      approved: s.approved,
+      conflicts: s.conflicts,
+      blocked: s.conflicts || outOfSync,
+      autoMerge: s.autoMerge,
+      autoMergeAllowed: !!bottom.repository.autoMergeAllowed,
+      behindBy: s.behindBy,
+      stacked: stack.length > 1,
+      stale: s.stale,
+      asked: s.asked,
+      replied,
+      tooLong: daysSince(waitingSince, now) >= config.waitingTooLongDays,
+    };
+    // Every PR of mine has a section; the tests check that a rule always holds.
+    const section = pick(PR_RULES, flags) ?? "wait_review";
+    const rule = PR_RULES[section];
+    const actions = rule?.actions?.(flags) ?? [];
+    // Who it waits on: the reviewer who asked for changes, else who's requested, else who reviewed.
     const reviewer = replied
       ? bottom.latestReviews.nodes.find((review) => review.state === "CHANGES_REQUESTED")?.author
-      : bottom.reviewRequests.nodes.find((request) => request.requestedReviewer?.login)?.requestedReviewer;
-
-    const actions: ActionId[] = [];
-    if (section === "reply") actions.push(...replyActions(waiting));
-    // Rerun is for flaky checks, without an agent [PRS-09].
-    if (section === "ci") actions.push("fix", "rerun");
-    if (section === "changes") actions.push("address");
-    // Merge only once CI passed against the current base [PRS-04, UPS-07]. Until then, auto-merge if the repo allows it [PRS-10].
-    if (section === "ready")
-      actions.push(...(s.behindBy > 0 ? [stack.length === 1 ? "update" : "rebase"] : s.ciPending ? (bottom.repository.autoMergeAllowed ? ["automerge"] : []) : ["merge"]) as ActionId[]);
-    if (section === "upstream") actions.push("rebase");
-    // A stale draft offers Refresh and Close instead of Rebase [PRS-07]; a healthy one, Ready for review [PRS-11].
-    if (section === "drafts")
-      actions.push(...(s.stale ? ["refresh", "close"] : s.conflicts || outOfSync ? ["rebase"] : s.ciFailing ? ["fix", "rerun"] : ["ready"]) as ActionId[]);
+      : (bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer)).find(Boolean) ??
+        bottom.latestReviews.nodes.find((review) => isOther(review.author))?.author);
 
     const chips: Chip[] = [];
-    if (section === "too_long") chips.push(chip(`${waitingLabel} · ${ago(waitingSince, now)}`, "warn"));
+    if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
     if (s.autoMerge) chips.push(chip("auto-merge on", "good"));
@@ -159,12 +177,13 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       actions,
       chips,
       // How long it has waited, shown only while it sits in a Waiting section.
-      waited: section.startsWith("wait_") ? chip(ago(waitingSince, now)) : undefined,
+      waited: SECTIONS[section].tab === "waiting" ? chip(ago(waitingSince, now)) : undefined,
       person:
         waiting ??
+        (section === "answered" ? answer : undefined) ??
         (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
-        (section === "too_long" || section.startsWith("wait_") ? person(reviewer, waitingSince) : undefined),
-      othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since),
+        (section === "too_long" || SECTIONS[section].tab === "waiting" ? person(reviewer, waitingSince) : undefined),
+      othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
     };
   });
   type Unit = (typeof units)[number];
@@ -175,6 +194,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const chips: Chip[] = [];
     if (stack.length > 1) chips.push(chip(`${index + 1}/${stack.length}`));
     if (s.approved) chips.push(chip("approved", "good"));
+    if (!pr.isDraft && !s.asked) chips.push(chip("no reviewer", "warn"));
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
     if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName));
@@ -206,9 +226,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   for (const [key, { lead, units: grouped }] of groups) {
     for (const unit of grouped) for (const pr of unit.stack) listed.add(prKey(pr));
     listed.add(key);
-    const issueWaiting = lead ? mentions.get(key) : undefined;
+    // From the issue itself only what's on me counts: a mention, or an answer to my question. Its PRs say how the work goes [ATT-16].
+    const issueWaiting = lead ? (mentions.get(key) ?? answerOn(key)) : undefined;
     const sections = grouped.map((unit) => unit.section);
-    if (issueWaiting) sections.push("reply");
+    if (issueWaiting) sections.push(mentions.has(key) ? "reply" : "answered");
     const section = sections.sort((a, b) => rank(a) - rank(b))[0];
     const unit = grouped.find((candidate) => candidate.section === section) ?? grouped[0];
     const bottom = unit.stack[0];
@@ -281,16 +302,25 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     });
   }
 
-  // Issues where I commented last and nobody answered: waiting, then mine to nudge [WAI-01, ATT-11].
-  for (const issue of compact(data.commented.nodes)) {
-    const key = prKey(issue);
-    const last = issue.comments.nodes.at(-1);
-    if (listed.has(key) || !last || !isMe(last.author)) continue;
+  // Issues and others' PRs I'm in: answered, or waiting on others and then mine to nudge [WAI-01, ATT-11, ATT-16].
+  // My own PRs are listed above, or handed over and left out [PRS-08].
+  for (const [key, issue] of threads) {
+    const found = answers.get(key);
+    const kind = issue.__typename === "PullRequest" ? "pr" : "issue";
+    if (listed.has(key) || !found || (kind === "pr" && found.flags.authored)) continue;
+    const { flags, person, mine } = found;
+    const section = pick(ISSUE_RULES, flags);
+    if (!section) continue;
     listed.add(key);
-    const tooLong = daysSince(last.createdAt, now) >= config.waitingTooLongDays;
+    const label = ISSUE_RULES[section]?.label?.(flags);
+    const since = person?.since ?? mine;
     items.push({
-      ...plain(issue, "issue", tooLong ? "too_long" : "wait_answer"),
-      chips: [chip(tooLong ? `waiting for an answer · ${ago(last.createdAt, now)}` : ago(last.createdAt, now), tooLong ? "warn" : "neutral")],
+      ...plain(issue, kind, section),
+      chips: section === "answered" ? [] : [label ? chip(`${label} · ${ago(since, now)}`, "warn") : chip(ago(since, now))],
+      person,
+      actions: section === "answered" ? replyActions(person) : [],
+      // A new answer brings back a dismissed one [ATT-08].
+      othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
     });
   }
 
@@ -298,6 +328,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   return {
     login: data.viewer.login,
     items,
+    reviewers: recentReviewers(mine, isOther),
     // Assigned issues not already in progress come before unclaimed ones [NXT-06].
     assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
     unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
@@ -321,6 +352,78 @@ export function classifyHistory(data: HistoryResult): Item[] {
   }
   for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });
   return items.sort(order);
+}
+
+// Whether my last comment on an issue is the last one from a person, and if not, the answers since that I haven't 👍'd.
+// Bots don't count [MEN-05]. Only the last comments are fetched: once mine is out of them the conversation has moved on.
+// Whether my last comment on a thread is the last one from a person, and if not, the recent comments since that I haven't 👍'd.
+// On a thread I opened, my opening counts as my last word until I comment. Bots don't count [MEN-05]. Only the last comments
+// are fetched: on someone else's thread, once mine is out of them the conversation has moved on.
+export function threadState(
+  thread: IssueNode,
+  me: string,
+  now: Date,
+  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays" | "followThreads">,
+): { flags: IssueState; person?: Person; mine: string } | null {
+  const authored = thread.author?.login.toLowerCase() === me;
+  const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
+  const index = people.findLastIndex((c) => c.author?.login.toLowerCase() === me);
+  if (index < 0 && !authored) return null;
+  const mine = index < 0 ? thread.createdAt : people[index].createdAt;
+  const after = people.slice(index + 1);
+  const recent = (at: string) => daysSince(at, now) < config.mentionDays;
+  const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
+  const flags: IssueState = {
+    authored,
+    follow: config.followThreads,
+    // Opening a thread isn't asking a question; a comment is.
+    mineLast: index >= 0 && after.length === 0,
+    answered: unread.length > 0,
+    fresh: recent(mine),
+    tooLong: daysSince(mine, now) >= config.waitingTooLongDays,
+  };
+  const last = unread.at(-1);
+  if (!last?.author) return { flags, mine };
+  return {
+    flags,
+    mine,
+    person: {
+      login: last.author.login,
+      avatarUrl: last.author.avatarUrl,
+      bot: false,
+      since: last.createdAt,
+      snippet: snippetAround(plainText(last.body ?? ""), 0),
+      url: last.url ?? thread.url,
+      comments: unread.filter((c) => c.id).map((c) => ({ id: c.id!, author: c.author!.login, body: excerpt(c.body, 4000) ?? "", createdAt: c.createdAt, url: c.url })),
+    },
+  };
+}
+
+// A requested person, or a team by its "org/slug".
+function requested(reviewer: RequestedReviewer | null | undefined): Actor | undefined {
+  const login = reviewer?.login ?? reviewer?.combinedSlug;
+  return login ? { __typename: reviewer!.__typename, login, avatarUrl: reviewer!.avatarUrl } : undefined;
+}
+
+// Who reviewed or was asked on my PRs, per repo, latest review first, for the reviewer picker [PRS-12]. Bots aren't offered.
+function recentReviewers(mine: PullRequestNode[], isOther: (actor: Actor | null | undefined) => boolean): Record<string, Reviewer[]> {
+  const byRepo: Record<string, (Reviewer & { at: string })[]> = {};
+  for (const pr of mine) {
+    const list = (byRepo[pr.repository.nameWithOwner] ??= []);
+    const add = (actor: Actor | undefined, at: string) => {
+      if (!actor || !isOther(actor) || actor.__typename === "Bot") return;
+      const seen = list.find((reviewer) => reviewer.login === actor.login);
+      if (seen) seen.at = seen.at > at ? seen.at : at;
+      else list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", at });
+    };
+    for (const review of pr.latestReviews.nodes) add(review.author ?? undefined, review.submittedAt ?? EPOCH);
+    for (const request of pr.reviewRequests.nodes) add(requested(request.requestedReviewer), EPOCH);
+  }
+  return Object.fromEntries(
+    Object.entries(byRepo)
+      .filter(([, list]) => list.length > 0)
+      .map(([repo, list]) => [repo, list.sort((a, b) => b.at.localeCompare(a.at)).map(({ at: _, ...reviewer }) => reviewer)]),
+  );
 }
 
 // An item with nothing to act on: waiting, history.
@@ -392,11 +495,6 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
 }
 
 // ---- Mentions still waiting on me [MEN-01..06] ----
-
-// Reply on GitHub, or 👍 the waiting comments, which clears them too [MEN-02].
-function replyActions(waiting: Person | undefined): ActionId[] {
-  return waiting?.comments?.length ? ["reply", "acknowledge"] : ["reply"];
-}
 
 function mentionsMe(body: string | undefined, me: string): number {
   if (!body) return -1;

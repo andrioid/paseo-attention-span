@@ -28,11 +28,12 @@ flowchart LR
   - Server: RPC handlers for fetching and for GitHub actions.
 - **GitHub access** goes through the host's existing `gh` login. The plugin stores no token [SEC-01].
 - **Setup checklist** [SET-01]: when a refresh fails, the screen asks the server what setup needs (`gh api user` for whether `gh` is there and who it's signed in as, and whether `config.json` parses). If `gh` is missing or signed out, or the file is broken, a checklist takes the tabs' place. Each line says how to fix it, and Check again refreshes. It also lists what's covered, the Paseo projects with a GitHub remote, and which profile sessions will use. Other failures, like a network error, stay a red line above the tabs.
-- **Settings screen** [SRC-02], under Settings → Plugins → Attention Span and the gear next to ⟳: orgs and repos, one per row. Each is checked with `gh api users/<org>` (it must be an organization, since searches use `org:`) or `gh api repos/<owner>/<name>` before it's saved, and GitHub's exact name is kept. Saving rewrites only `orgs` and `repos` in `config.json`, refuses a file that doesn't parse, and refreshes the lists.
+- **Settings screen** [SRC-02], under Settings → Plugins → Attention Span and the gear next to ⟳: orgs and repos, one per row. Each is checked with `gh api users/<org>` (it must be an organization, since searches use `org:`) or `gh api repos/<owner>/<name>` before it's saved, and GitHub's exact name is kept. Saving rewrites only `orgs` and `repos` in `config.json`, refuses a file that doesn't parse, and refreshes the lists. A Replies section has one switch, Follow threads I've commented on, which writes only `followThreads` [ATT-17].
 - **Local files** live in `~/.config/paseo-attention-span/`:
   - `config.json`, edited by hand, except `orgs` and `repos` (the settings screen) and `codeRepos`, which the screen can add to:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
+    - `followThreads` (default off, also under Settings → Replies → Follow threads I've commented on): recent replies after mine on other people's threads show under Answered [ATT-17]
     - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 15) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
@@ -48,7 +49,7 @@ The tabs tell the story of my work, left to right: what I finished, what needs m
 |---|---|
 | History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. The copy icon on a week's heading copies its finished items, not the reviews, as a Markdown list of links; an issue and the PRs that closed it are one line, linking the issue [HIS-03]. |
 | Doing | The sections below |
-| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (with the requested reviewer), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where I commented last) |
+| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (once a person or team is asked, or someone else has reviewed; with the requested reviewer or team), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (threads where my comment is the last from a person; bots don't count): on my own issues however old, on others' only while my comment is within `mentionDays` [ATT-11] |
 | Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
 
 Every card in every tab is the same component, `CardRow` in `client/card.tsx` [ATT-05]: a tinted mark for what it is, a title of at most two lines, then "repo #number", when it happened and signal chips, then content only some lists have (tags, a quote, a stack line), and its actions: on the right on desktop, labelled under the text on phones. A change on GitHub asks first in a `ConfirmBar` on the card [SAFE-01]. Tabs differ only in what they pass in: each maps its data to the card's mark, meta, actions and slots. Marks and signals take a tone, never a raw theme color, because some themes draw `accent` close to white.
@@ -61,23 +62,26 @@ Screenshots, from the preview's made-up data, are in [screenshots/](screenshots/
 
 ### Doing
 
-Top to bottom. Each item appears once, under its most urgent reason [ATT-02].
+Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `server/rules.ts` has one rule per section: a guard over the flags of the item's state (CI, review, mergeability, draft). The first section in `SECTIONS` order whose rule holds wins, so that order is the priority. A test checks that every combination of a PR's flags lands in a section.
 
 | Section | Shows |
 |---|---|
 | Waiting for your reply | Open threads with a mention waiting on me [MEN-01] |
+| Answered | Issues and PRs I opened where a person commented in the conversation after me, within `mentionDays` (default 30), without mentioning me, and I haven't 👍'd it; opening a thread counts as my last word until I comment. Replies after mine on other people's threads count only with `followThreads` on (Settings → Replies → Follow threads I've commented on, off by default); then my comment must be among the thread's last 10. Reply and Acknowledge clear it, and so does Dismiss until someone comments again [ATT-16, ATT-17, MEN-02] |
 | Review requested | PRs requesting my review by name, not via a team [REV-01] |
 | CI failing | My PRs with failing checks [PRS-01] |
 | Changes requested | My PRs with requested changes or unresolved threads [PRS-02] |
 | Ready to merge | My approved, mergeable PRs [PRS-03] |
 | Needs upstream | My PRs with conflicts or an out-of-sync stack [UPS-01, UPS-02] |
 | Waiting too long | Waiting items older than `waitingTooLongDays` (default 3); it's mine to nudge [ATT-11] |
+| Needs a reviewer | My PRs nobody has been asked to review, even while CI runs [PRS-12] |
 | My drafts | My drafts, with their own state tags [PRS-05, PRS-06] |
 
 ## Rules
 
 - **One item per issue** [ATT-03]: PRs are grouped under the issues they close (`closingIssuesReferences`, works across repos). A PR without a linked issue is its own item.
 - **One item per stack** [ATT-04]: a stack is followed through base/head branch names. Its section is decided by the bottom PR; the PRs above it are listed beneath.
+- **Answers** [ATT-16]: on an issue a PR of mine closes, an answer leads the item like a mention does. From the issue itself only what's on me counts; its PRs say how the work is going.
 - **Mentions** [MEN-01..06]: a thread counts when a person @-mentioned me after my last comment, review or reaction there. Team mentions are ignored. A bot counts only when it opened a thread I need to resolve, and is marked with 🤖. The quote on a card is cut around the mention, so it's shown as plain text: links keep their text, Markdown marks and quoted replies go.
 - **Handed over** [PRS-08]: my PRs assigned to someone else, and not to me, are left out. Mentions of me on them still count.
 - **Dismiss** [ATT-08] hides an item until someone other than me comments, reviews or pushes, or its reason changes. My own actions and CI reruns don't bring it back.
@@ -111,7 +115,9 @@ An agent icon (Tabler's `message-ai`, a speech bubble with "AI") marks every act
 | Rerun failed jobs | CI failing, in the sheet | `gh run rerun --failed` for each failing GitHub Actions run of the PR, or of every PR in its stack. The sheet names the failed checks and how often they were rerun (`gh api …/runs/<id>`), fetched when it opens. Other status checks can't be rerun from here [PRS-09]. |
 | Update branch | Behind with no conflicts, not stacked | `updatePullRequestBranch` (rebase) [UPS-03] |
 | Rebase / Refresh *(agent)* | Conflicts, any stacked PR, stale draft | Agent rebases the PR, or the whole stack with `git rebase --update-refs` [UPS-04]. A clean rebase is pushed with `--force-with-lease` [UPS-06]. After resolving conflicts it stops and explains, and pushes only when I reply "push" in its session [UPS-05]. |
-| Ready for review | My draft with CI not failing, no conflicts, not stale | `markPullRequestReadyForReview` on the bottom PR; Undo converts it back to a draft [PRS-11] |
+| Ready for review | My draft with CI not failing, no conflicts, not stale | `markPullRequestReadyForReview` on the bottom PR, then the reviewer picker below; Skip leaves it in *Needs a reviewer*. Undo converts it back to a draft [PRS-11] |
+| Request review | Needs a reviewer | Opens a picker: GitHub's `suggestedReviewers` and the repo's teams (`gh api repos/<repo>/teams`), fetched when it opens; people who reviewed or were asked on my other PRs in the repo, from the last refresh; or any login or `org/team` typed in. Without `read:org` the teams are replaced by a line saying so. Sends `POST …/pulls/<n>/requested_reviewers`, which keeps who's already asked; Undo withdraws them with `DELETE` [PRS-12] |
+| Merge (no reviewer) | Needs a reviewer, CI green on the current base | As Merge below, for repos where nobody reviews [PRS-12] |
 | Auto-merge | Approved, CI running, and the repo allows auto-merge | `enablePullRequestAutoMerge` with the merge method below and the head I saw. The PR then waits in *CI running* with an "auto-merge on" chip; Undo turns it off [PRS-10] |
 | Merge | Approved, CI green on current base | `mergePullRequest` with the repo's method from `config.json`, otherwise the first the repo allows of squash, merge, rebase [PRS-04]. Asks first. |
 | Close draft | Stale draft, in the sheet | `closePullRequest`, with a comment only if I write one [SAFE-01]. Asks first. |
@@ -143,12 +149,13 @@ One GraphQL request per search, sent in parallel. GitHub runs the searches in on
 - `is:pr is:open user-review-requested:@me` (personal requests only)
 - `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, their IDs for 👍, and `viewerHasReacted`)
 - `is:issue is:open assignee:@me`
-- `is:issue is:open commenter:@me` (for issues waiting on others)
+- `is:open involves:@me updated:>=<30 days ago> sort:updated-desc`, 100 at most, issues and PRs with their last 10 conversation comments, as for mentions (for Answered and fresh questions) [ATT-16]
+- `is:issue is:open author:@me commenter:@me sort:updated-desc`, 50 at most, no date limit, the same fields (questions on my own issues nobody answered, however old) [ATT-11]
 - `is:issue is:open no:assignee` (Next up, with issue type and field values; one request per source [NXT-09], skipped when there's nowhere to look [NXT-08]). "My repos" needs my login, taken from the last fetch or asked once with `viewer { login }`
 
 Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it. The other searches carry on meanwhile.
 
-A live refresh is 7 requests and about 70 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
+A live refresh is 8 requests and about 85 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
 
 ### History
 
@@ -165,5 +172,5 @@ It's a digest, not a live view. Opening the screen shows the cache. ⟳ fetches 
 | Live | Every `refreshMinutes` (default 15, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
 | History | Once a day in the background, after a merge from Attention Span, and on ⟳ in History. Things I finish outside Attention Span show up by the next day. |
 
-A failed refresh is retried at most every 5 minutes. At the default 15 minutes that's about 28 requests and 280 points an hour, under 6% of GitHub's hourly allowance. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
+A failed refresh is retried at most every 5 minutes. At the default 15 minutes that's about 32 requests and 340 points an hour, about 7% of GitHub's hourly allowance. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
 

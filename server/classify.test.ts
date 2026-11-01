@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Item } from "../shared/attention";
+import { type Item, SECTIONS } from "../shared/attention";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
@@ -15,7 +15,9 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(parts: Parameters<typeof search>[0], behind: Record<string, number> = {}, options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]> } = {}) {
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
-const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => !item.section.startsWith("wait_"));
+const asked = { nodes: [{ requestedReviewer: bob }] };
+const follow = AttentionConfig.parse({ orgs: ["acme"], followThreads: true });
+const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => SECTIONS[item.section].tab === "doing");
 
 describe("doing", () => {
   it("ATT-02: puts each item once, under its most urgent reason, in section order", () => {
@@ -41,7 +43,8 @@ describe("doing", () => {
 
   it("PRS-02: lists unresolved threads waiting on me; a thread I answered waits on the reviewer", () => {
     expect(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(alice, 1)] } })] }).items[0]).toMatchObject({ section: "changes", actions: ["address"] });
-    expect(sections(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(me, 1)] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
+    const reviewed = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1.5) }] };
+    expect(sections(run({ mine: [pr(3, { latestReviews: reviewed, reviewThreads: { nodes: [thread(me, 1)] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
   });
 
   it("PRS-02: requested changes followed by a new push wait on that reviewer", () => {
@@ -82,7 +85,7 @@ describe("ready to merge and behind base", () => {
   });
 
   it("UPS-07: being behind alone never puts a PR in Doing", () => {
-    expect(sections(run({ mine: [pr(1)] }, { [key(1)]: 400 }).items)).toEqual([[1, "wait_review"]]);
+    expect(sections(run({ mine: [pr(1, { reviewRequests: asked })] }, { [key(1)]: 400 }).items)).toEqual([[1, "wait_review"]]);
   });
 
   it("UPS-01: a PR that conflicts with its base needs upstream, with Rebase", () => {
@@ -187,17 +190,143 @@ describe("issues", () => {
 describe("waiting", () => {
   it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
     const attention = run({
-      mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: bob }] } }), pr(2, {}, "PENDING")],
-      commented: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
+      mine: [pr(1, { reviewRequests: asked }), pr(2, { reviewRequests: asked }, "PENDING")],
+      involved: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
     expect(attention.items[0]).toMatchObject({ person: { login: "bob", avatarUrl: bob.avatarUrl }, chips: [{ text: "1d" }] });
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
-    const attention = run({ mine: [pr(1, { commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
+    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
     expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
+  });
+});
+
+describe("answered", () => {
+  it("ATT-16: a recent comment after mine on my issue, without a mention, is mine, with Reply and 👍", () => {
+    const [item] = run({ involved: [issue(70, [comment(me, "which shops?", 2), comment(alice, "Only **the Danish** one", 0.5)], "Mine", { author: me })] }).items;
+    expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "alice", snippet: "Only the Danish one", since: daysAgo(0.5) }, chips: [] });
+    expect(item.person?.comments?.map((c) => c.body)).toEqual(["Only **the Danish** one"]);
+    expect(item.othersActivityAt).toBe(daysAgo(0.5));
+  });
+
+  it("ATT-16, MEN-02: replying makes it wait again; a 👍 on the answer clears it", () => {
+    const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
+    expect(sections(run({ involved: [replied] }).items)).toEqual([[70, "wait_answer"]]);
+    const reacted = issue(71, [comment(me, "which shops?", 2), comment(alice, "Danish", 1, { reactionGroups: [{ viewerHasReacted: true }] })]);
+    expect(run({ involved: [reacted] }).items).toEqual([]);
+  });
+
+  it("ATT-16, MEN-05: a bot commenting after my question doesn't answer it", () => {
+    expect(sections(run({ involved: [issue(70, [comment(me, "?", 1), comment(bot, "labelled", 0.5)])] }).items)).toEqual([[70, "wait_answer"]]);
+  });
+
+  it("ATT-17: replies on someone else's thread that don't tag me are left out, unless I allow it", () => {
+    const thread = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 0.5)]);
+    expect(run({ involved: [thread] }).items).toEqual([]);
+    expect(run({ involved: [thread] }, {}, { config: follow }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
+  });
+
+  it("ATT-16, ATT-17: even when allowed, only comments from the last mentionDays count", () => {
+    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }, {}, { config: follow }).items).toEqual([]);
+    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }, {}, { config: follow }).items;
+    expect(item).toMatchObject({ section: "answered", person: { login: "bob" } });
+    expect(item.person?.comments?.map((c) => c.author)).toEqual(["bob"]);
+  });
+
+  it("ATT-16: on my own issue, any recent comment is an update, even if I never commented", () => {
+    const mine = issue(70, [comment(alice, "can't reproduce", 1)], "Mine", { author: me });
+    expect(run({ involved: [mine] }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
+    expect(run({ involved: [{ ...mine, comments: { nodes: [comment(alice, "old", 60)] } }] }).items).toEqual([]);
+  });
+
+  it("ATT-16: a conversation comment on my PR leads it, with Reply and 👍", () => {
+    const thread = issue(1, [comment(bob, "could you split this?", 0.2)], "PR 1", { __typename: "PullRequest", author: me });
+    const [item] = run({ mine: [pr(1, { reviewRequests: asked })], involved: [thread] }).items;
+    expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "bob" } });
+  });
+
+  it("PRS-08: a PR I handed over stays out, even with comments after mine", () => {
+    const thread = issue(1, [comment(bob, "?", 0.2)], "PR 1", { __typename: "PullRequest", author: me });
+    expect(run({ mine: [pr(1, { assignees: { nodes: [{ login: "bob" }] } })], involved: [thread] }).items).toEqual([]);
+  });
+
+  it("ATT-11: a question on my own issue stays however old; on someone else's, only while fresh", () => {
+    const [item] = run({ asked: [issue(70, [comment(me, "still needed?", 45)], "Mine", { author: me })] }).items;
+    expect(item).toMatchObject({ section: "too_long" });
+    expect(chips(item)).toEqual(["waiting for an answer · 45d"]);
+    expect(run({ involved: [issue(71, [comment(me, "still needed?", 45)])] }).items).toEqual([]);
+    expect(searchVariables(config, NOW).asked).not.toContain("updated:");
+    expect(searchVariables(config, NOW).involved).toContain("involves:@me updated:>=");
+  });
+
+  it("ATT-16: once my comment is out of the last ones on someone else's thread, the conversation has moved on", () => {
+    expect(run({ involved: [issue(70, [comment(alice, "", 3), comment(bob, "", 2)])] }).items).toEqual([]);
+  });
+
+  it("ATT-16: a thread both searches found is listed once", () => {
+    const mine = issue(70, [comment(me, "still needed?", 5)], "Mine", { author: me });
+    expect(sections(run({ involved: [mine], asked: [mine] }).items)).toEqual([[70, "too_long"]]);
+  });
+
+  it("ATT-03, ATT-16: an answer on an issue my PR closes leads its item", () => {
+    const closes = { nodes: [{ number: 50, title: "Issue 50", url: "u", repository: { nameWithOwner: REPO } }] };
+    const attention = run({
+      mine: [pr(1, { closingIssuesReferences: closes, reviewRequests: asked })],
+      involved: [issue(50, [comment(me, "which shops?", 2), comment(alice, "Danish", 1)], "Issue 50", { author: me })],
+    });
+    expect(attention.items).toHaveLength(1);
+    expect(attention.items[0]).toMatchObject({ kind: "issue", section: "answered", person: { login: "alice" }, actions: ["reply", "acknowledge"] });
+  });
+});
+
+describe("needs a reviewer", () => {
+  it("PRS-12: a PR nobody was asked to review is mine, with Merge once CI passed on the current base", () => {
+    const [item] = run({ mine: [pr(1)] }).items;
+    expect(item).toMatchObject({ section: "needs_reviewer", actions: ["request_review", "merge"], person: undefined });
+    expect(run({ mine: [pr(1)] }, { [key(1)]: 2 }).items[0].actions).toEqual(["request_review"]);
+  });
+
+  it("PRS-12: stays mine while CI runs, and never waits too long", () => {
+    expect(run({ mine: [pr(1, {}, "PENDING")] }).items[0]).toMatchObject({ section: "needs_reviewer", actions: ["request_review"] });
+    expect(chips(run({ mine: [pr(1, {}, "PENDING")] }).items[0])).toContain("CI running");
+    expect(sections(run({ mine: [pr(1, { commits: commit("SUCCESS", 9) })] }).items)).toEqual([[1, "needs_reviewer"]]);
+  });
+
+  it("WAI-01, PRS-12: a request to a team waits for review, showing the team", () => {
+    const team = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: "https://avatars/t" };
+    const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: team }] } })] }).items;
+    expect(item).toMatchObject({ section: "wait_review", person: { login: "acme/frontend", avatarUrl: "https://avatars/t" } });
+  });
+
+  it("PRS-12: a request I can't see the reviewer of still counts", () => {
+    expect(run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0].section).toBe("wait_review");
+  });
+
+  it("WAI-01: after a review that only commented, it keeps waiting on that reviewer", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(1, { latestReviews })] }).items[0]).toMatchObject({ section: "wait_review", person: { login: "alice" } });
+  });
+
+  it("PRS-12: my own review doesn't count as asking", () => {
+    const latestReviews = { nodes: [{ author: me, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(1, { latestReviews })] }).items[0].section).toBe("needs_reviewer");
+  });
+
+  it("ATT-04, PRS-12: the bottom PR decides; a PR above it nobody was asked on says so", () => {
+    const top = pr(11, { baseRefName: "branch-10" });
+    const [item] = run({ mine: [pr(10, { reviewRequests: asked }), top] }).items;
+    expect(item.section).toBe("wait_review");
+    expect(chips(item.children[0])).toContain("no reviewer");
+  });
+
+  it("PRS-12: offers who reviewed or was asked on my PRs in the repo, latest first, without me or bots", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(3) }, { author: me, state: "COMMENTED", submittedAt: daysAgo(1) }, { author: bot, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    const later = { nodes: [{ author: bob, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    const attention = run({ mine: [pr(1, { latestReviews }), pr(2, { latestReviews: later, reviewRequests: { nodes: [{ requestedReviewer: alice }] } })] });
+    expect(attention.reviewers?.[REPO]?.map((reviewer) => reviewer.login)).toEqual(["bob", "alice"]);
   });
 });
 
@@ -393,7 +522,7 @@ describe("GitHub requests", () => {
   it("GH-01: sends each live search as its own request, and History as one, with only the fragments each uses", () => {
     expect(searchQuery(["mine"], true)).toMatch(/^query Attention\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
     expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
-    expect(searchQuery(["commented"])).not.toContain("fragment");
+    expect(searchQuery(["involved"]).match(/^fragment \w+/gm)).toEqual(["fragment author", "fragment comment"]);
     expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
     expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].filter((name) => name !== "unclaimed").sort());
   });
@@ -410,7 +539,7 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const attention = classify({ data, details, config, now: NOW });
-    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(14);
+    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(16);
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 6]);
   });

@@ -2,6 +2,11 @@ import type { UnclaimedSource } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { PickableNode, PullRequestNode } from "./github-types";
 
+// An issue or PR with its last conversation comments [ATT-16].
+const THREAD = `__typename
+      ... on Issue { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment } } }
+      ... on PullRequest { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment } } }`;
+
 // Each search with how many results it asks for and what it reads of each.
 const SEARCHES = {
   mine: { first: 50, nodes: "...pr" },
@@ -16,7 +21,10 @@ const SEARCHES = {
         reviewThreads(last: 30) { nodes { isResolved comments(first: 20) { nodes { ...comment } } } }
       }`,
   },
-  commented: { first: 30, nodes: "... on Issue { number title url repository { nameWithOwner } comments(last: 1) { nodes { author { login } createdAt } } }" },
+  // Threads I'm in, with their last conversation comments and what the 👍 picker needs, to tell whether I'm answered [ATT-16].
+  involved: { first: 100, nodes: THREAD },
+  // My own issues where I commented, for questions nobody answered however old [ATT-11].
+  asked: { first: 50, nodes: THREAD },
   assigned: { first: 50, nodes: "...pickable" },
   unclaimed: { first: 100, nodes: "...pickable" },
   merged: {
@@ -29,7 +37,7 @@ const SEARCHES = {
 export type SearchName = keyof typeof SEARCHES;
 
 // Doing, Waiting and Next up. History has its own, slower schedule.
-export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "commented", "assigned", "unclaimed"] as const;
+export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed"] as const;
 export const HISTORY_SEARCHES = ["merged", "reviewed", "closed"] as const;
 
 const FRAGMENTS: Record<string, string> = {
@@ -56,7 +64,7 @@ const FRAGMENTS: Record<string, string> = {
   assignees(first: 10) { nodes { login } }
   closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
-  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { ...author } } } }
+  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { ...author } ... on Team { __typename combinedSlug avatarUrl } } } }
   latestReviews(first: 10) { nodes { author { ...author } state submittedAt } }
   reviewThreads(last: 30) {
     nodes {
@@ -152,7 +160,10 @@ export function searchVariables(config: AttentionConfig, now: Date): Record<Excl
     reviews: `is:pr is:open user-review-requested:@me ${scope}`,
     mentions: `is:open mentions:@me updated:>=${since} ${scope}`,
     assigned: `is:issue is:open assignee:@me ${scope}`,
-    commented: `is:issue is:open commenter:@me updated:>=${since} ${scope}`,
+    // Threads I opened, commented on, was assigned or mentioned in, active lately: answers, and fresh questions [ATT-16].
+    involved: `is:open involves:@me updated:>=${since} sort:updated-desc ${scope}`,
+    // On my own issues a question nobody answered stays however old [ATT-11]. Newest first, so old ones go last.
+    asked: `is:issue is:open author:@me commenter:@me sort:updated-desc ${scope}`,
     // History [HIS-01, HIS-02]
     merged: `is:pr is:merged author:@me merged:>=${history} ${scope}`,
     reviewed: `is:pr is:merged reviewed-by:@me -author:@me merged:>=${history} ${scope}`,

@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, type NextUpIssue, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -32,6 +32,7 @@ const ACTION_ICONS: Record<ActionId, IconName> = {
   rebase: "agent",
   refresh: "agent",
   ready: "pr",
+  request_review: "claim",
   automerge: "clock",
   merge: "merge",
   close: "close",
@@ -51,6 +52,7 @@ function actionLabel(action: ActionId, item: Item): string {
     rebase: stacked ? "Rebase stack" : "Rebase",
     refresh: "Refresh draft",
     ready: "Ready for review",
+    request_review: "Request review",
     automerge: "Auto-merge",
     merge: "Merge",
     close: "Close draft",
@@ -75,7 +77,8 @@ function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): string {
     update: `GitHub rebases ${pr} onto ${base}`,
     rebase: `An agent rebases ${stacked ? "the stack" : pr} onto ${base}. It pushes only if there were no conflicts`,
     refresh: `An agent rebases the draft onto ${base} and says what it still needs`,
-    ready: `Takes ${pr} out of draft, so reviewers are notified`,
+    ready: `Takes ${pr} out of draft, then asks who should review it`,
+    request_review: `Pick people or teams to review ${pr}`,
     automerge: `GitHub merges ${pr} into ${base} (${target.mergeMethod}) once checks pass`,
     merge: `Merges ${pr} into ${base} (${target.mergeMethod}) now`,
     close: `Closes ${pr}. A comment is posted only if you write one`,
@@ -98,12 +101,14 @@ function rerunEntry(failing: FailingChecks[] | undefined, loading: boolean): { d
 
 const SECTION_ICONS: Record<SectionId, IconName> = {
   reply: "reply",
+  answered: "replyArrow",
   review: "review",
   ci: "ci",
   changes: "changes",
   ready: "merge",
   upstream: "branch",
   too_long: "hourglass",
+  needs_reviewer: "claim",
   drafts: "pencil",
   wait_review: "review",
   wait_reviewer: "replyArrow",
@@ -124,6 +129,7 @@ const AGENTS_QUERY_KEY = ["attention-span", "agents"] as const;
 type FetchContext = (input: RpcInput<typeof rpc.sessionContext>) => Promise<RpcOutput<typeof rpc.sessionContext>>;
 export type FetchDetails = (input: RpcInput<typeof rpc.itemDetails>) => Promise<RpcOutput<typeof rpc.itemDetails>>;
 type DefaultBranch = (repo: string) => Promise<string | null>;
+type FetchReviewers = (input: RpcInput<typeof rpc.reviewerChoices>) => Promise<RpcOutput<typeof rpc.reviewerChoices>>;
 
 // A start held back until I say where the issue's code lives [SES-07].
 interface Placing {
@@ -184,6 +190,8 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   const setReady = useRpc(rpc.setReady);
   const setAutoMerge = useRpc(rpc.setAutoMerge);
   const react = useRpc(rpc.react);
+  const requestReviewers = useRpc(rpc.requestReviewers);
+  const fetchReviewers = useRpc(rpc.reviewerChoices);
   const rerunFailed = useRpc(rpc.rerunFailed);
   const fetchDetails = useRpc(rpc.itemDetails);
   const setCodeRepo = useRpc(rpc.setCodeRepo);
@@ -302,6 +310,7 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     login: view.login,
     fetchContext,
     fetchDetails,
+    fetchReviewers,
     defaultBranch,
     openAgent,
     started,
@@ -320,6 +329,14 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
     },
     // [PRS-09]
     rerun: (item, runIds) => change(item.key, "Rerun", () => rerunFailed({ key: item.key, repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
+    // [PRS-12]
+    requestReviewers: (item, reviewers) => {
+      const { target } = item;
+      const names = reviewers.length === 1 ? reviewers[0] : `${reviewers.length} reviewers`;
+      change(item.key, "Request review", () => requestReviewers({ key: item.key, target, reviewers, on: true }), `Asked ${names} to review PR ${target.number}`, () =>
+        requestReviewers({ key: item.key, target, reviewers, on: false }),
+      );
+    },
     // [MEN-07]
     acknowledge: (item, ids) =>
       change(item.key, "Acknowledge", () => react({ key: item.key, subjectIds: ids, on: true }), `Acknowledged ${ids.length === 1 ? "a comment" : `${ids.length} comments`} on #${item.number}`, () =>
@@ -479,8 +496,10 @@ interface Actions {
   login: string | null;
   fetchContext: FetchContext;
   fetchDetails: FetchDetails;
+  fetchReviewers: FetchReviewers;
   defaultBranch: DefaultBranch;
   act: (item: Item, action: ActionId) => void;
+  requestReviewers: (item: Item, reviewers: string[]) => void;
   rerun: (item: Item, runIds: number[]) => void;
   acknowledge: (item: Item, commentIds: string[]) => void;
   confirm: (item: Item, action: "merge" | "close", comment?: string) => void;
@@ -499,8 +518,9 @@ function stateMark(item: Item): CardProps["mark"] {
 // A card that works collapsed: its main action and ⋯. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
 const isRed = (chips: Chip[]) => chips.some((chip) => chip.tone === "bad");
 
-// The sheet, Acknowledge, or a split button's menu: for the open sessions, or for starting one of `kind`.
-type Sheet = "item" | "acknowledge" | { anchor?: Anchor; kind?: SessionKind } | null;
+// The sheet, Acknowledge, the reviewer picker (after Ready for review, or on its own), or a split button's menu:
+// for the open sessions, or for starting one of `kind`.
+type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | { anchor?: Anchor; kind?: SessionKind } | null;
 
 // A session on an item that has no session action of its own starts with this prompt; it's editable first.
 const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
@@ -517,12 +537,15 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
   const open = () => setSheet("item");
   const copy = useCopy();
-  const history = item.section === "done" || item.section === "reviewed";
+  const history = SECTIONS[item.section].tab === "history";
 
   function perform(action: ActionId) {
     setSheet(null);
     if (action === "merge" || action === "close") setConfirm(action);
     else if (action === "acknowledge") setSheet("acknowledge");
+    else if (action === "request_review") setSheet("reviewers");
+    // A draft made ready goes straight on to who should review it [PRS-11].
+    else if (action === "ready") (actions.act(item, action), setSheet("reviewers-after-ready"));
     else actions.act(item, action);
   }
   const onMenu = (kind?: SessionKind) => (anchor: Anchor | undefined) => setSheet({ anchor, kind });
@@ -590,6 +613,15 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
         <>
           {sheet === "item" ? <ItemSheet item={item} sessions={sessions} actions={actions} {...handlers} /> : null}
           {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
+          {sheet === "reviewers" || sheet === "reviewers-after-ready" ? (
+            <ReviewerSheet
+              item={item}
+              afterReady={sheet === "reviewers-after-ready"}
+              fetchReviewers={actions.fetchReviewers}
+              onRequest={(reviewers) => (setSheet(null), actions.requestReviewers(item, reviewers))}
+              onClose={() => setSheet(null)}
+            />
+          ) : null}
           {sheet && typeof sheet === "object" ? (
             <MenuSheet title={item.title} anchor={sheet.anchor} groups={menuGroups(item, sessions, sheet.kind, actions, perform, () => setSheet(null))} onClose={() => setSheet(null)} />
           ) : null}
@@ -676,7 +708,7 @@ function sheetEntries(
   { onPerform, onMenu, onClose }: SheetHandlers,
   details?: { data?: { failing: FailingChecks[] }; isLoading: boolean },
 ): SheetEntry[] {
-  const inDoing = !item.section.startsWith("wait_") && item.section !== "done" && item.section !== "reviewed";
+  const inDoing = SECTIONS[item.section].tab === "doing";
   const close = (then: () => void) => () => (onClose(), then());
 
   // An open session first; starting another is in its menu [SES-03].
@@ -758,6 +790,102 @@ function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (id
               onPress={() => onReact(comments.filter((c) => picked.has(c.id)).map((c) => c.id))}
             />
             <Button label="Cancel" onPress={onClose} />
+          </View>
+        </KeepStyles>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+// Who should review a PR: GitHub's suggestions, who reviewed my other PRs in the repo, its teams, or anyone typed in.
+// All start unticked; requesting keeps whoever is already asked [PRS-12].
+function ReviewerSheet({
+  item,
+  afterReady,
+  fetchReviewers,
+  onRequest,
+  onClose,
+}: {
+  item: Item;
+  afterReady: boolean;
+  fetchReviewers: FetchReviewers;
+  onRequest: (reviewers: string[]) => void;
+  onClose: () => void;
+}) {
+  const styles = useStyles();
+  const choices = useQuery({ queryKey: ["attention-span", "reviewers", item.target.repo, item.target.number], queryFn: () => fetchReviewers({ target: item.target }), staleTime: 60_000 });
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [typed, setTyped] = useState<Reviewer[]>([]);
+  const [text, setText] = useState("");
+  const toggle = (login: string) => setPicked((now) => (now.has(login) ? new Set([...now].filter((other) => other !== login)) : new Set([...now, login])));
+  // Each person or team once, in the first group that has them.
+  const seen = new Set<string>();
+  const once = (list: Reviewer[]) => list.filter((reviewer) => !seen.has(reviewer.login.toLowerCase()) && seen.add(reviewer.login.toLowerCase()));
+  const groups = [
+    { title: "Added", list: once(typed) },
+    { title: "Suggested by GitHub", list: once(choices.data?.suggested ?? []) },
+    { title: "Recent on your PRs here", list: once(choices.data?.recent ?? []) },
+    { title: "Teams", list: once(choices.data?.teams ?? []) },
+  ];
+  const add = () => {
+    const login = text.trim().replace(/^@/, "");
+    if (!login) return;
+    setTyped((now) => [...now, { login, team: login.includes("/") }]);
+    setPicked((now) => new Set([...now, login]));
+    setText("");
+  };
+  const count = `${picked.size} reviewer${picked.size === 1 ? "" : "s"}`;
+  return (
+    <Modal title={`${afterReady ? "Ready for review" : "Request review"}: ${item.title}`} open onOpenChange={(open) => (open ? null : onClose())}>
+      <Modal.Content>
+        <KeepStyles styles={styles}>
+          <Text style={styles.muted}>{afterReady ? `PR ${item.target.number} is out of draft. Who should review it?` : `Who should review PR ${item.target.number}?`}</Text>
+          {choices.isLoading ? <Loading text="Loading suggestions…" /> : null}
+          {choices.error ? <Text style={styles.danger}>Couldn't load suggestions: {(choices.error as Error).message}</Text> : null}
+          {groups.map(({ title, list }) =>
+            list.length > 0 ? (
+              <View key={title} style={{ gap: 4 }}>
+                <Text style={[styles.muted, { fontSize: 12 }]}>{title}</Text>
+                {list.map((reviewer) => (
+                  <Pressable
+                    key={reviewer.login}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: picked.has(reviewer.login) }}
+                    accessibilityLabel={reviewer.login}
+                    onPress={() => toggle(reviewer.login)}
+                    style={[styles.row, { paddingVertical: 4 }]}
+                  >
+                    <TablerIcon name={picked.has(reviewer.login) ? "squareCheck" : "square"} size={18} color={picked.has(reviewer.login) ? styles.action : styles.c.foregroundMuted} />
+                    {reviewer.team ? <TablerIcon name="claim" size={18} color={styles.c.foregroundMuted} /> : <Avatar url={reviewer.avatarUrl} />}
+                    <Text style={{ color: styles.c.foreground, fontSize: 13 }}>{reviewer.login}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null,
+          )}
+          {choices.data?.teamsNote ? <Text style={styles.muted}>{choices.data.teamsNote}</Text> : null}
+          <View style={styles.row}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              placeholder="Login, or org/team"
+              placeholderTextColor={styles.c.foregroundMuted}
+              value={text}
+              onChangeText={setText}
+              onSubmitEditing={add}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Button label="Add" variant="calm" disabled={!text.trim()} onPress={add} />
+          </View>
+          <View style={styles.wrap}>
+            <Button
+              label={`Request ${count}`}
+              icon="claim"
+              variant="solid"
+              disabled={picked.size === 0}
+              onPress={() => onRequest([...picked])}
+            />
+            <Button label={afterReady ? "Skip" : "Cancel"} onPress={onClose} />
           </View>
         </KeepStyles>
       </Modal.Content>

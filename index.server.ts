@@ -1,8 +1,22 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
-import { claimIssue, closeIssue, closePullRequest, mergePullRequest, react, reopenIssue, rerunFailed, setAutoMerge, setReady, unclaimIssue, updateBranch } from "./server/actions";
+import {
+  claimIssue,
+  closeIssue,
+  closePullRequest,
+  mergePullRequest,
+  react,
+  reopenIssue,
+  requestReviewers,
+  rerunFailed,
+  reviewerChoices,
+  setAutoMerge,
+  setReady,
+  unclaimIssue,
+  updateBranch,
+} from "./server/actions";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
-import { FIXTURE_CONTEXT, fixtureDetails } from "./server/fixture";
+import { FIXTURE_CONTEXT, fixtureDetails, fixtureReviewerChoices } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
@@ -29,6 +43,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name));
   server.handle(rpc.setCoverage, ({ orgs, repos }) => ready(() => attention.setCoverage(orgs, repos)).then(() => ({ ok: true as const })));
   server.handle(rpc.setNextUpSources, (sources) => ready(() => attention.setNextUpSources(sources)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setFollowThreads, ({ on }) => ready(() => attention.setFollowThreads(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.myOrgs, async () => ({ orgs: await myOrgs() }));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
@@ -41,6 +56,15 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.reopenIssue, ({ key, target }) => act(key, () => reopenIssue(target), null));
   server.handle(rpc.setReady, ({ key, target, ready }) => act(key, () => setReady(target, ready), ready ? chip("ready for review", "good") : null));
   server.handle(rpc.setAutoMerge, ({ key, target, on }) => act(key, () => setAutoMerge(target, on), on ? chip("auto-merge on", "good") : null));
+  server.handle(rpc.requestReviewers, ({ key, target, reviewers, on }) =>
+    act(key, () => requestReviewers(target, reviewers, on), on ? chip("review requested", "good") : null),
+  );
+  server.handle(rpc.reviewerChoices, ({ target }) =>
+    ready(() => {
+      const { recent, login } = attention.reviewers(target.repo);
+      return FIXTURE ? Promise.resolve(fixtureReviewerChoices(recent)) : reviewerChoices(target, recent, login);
+    }),
+  );
   server.handle(rpc.react, ({ key, subjectIds, on }) => act(key, () => react(subjectIds, on), on ? chip("acknowledged", "neutral", "thumbUp") : null));
   server.handle(rpc.rerunFailed, ({ key, repo, runIds }) => act(key, () => rerunFailed(repo, runIds), chip("rerunning")));
   server.handle(rpc.itemDetails, ({ subject, target, checks }) => (FIXTURE ? Promise.resolve(fixtureDetails(subject, target, checks)) : itemDetails(subject, target, checks)));

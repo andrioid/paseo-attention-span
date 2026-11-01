@@ -9,6 +9,13 @@ export interface Actor {
   avatarUrl?: string;
 }
 
+export interface RequestedReviewer {
+  __typename?: string; // "User", "Team", ...
+  login?: string;
+  combinedSlug?: string;
+  avatarUrl?: string;
+}
+
 export interface Comment {
   id?: string;
   author: Actor | null;
@@ -44,7 +51,8 @@ export interface PullRequestNode {
   assignees: Nodes<{ login: string }>;
   closingIssuesReferences: Nodes<{ number: number; title: string; url: string; repository: Repo }>;
   commits: Nodes<{ commit: { committedDate: string; statusCheckRollup: { state: string } | null } }>;
-  reviewRequests: Nodes<{ requestedReviewer: Actor | null }>;
+  // A person, or a team by its "org/slug"; null when it can't be seen.
+  reviewRequests: Nodes<{ requestedReviewer: RequestedReviewer | null }>;
   latestReviews: Nodes<{ author: Actor | null; state: string; submittedAt: string | null }>;
   reviewThreads: Nodes<ReviewThread>;
   comments: Nodes<Comment>;
@@ -67,7 +75,11 @@ export interface MentionNode {
   reviewThreads?: Nodes<ReviewThread>;
 }
 
+// An issue or PR I'm in, with its last conversation comments.
 export interface IssueNode {
+  __typename?: "Issue" | "PullRequest";
+  createdAt: string;
+  author: Actor | null;
   number: number;
   title: string;
   url: string;
@@ -95,7 +107,8 @@ export interface LiveResult {
   mine: Nodes<PullRequestNode>;
   reviews: Nodes<PullRequestNode>;
   mentions: Nodes<MentionNode>;
-  commented: Nodes<IssueNode>;
+  involved: Nodes<IssueNode>;
+  asked: Nodes<IssueNode>;
   assigned: Nodes<PickableNode>;
   unclaimed: Nodes<PickableNode>;
 }

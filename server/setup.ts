@@ -21,10 +21,10 @@ async function ghStatus(): Promise<SetupStatus["gh"]> {
 
 export async function configStatus(): Promise<ConfigStatus> {
   try {
-    const { orgs, repos, nextUp } = await loadConfig();
-    return { error: null, orgs, repos, nextUp: { mine: nextUp.mine, orgs: nextUp.orgs, repos: nextUp.repos } };
+    const { orgs, repos, nextUp, followThreads } = await loadConfig();
+    return { error: null, orgs, repos, nextUp: { mine: nextUp.mine, orgs: nextUp.orgs, repos: nextUp.repos }, followThreads };
   } catch (error) {
-    return { error: (error as Error).message, orgs: [], repos: [], nextUp: { mine: false, orgs: [], repos: [] } };
+    return { error: (error as Error).message, orgs: [], repos: [], nextUp: { mine: false, orgs: [], repos: [] }, followThreads: false };
   }
 }
 
