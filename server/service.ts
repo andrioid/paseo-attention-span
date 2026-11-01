@@ -6,7 +6,7 @@ import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LiveResult } from "./github-types";
 import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
-import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveNextUpSources, saveState, State } from "./store";
+import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveImplicitReplies, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -103,6 +103,12 @@ export class AttentionService {
   // Where Next up looks, chosen in settings [NXT-04]. Only the live feed has Next up.
   async setNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<void> {
     this.config = await saveNextUpSources(sources);
+    await this.refresh("live").catch(() => {});
+  }
+
+  // Replies on others' threads without a tag [ATT-17]. Only the live feed has them.
+  async setImplicitReplies(on: boolean): Promise<void> {
+    this.config = await saveImplicitReplies(on);
     await this.refresh("live").catch(() => {});
   }
 

@@ -29,6 +29,7 @@ function Coverage() {
   const fetchCoverage = useRpc(rpc.getCoverage);
   const save = useRpc(rpc.setCoverage);
   const saveNextUp = useRpc(rpc.setNextUpSources);
+  const saveImplicit = useRpc(rpc.setImplicitReplies);
   const coverage = useQuery({ queryKey: COVERAGE_QUERY_KEY, queryFn: () => fetchCoverage({}) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +42,7 @@ function Coverage() {
         </SettingsCard>
       </SettingsSection>
     );
-  const { orgs, repos, nextUp } = coverage.data;
+  const { orgs, repos, nextUp, implicitReplies } = coverage.data;
   // A file that doesn't parse is left for the person who edited it.
   if (coverage.data.error)
     return (
@@ -103,6 +104,23 @@ function Coverage() {
             : orgs.length || repos.length
               ? "None chosen: using the orgs and repos above."
               : "None chosen: using your Paseo projects."}
+        </Text>
+      </View>
+      <View style={{ gap: 8 }}>
+        <SettingsSection title="Replies">
+          <SettingsCard>
+            <SettingsSwitch
+              label="Allow implicit tagging in replies"
+              value={implicitReplies}
+              disabled={saving}
+              onValueChange={(on) => void write({ implicitReplies: on }, () => saveImplicit({ on }))}
+            />
+          </SettingsCard>
+        </SettingsSection>
+        <Text style={[styles.muted, CAPTION]}>
+          {implicitReplies
+            ? "A recent reply after yours on someone else's thread counts as tagging you."
+            : "On other people's threads, only replies that tag you show. Your own issues and PRs show any recent reply."}
         </Text>
       </View>
       <View style={{ gap: 4 }}>

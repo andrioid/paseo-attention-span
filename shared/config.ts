@@ -36,6 +36,8 @@ export const AttentionConfig = z.object({
   refreshMinutes: z.number().min(5).default(15),
   staleDraftDays: z.number().positive().default(30),
   mentionDays: z.number().positive().default(30),
+  // Count a reply after mine on someone else's thread even when it doesn't tag me. Off: only my own threads and mentions [ATT-17].
+  implicitReplies: z.boolean().default(false),
   // How many weeks History shows [HIS-01].
   historyWeeks: z.number().int().positive().default(4),
   // Unclaimed issues to pick from [NXT-04]. With no sources chosen, Next up looks in `orgs` and `repos` [NXT-08].

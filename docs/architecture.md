@@ -28,11 +28,12 @@ flowchart LR
   - Server: RPC handlers for fetching and for GitHub actions.
 - **GitHub access** goes through the host's existing `gh` login. The plugin stores no token [SEC-01].
 - **Setup checklist** [SET-01]: when a refresh fails, the screen asks the server what setup needs (`gh api user` for whether `gh` is there and who it's signed in as, and whether `config.json` parses). If `gh` is missing or signed out, or the file is broken, a checklist takes the tabs' place. Each line says how to fix it, and Check again refreshes. It also lists what's covered, the Paseo projects with a GitHub remote, and which profile sessions will use. Other failures, like a network error, stay a red line above the tabs.
-- **Settings screen** [SRC-02], under Settings → Plugins → Attention Span and the gear next to ⟳: orgs and repos, one per row. Each is checked with `gh api users/<org>` (it must be an organization, since searches use `org:`) or `gh api repos/<owner>/<name>` before it's saved, and GitHub's exact name is kept. Saving rewrites only `orgs` and `repos` in `config.json`, refuses a file that doesn't parse, and refreshes the lists.
+- **Settings screen** [SRC-02], under Settings → Plugins → Attention Span and the gear next to ⟳: orgs and repos, one per row. Each is checked with `gh api users/<org>` (it must be an organization, since searches use `org:`) or `gh api repos/<owner>/<name>` before it's saved, and GitHub's exact name is kept. Saving rewrites only `orgs` and `repos` in `config.json`, refuses a file that doesn't parse, and refreshes the lists. A Replies section has one switch, Allow implicit tagging in replies, which writes only `implicitReplies` [ATT-17].
 - **Local files** live in `~/.config/paseo-attention-span/`:
   - `config.json`, edited by hand, except `orgs` and `repos` (the settings screen) and `codeRepos`, which the screen can add to:
     - orgs and repos [SRC-01]
     - a profile per reason: `review` for Review, `default` for everything else
+    - `implicitReplies` (default off, also under Settings → Replies): count recent replies after mine on other people's threads as tagging me [ATT-17]
     - `waitingTooLongDays` (default 3) [ATT-11] and `refreshMinutes` (default 15) [FRESH-01], `historyWeeks` (default 4) [HIS-01]
     - optional prompt templates that replace the built-in ones [SES-04]
     - optional merge method per repo [PRS-04]
@@ -66,7 +67,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `s
 | Section | Shows |
 |---|---|
 | Waiting for your reply | Open threads with a mention waiting on me [MEN-01] |
-| Answered | Issues and PRs where a person commented in the conversation after me, within `mentionDays` (default 30), without mentioning me, and I haven't 👍'd it. On a thread I opened, opening it counts as my last word until I comment; on someone else's, my comment must be among its last 10. Reply and Acknowledge clear it, and so does Dismiss until someone comments again [ATT-16, MEN-02] |
+| Answered | Issues and PRs I opened where a person commented in the conversation after me, within `mentionDays` (default 30), without mentioning me, and I haven't 👍'd it; opening a thread counts as my last word until I comment. Replies after mine on other people's threads count only with `implicitReplies` on (Settings → Replies → Allow implicit tagging in replies, off by default); then my comment must be among the thread's last 10. Reply and Acknowledge clear it, and so does Dismiss until someone comments again [ATT-16, ATT-17, MEN-02] |
 | Review requested | PRs requesting my review by name, not via a team [REV-01] |
 | CI failing | My PRs with failing checks [PRS-01] |
 | Changes requested | My PRs with requested changes or unresolved threads [PRS-02] |

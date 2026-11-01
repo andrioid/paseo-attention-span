@@ -187,8 +187,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     ],
     involved: [
       issue(140, [comment(alice, "", 9), comment(me, "Which customers see this?", 1)], "Invoice totals round wrong"),
-      // Answered without mentioning me [ATT-16]; and a bot after my question, which doesn't count [MEN-05].
-      issue(142, [comment(me, "Does this happen on every shop, or only some?", 2), comment(alice, "Only the Danish one, as far as I can tell. It started after the **VAT change** on Monday.", 0.4)], "Order confirmation shows the wrong VAT"),
+      // Answered on my own issue without mentioning me [ATT-16]; and a bot after my question, which doesn't count [MEN-05].
+      issue(142, [comment(me, "Does this happen on every shop, or only some?", 2), comment(alice, "Only the Danish one, as far as I can tell. It started after the **VAT change** on Monday.", 0.4)], "Order confirmation shows the wrong VAT", { author: me }),
       issue(143, [comment(me, "Can we drop the old endpoint yet?", 1), comment(bot, "This issue has been labelled `needs-triage`.", 0.5)], "Retire the v1 orders endpoint"),
       // A comment on my PR's conversation [ATT-16].
       issue(111, [comment(bob, "Big change. Could you split the index migration into its own PR?", 0.2)], "Faster product search", { __typename: "PullRequest", author: me, createdAt: daysAgo(2) }),

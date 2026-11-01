@@ -48,6 +48,11 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const found = threadState(node, me, now, config);
     if (found) answers.set(key, found);
   }
+  // Who answered, when the rule says that's on me [ATT-16, ATT-17].
+  const answerOn = (key: string) => {
+    const found = answers.get(key);
+    return found && ISSUE_RULES.answered?.when(found.flags) ? found.person : undefined;
+  };
 
   // My PRs, minus those handed over to someone else [PRS-08].
   const mine = compact(data.mine.nodes).filter((pr) => pr.assignees.nodes.length === 0 || pr.assignees.nodes.some(isMe));
@@ -119,7 +124,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const outOfSync = stack.slice(1).some((pr) => state(pr).outOfSync || state(pr).conflicts);
     const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
     // A conversation comment after mine on any PR in the stack [ATT-16].
-    const answer = stack.map((pr) => answers.get(prKey(pr))?.person).find(Boolean);
+    const answer = stack.map((pr) => answerOn(prKey(pr))).find(Boolean);
     const base = bottom.baseRefName;
     const waitingSince = latest(s.lastCommitAt, s.repliedAt);
     const replied = s.repliedAt > EPOCH || bottom.reviewDecision === "CHANGES_REQUESTED";
@@ -222,7 +227,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     for (const unit of grouped) for (const pr of unit.stack) listed.add(prKey(pr));
     listed.add(key);
     // From the issue itself only what's on me counts: a mention, or an answer to my question. Its PRs say how the work goes [ATT-16].
-    const issueWaiting = lead ? (mentions.get(key) ?? answers.get(key)?.person) : undefined;
+    const issueWaiting = lead ? (mentions.get(key) ?? answerOn(key)) : undefined;
     const sections = grouped.map((unit) => unit.section);
     if (issueWaiting) sections.push(mentions.has(key) ? "reply" : "answered");
     const section = sections.sort((a, b) => rank(a) - rank(b))[0];
@@ -358,7 +363,7 @@ export function threadState(
   thread: IssueNode,
   me: string,
   now: Date,
-  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays">,
+  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays" | "implicitReplies">,
 ): { flags: IssueState; person?: Person; mine: string } | null {
   const authored = thread.author?.login.toLowerCase() === me;
   const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
@@ -370,6 +375,7 @@ export function threadState(
   const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
   const flags: IssueState = {
     authored,
+    implicit: config.implicitReplies,
     // Opening a thread isn't asking a question; a comment is.
     mineLast: index >= 0 && after.length === 0,
     answered: unread.length > 0,

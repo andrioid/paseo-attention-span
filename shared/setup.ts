@@ -7,6 +7,8 @@ export interface ConfigStatus {
   repos: string[];
   // Where Next up looks; none chosen falls back to `orgs` and `repos`, then my Paseo projects [NXT-04, NXT-08].
   nextUp: { mine: boolean; orgs: string[]; repos: string[] };
+  // Replies on others' threads count without a tag [ATT-17].
+  implicitReplies: boolean;
 }
 
 export interface SetupStatus {

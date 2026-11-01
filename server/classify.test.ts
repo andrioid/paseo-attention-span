@@ -16,6 +16,7 @@ function run(parts: Parameters<typeof search>[0], behind: Record<string, number>
   return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {} }, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
+const implicit = AttentionConfig.parse({ orgs: ["acme"], implicitReplies: true });
 const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => SECTIONS[item.section].tab === "doing");
 
 describe("doing", () => {
@@ -204,8 +205,8 @@ describe("waiting", () => {
 });
 
 describe("answered", () => {
-  it("ATT-16: a recent comment after mine without a mention is mine, with Reply and 👍", () => {
-    const [item] = run({ involved: [issue(70, [comment(me, "which shops?", 2), comment(alice, "Only **the Danish** one", 0.5)])] }).items;
+  it("ATT-16: a recent comment after mine on my issue, without a mention, is mine, with Reply and 👍", () => {
+    const [item] = run({ involved: [issue(70, [comment(me, "which shops?", 2), comment(alice, "Only **the Danish** one", 0.5)], "Mine", { author: me })] }).items;
     expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "alice", snippet: "Only the Danish one", since: daysAgo(0.5) }, chips: [] });
     expect(item.person?.comments?.map((c) => c.body)).toEqual(["Only **the Danish** one"]);
     expect(item.othersActivityAt).toBe(daysAgo(0.5));
@@ -222,9 +223,15 @@ describe("answered", () => {
     expect(sections(run({ involved: [issue(70, [comment(me, "?", 1), comment(bot, "labelled", 0.5)])] }).items)).toEqual([[70, "wait_answer"]]);
   });
 
-  it("ATT-16: on someone else's thread, only comments from the last mentionDays count", () => {
-    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }).items).toEqual([]);
-    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }).items;
+  it("ATT-17: replies on someone else's thread that don't tag me are left out, unless I allow it", () => {
+    const thread = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 0.5)]);
+    expect(run({ involved: [thread] }).items).toEqual([]);
+    expect(run({ involved: [thread] }, {}, { config: implicit }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
+  });
+
+  it("ATT-16, ATT-17: even when allowed, only comments from the last mentionDays count", () => {
+    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }, {}, { config: implicit }).items).toEqual([]);
+    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }, {}, { config: implicit }).items;
     expect(item).toMatchObject({ section: "answered", person: { login: "bob" } });
     expect(item.person?.comments?.map((c) => c.author)).toEqual(["bob"]);
   });
@@ -268,7 +275,7 @@ describe("answered", () => {
     const closes = { nodes: [{ number: 50, title: "Issue 50", url: "u", repository: { nameWithOwner: REPO } }] };
     const attention = run({
       mine: [pr(1, { closingIssuesReferences: closes, reviewRequests: asked })],
-      involved: [issue(50, [comment(me, "which shops?", 2), comment(alice, "Danish", 1)])],
+      involved: [issue(50, [comment(me, "which shops?", 2), comment(alice, "Danish", 1)], "Issue 50", { author: me })],
     });
     expect(attention.items).toHaveLength(1);
     expect(attention.items[0]).toMatchObject({ kind: "issue", section: "answered", person: { login: "alice" }, actions: ["reply", "acknowledge"] });

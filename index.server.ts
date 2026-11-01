@@ -43,6 +43,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name));
   server.handle(rpc.setCoverage, ({ orgs, repos }) => ready(() => attention.setCoverage(orgs, repos)).then(() => ({ ok: true as const })));
   server.handle(rpc.setNextUpSources, (sources) => ready(() => attention.setNextUpSources(sources)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setImplicitReplies, ({ on }) => ready(() => attention.setImplicitReplies(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.myOrgs, async () => ({ orgs: await myOrgs() }));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
