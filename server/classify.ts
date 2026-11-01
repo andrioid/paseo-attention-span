@@ -1,7 +1,7 @@
 import { type Attention, type Chip, type Item, type NextUpIssue, type Person, type Reviewer, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import type { Actor, Comment, Details, HistoryResult, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
+import type { Actor, Comment, Details, HistoryResult, IssueNode, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
 import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions } from "./rules";
@@ -38,6 +38,13 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   for (const node of compact(data.mentions.nodes)) {
     const waiting = waitingMention(node, me);
     if (waiting) mentions.set(prKey(node), waiting);
+  }
+
+  // What each issue I commented on is waiting for: an answer, or me [ATT-16].
+  const answers = new Map<string, { flags: IssueState; person?: Person; mine: string }>();
+  for (const issue of compact(data.commented.nodes)) {
+    const found = issueState(issue, me, now, config.waitingTooLongDays);
+    if (found) answers.set(prKey(issue), found);
   }
 
   // My PRs, minus those handed over to someone else [PRS-08].
@@ -208,9 +215,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   for (const [key, { lead, units: grouped }] of groups) {
     for (const unit of grouped) for (const pr of unit.stack) listed.add(prKey(pr));
     listed.add(key);
-    const issueWaiting = lead ? mentions.get(key) : undefined;
+    // From the issue itself only what's on me counts: a mention, or an answer to my question. Its PRs say how the work goes [ATT-16].
+    const issueWaiting = lead ? (mentions.get(key) ?? answers.get(key)?.person) : undefined;
     const sections = grouped.map((unit) => unit.section);
-    if (issueWaiting) sections.push("reply");
+    if (issueWaiting) sections.push(mentions.has(key) ? "reply" : "answered");
     const section = sections.sort((a, b) => rank(a) - rank(b))[0];
     const unit = grouped.find((candidate) => candidate.section === section) ?? grouped[0];
     const bottom = unit.stack[0];
@@ -283,17 +291,25 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     });
   }
 
-  // Issues where I commented last and nobody answered: waiting, then mine to nudge [WAI-01, ATT-11].
+  // Issues where I commented: answered, or waiting on others and then mine to nudge, however long [WAI-01, ATT-11, ATT-16].
   for (const issue of compact(data.commented.nodes)) {
     const key = prKey(issue);
-    const last = issue.comments.nodes.at(-1);
-    if (listed.has(key) || !last) continue;
-    const flags: IssueState = { mineLast: isMe(last.author), tooLong: daysSince(last.createdAt, now) >= config.waitingTooLongDays };
+    const found = answers.get(key);
+    if (listed.has(key) || !found) continue;
+    const { flags, person, mine } = found;
     const section = pick(ISSUE_RULES, flags);
     if (!section) continue;
     listed.add(key);
     const label = ISSUE_RULES[section]?.label?.(flags);
-    items.push({ ...plain(issue, "issue", section), chips: [label ? chip(`${label} · ${ago(last.createdAt, now)}`, "warn") : chip(ago(last.createdAt, now))] });
+    const since = person?.since ?? mine;
+    items.push({
+      ...plain(issue, "issue", section),
+      chips: section === "answered" ? [] : [label ? chip(`${label} · ${ago(since, now)}`, "warn") : chip(ago(since, now))],
+      person,
+      actions: section === "answered" ? replyActions(person) : [],
+      // A new answer brings back a dismissed one [ATT-08].
+      othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
+    });
   }
 
   items.sort(order);
@@ -324,6 +340,33 @@ export function classifyHistory(data: HistoryResult): Item[] {
   }
   for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });
   return items.sort(order);
+}
+
+// Whether my last comment on an issue is the last one from a person, and if not, the answers since that I haven't 👍'd.
+// Bots don't count [MEN-05]. Only the last comments are fetched: once mine is out of them the conversation has moved on.
+export function issueState(issue: IssueNode, me: string, now: Date, tooLongDays: number): { flags: IssueState; person?: Person; mine: string } | null {
+  const people = issue.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
+  const index = people.findLastIndex((c) => c.author?.login.toLowerCase() === me);
+  if (index < 0) return null;
+  const mine = people[index].createdAt;
+  const after = people.slice(index + 1);
+  const unread = after.filter((c) => !c.reactionGroups?.some((group) => group.viewerHasReacted));
+  const flags: IssueState = { mineLast: after.length === 0, answered: unread.length > 0, tooLong: daysSince(mine, now) >= tooLongDays };
+  const last = unread.at(-1);
+  if (!last?.author) return { flags, mine };
+  return {
+    flags,
+    mine,
+    person: {
+      login: last.author.login,
+      avatarUrl: last.author.avatarUrl,
+      bot: false,
+      since: unread[0].createdAt,
+      snippet: snippetAround(plainText(last.body ?? ""), 0),
+      url: last.url ?? issue.url,
+      comments: unread.filter((c) => c.id).map((c) => ({ id: c.id!, author: c.author!.login, body: excerpt(c.body, 4000) ?? "", createdAt: c.createdAt, url: c.url })),
+    },
+  };
 }
 
 // A requested person, or a team by its "org/slug".

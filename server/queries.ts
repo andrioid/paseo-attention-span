@@ -16,7 +16,8 @@ const SEARCHES = {
         reviewThreads(last: 30) { nodes { isResolved comments(first: 20) { nodes { ...comment } } } }
       }`,
   },
-  commented: { first: 30, nodes: "... on Issue { number title url repository { nameWithOwner } comments(last: 1) { nodes { author { login } createdAt } } }" },
+  // The last few comments, with what the 👍 picker needs, to tell whether I'm answered [ATT-16].
+  commented: { first: 50, nodes: "... on Issue { number title url repository { nameWithOwner } comments(last: 10) { nodes { ...comment } } }" },
   assigned: { first: 50, nodes: "...pickable" },
   unclaimed: { first: 100, nodes: "...pickable" },
   merged: {
@@ -152,7 +153,8 @@ export function searchVariables(config: AttentionConfig, now: Date): Record<Excl
     reviews: `is:pr is:open user-review-requested:@me ${scope}`,
     mentions: `is:open mentions:@me updated:>=${since} ${scope}`,
     assigned: `is:issue is:open assignee:@me ${scope}`,
-    commented: `is:issue is:open commenter:@me updated:>=${since} ${scope}`,
+    // No age limit: a question nobody answered stays until it's answered [ATT-11]. Newest first, so old ones go last.
+    commented: `is:issue is:open commenter:@me sort:updated-desc ${scope}`,
     // History [HIS-01, HIS-02]
     merged: `is:pr is:merged author:@me merged:>=${history} ${scope}`,
     reviewed: `is:pr is:merged reviewed-by:@me -author:@me merged:>=${history} ${scope}`,

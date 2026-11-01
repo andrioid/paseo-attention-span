@@ -101,6 +101,7 @@ function rerunEntry(failing: FailingChecks[] | undefined, loading: boolean): { d
 
 const SECTION_ICONS: Record<SectionId, IconName> = {
   reply: "reply",
+  answered: "replyArrow",
   review: "review",
   ci: "ci",
   changes: "changes",
@@ -823,7 +824,7 @@ function ReviewerSheet({
   const groups = [
     { title: "Added", list: once(typed) },
     { title: "Suggested by GitHub", list: once(choices.data?.suggested ?? []) },
-    { title: "Reviewed your PRs here", list: once(choices.data?.recent ?? []) },
+    { title: "Recent on your PRs here", list: once(choices.data?.recent ?? []) },
     { title: "Teams", list: once(choices.data?.teams ?? []) },
   ];
   const add = () => {

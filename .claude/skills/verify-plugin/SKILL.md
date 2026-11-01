@@ -36,7 +36,9 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-doing-issue-session-menu.png` | The same menu from the sheet of "Supplier prices are a week out of date": two sessions, the one that needs you ticked first, then Rebase stack with and without options |
    | `<layout>-doing-issue-sheet.png` | The sheet of the issue "Supplier prices are a week out of date": Open issue on GitHub, and its stack of PRs, each with a GitHub icon and opening that PR |
    | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, rendered as Markdown, both ticked |
-   | `<layout>-doing-options.png` | The Options modal from "Address comments with options…", under the ▾ of Address comments in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
+   | `<layout>-doing-needs-reviewer.png` | The Needs a reviewer section: "Export invoices as CSV" with Request review and Merge in its sheet, "Log slow database queries" with a CI running chip |
+| `<layout>-doing-reviewers.png` | The reviewer picker from "Export invoices as CSV" (Needs a reviewer): Suggested by GitHub (carol, ticked), Recent on your PRs here, Teams, the login field, Request 1 reviewer |
+| `<layout>-doing-options.png` | The Options modal from "Address comments with options…", under the ▾ of Address comments in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
    | `<layout>-doing-merge-confirm.png` | The Merge confirmation on "Dialog focus returns to the trigger" |
    | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
    | `<layout>-history.png` | History by week, with Reviewed toggles |

@@ -6,13 +6,13 @@ There are four tabs. I think of them as a little story: what needs me now, what'
 
 ## Doing: what needs you now
 
-This is the one you'll live in. It's split by reason: someone's waiting for your reply, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, it's waited too long, nobody's been asked to review it yet, or it's one of your drafts.
+This is the one you'll live in. It's split by reason: someone's waiting for your reply, someone answered your question, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, it's waited too long, nobody's been asked to review it yet, or it's one of your drafts.
 
 ![Doing](docs/screenshots/desktop-dark-doing.png)
 
 Each item shows up once, under whichever reason is most urgent. An issue and the PRs that close it count as one item, and so does a stack of PRs. A stack is one change wearing several PRs, so it shouldn't take up five rows.
 
-Mentions only count while the person is still waiting for you. Reply or react and it's gone. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
+Mentions only count while the person is still waiting for you. Reply or react and it's gone. The same goes for an answer to a question you asked: if someone replies without tagging you, it shows up under **Answered** instead of quietly vanishing. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
 Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
 
@@ -30,6 +30,8 @@ The rest change GitHub right away: rerun failed jobs, update a branch, mark a dr
 ![Acknowledge](docs/screenshots/desktop-dark-doing-acknowledge.png)
 
 A PR you opened isn't waiting on anyone until you've asked someone to review it, so it stays here under **Needs a reviewer**. **Request review** offers GitHub's suggestions, whoever reviewed your other PRs in that repo, and its teams, or you can type a name. Marking a draft ready asks the same question. If nobody reviews in that repo, **Merge** is right there once CI is green.
+
+![Request review](docs/screenshots/desktop-dark-doing-reviewers.png)
 
 Anything that's sat in Waiting for more than three days moves back here under **Waiting too long**. Usually that means someone forgot, and sometimes the someone is me.
 
@@ -129,7 +131,7 @@ Everything else lives in `~/.config/paseo-attention-span/config.json` on the dae
 
 ## Your data
 
-- **GitHub:** it reads your PRs, review requests, mentions and issues through `gh`, limited to the orgs and repos you've configured. By default it refreshes every 15 minutes, which uses under 6% of GitHub's hourly API allowance. I checked.
+- **GitHub:** it reads your PRs, review requests, mentions and issues through `gh`, limited to the orgs and repos you've configured. By default it refreshes every 15 minutes, which uses about 6% of GitHub's hourly API allowance. I checked.
 - **Local files:** a cache of what it shows, your dismissals and your Next up filter live in `~/.config/paseo-attention-span/state.json` on the daemon host. That's it.
 - **Agent providers:** when a session starts, the item's context goes into the agent's prompt: descriptions, comments, review threads, failing CI logs. That prompt goes to whichever provider your agent profile uses, so it's worth knowing which one that is.
 

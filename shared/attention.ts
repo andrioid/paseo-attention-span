@@ -11,6 +11,8 @@ export const TAB_FEED: Record<TabId, FeedId> = { history: "history", doing: "liv
 // holds, its most urgent reason [ATT-02]. Moving a line here changes which section wins.
 export const SECTIONS = {
   reply: { tab: "doing", title: "Waiting for your reply" },
+  // Someone answered my question without mentioning me [ATT-16].
+  answered: { tab: "doing", title: "Answered" },
   review: { tab: "doing", title: "Review requested" },
   ci: { tab: "doing", title: "CI failing" },
   changes: { tab: "doing", title: "Changes requested" },

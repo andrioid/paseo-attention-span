@@ -203,6 +203,47 @@ describe("waiting", () => {
   });
 });
 
+describe("answered", () => {
+  it("ATT-16: an issue where someone answered me without a mention is mine, with Reply and 👍", () => {
+    const [item] = run({ commented: [issue(70, [comment(me, "which shops?", 2), comment(alice, "Only **the Danish** one", 0.5)])] }).items;
+    expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "alice", snippet: "Only the Danish one" }, chips: [] });
+    expect(item.person?.comments?.map((c) => c.body)).toEqual(["Only **the Danish** one"]);
+    expect(item.othersActivityAt).toBe(daysAgo(0.5));
+  });
+
+  it("ATT-16, MEN-02: replying makes it wait again; a 👍 on the answer clears it", () => {
+    const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
+    expect(sections(run({ commented: [replied] }).items)).toEqual([[70, "wait_answer"]]);
+    const reacted = issue(71, [comment(me, "which shops?", 2), comment(alice, "Danish", 1, { reactionGroups: [{ viewerHasReacted: true }] })]);
+    expect(run({ commented: [reacted] }).items).toEqual([]);
+  });
+
+  it("ATT-16, MEN-05: a bot commenting after my question doesn't answer it", () => {
+    expect(sections(run({ commented: [issue(70, [comment(me, "?", 1), comment(bot, "labelled", 0.5)])] }).items)).toEqual([[70, "wait_answer"]]);
+  });
+
+  it("ATT-11: a question nobody answered stays however old it is", () => {
+    const [item] = run({ commented: [issue(70, [comment(me, "still needed?", 45)])] }).items;
+    expect(item).toMatchObject({ section: "too_long" });
+    expect(chips(item)).toEqual(["waiting for an answer · 45d"]);
+    expect(searchVariables(config, NOW).commented).not.toContain("updated:");
+  });
+
+  it("ATT-16: once my comment is out of the last ones, the conversation has moved on", () => {
+    expect(run({ commented: [issue(70, [comment(alice, "", 3), comment(bob, "", 2)])] }).items).toEqual([]);
+  });
+
+  it("ATT-03, ATT-16: an answer on an issue my PR closes leads its item", () => {
+    const closes = { nodes: [{ number: 50, title: "Issue 50", url: "u", repository: { nameWithOwner: REPO } }] };
+    const attention = run({
+      mine: [pr(1, { closingIssuesReferences: closes, reviewRequests: asked })],
+      commented: [issue(50, [comment(me, "which shops?", 2), comment(alice, "Danish", 1)])],
+    });
+    expect(attention.items).toHaveLength(1);
+    expect(attention.items[0]).toMatchObject({ kind: "issue", section: "answered", person: { login: "alice" }, actions: ["reply", "acknowledge"] });
+  });
+});
+
 describe("needs a reviewer", () => {
   it("PRS-12: a PR nobody was asked to review is mine, with Merge once CI passed on the current base", () => {
     const [item] = run({ mine: [pr(1)] }).items;
@@ -443,7 +484,7 @@ describe("GitHub requests", () => {
   it("GH-01: sends each live search as its own request, and History as one, with only the fragments each uses", () => {
     expect(searchQuery(["mine"], true)).toMatch(/^query Attention\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
     expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
-    expect(searchQuery(["commented"])).not.toContain("fragment");
+    expect(searchQuery(["commented"]).match(/^fragment \w+/gm)).toEqual(["fragment comment", "fragment author"]);
     expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
     expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].filter((name) => name !== "unclaimed").sort());
   });
@@ -460,7 +501,7 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const attention = classify({ data, details, config, now: NOW });
-    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(15);
+    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(16);
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 6]);
   });

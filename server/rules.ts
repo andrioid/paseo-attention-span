@@ -87,17 +87,23 @@ export const PR_RULES: Rules<PrState> = {
   wait_ci: { when: (s) => !s.draft && s.asked && s.ciPending, label: waitingFor },
 };
 
-// ---- Issues where I commented [WAI-01] ----
+// ---- Issues where I commented [WAI-01, ATT-16] ----
 
 export interface IssueState {
-  // My comment is the last one.
+  // My comment is the last one from a person; bots don't count [MEN-05].
   mineLast: boolean;
+  // A person answered after me, and I haven't 👍'd it [MEN-02].
+  answered: boolean;
+  // My comment is at least waitingTooLongDays old.
   tooLong: boolean;
 }
 
-// An issue may match none, and then isn't listed.
+// An issue may match none, and then isn't listed: an answer I 👍'd needs nothing more.
+// Mentions come first, through their own search [MEN-01].
 export const ISSUE_RULES: Rules<IssueState> = {
-  // Nobody answered for too long: mine to nudge [ATT-11].
+  // Answered without mentioning me: mine until I reply, 👍 it or dismiss it [ATT-16].
+  answered: { when: (s) => !s.mineLast && s.answered },
+  // Nobody answered for too long: mine to nudge, however long ago [ATT-11].
   too_long: { when: (s) => s.mineLast && s.tooLong, label: () => "waiting for an answer" },
   wait_answer: { when: (s) => s.mineLast },
 };

@@ -183,7 +183,13 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
         reviewThreads: { nodes: [{ isResolved: false, comments: { nodes: [comment(bot, "@me this endpoint leaks the API key in its response", 1)] } }] },
       }),
     ],
-    commented: [issue(140, [comment(alice, "", 9), comment(me, "Which customers see this?", 1)], "Invoice totals round wrong"), issue(141, [comment(me, "Is this still needed?", 12)], "Rotate the analytics token")],
+    commented: [
+      issue(140, [comment(alice, "", 9), comment(me, "Which customers see this?", 1)], "Invoice totals round wrong"),
+      issue(141, [comment(me, "Is this still needed?", 12)], "Rotate the analytics token"),
+      // Answered without mentioning me [ATT-16]; and a bot after my question, which doesn't count [MEN-05].
+      issue(142, [comment(me, "Does this happen on every shop, or only some?", 2), comment(alice, "Only the Danish one, as far as I can tell. It started after the **VAT change** on Monday.", 0.4)], "Order confirmation shows the wrong VAT"),
+      issue(143, [comment(me, "Can we drop the old endpoint yet?", 1), comment(bot, "This issue has been labelled `needs-triage`.", 0.5)], "Retire the v1 orders endpoint"),
+    ],
     assigned: [
       pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"),
       pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO),
