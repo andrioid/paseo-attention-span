@@ -36,6 +36,7 @@ export interface PullRequestNode {
   number: number;
   title: string;
   url: string;
+  body?: string;
   isDraft: boolean;
   createdAt: string;
   updatedAt: string;
@@ -49,7 +50,7 @@ export interface PullRequestNode {
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   autoMergeRequest?: { enabledAt: string } | null;
   assignees: Nodes<{ login: string }>;
-  closingIssuesReferences: Nodes<{ number: number; title: string; url: string; repository: Repo }>;
+  closingIssuesReferences: Nodes<LinkedIssue>;
   commits: Nodes<{ commit: { committedDate: string; statusCheckRollup: { state: string } | null } }>;
   // A person, or a team by its "org/slug"; null when it can't be seen.
   reviewRequests: Nodes<{ requestedReviewer: RequestedReviewer | null }>;
@@ -115,7 +116,7 @@ export interface LiveResult {
 
 // One request for all three [HIS-01, HIS-02].
 export interface HistoryResult {
-  merged: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> }>;
+  merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> }>;
   reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; author: Actor | null }>;
   closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo }>;
 }
@@ -128,4 +129,8 @@ export interface Details {
   behind: Record<string, number>;
   // Issue field name -> its options in order.
   fieldOptions: Record<string, string[]>;
+  // "owner/name#number" -> the open issue my PRs' descriptions refer to; PRs and closed issues are left out [ATT-03].
+  issues: Record<string, LinkedIssue>;
 }
+
+export type LinkedIssue = { number: number; title: string; url: string; repository: Repo };

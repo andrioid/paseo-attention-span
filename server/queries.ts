@@ -1,6 +1,7 @@
 import type { UnclaimedSource } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { PickableNode, PullRequestNode } from "./github-types";
+import type { IssueRef } from "./references";
 
 // An issue or PR with its last conversation comments [ATT-16].
 const THREAD = `__typename
@@ -29,7 +30,7 @@ const SEARCHES = {
   unclaimed: { first: 100, nodes: "...pickable" },
   merged: {
     first: 100,
-    nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
+    nodes: "... on PullRequest { number title url body mergedAt repository { nameWithOwner } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
   },
   reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } }" },
   closed: { first: 100, nodes: "... on Issue { number title url closedAt stateReason repository { nameWithOwner } }" },
@@ -56,7 +57,7 @@ const FRAGMENTS: Record<string, string> = {
   closedByPullRequestsReferences(first: 5, includeClosedPrs: false) { nodes { number url state author { login } } }
 }`,
   pr: `fragment pr on PullRequest {
-  id number title url isDraft createdAt updatedAt
+  id number title url body isDraft createdAt updatedAt
   author { ...author }
   repository { nameWithOwner squashMergeAllowed mergeCommitAllowed autoMergeAllowed defaultBranchRef { name } }
   baseRefName headRefName headRefOid isCrossRepository mergeable reviewDecision
@@ -175,16 +176,26 @@ export function prKey(node: { repository: { nameWithOwner: string }; number: num
   return `${node.repository.nameWithOwner}#${node.number}`;
 }
 
-// After my PRs and Next up's issues: how far my PRs are behind their bases, and the option order of org issue fields [GH-01].
-export function detailsQuery(prs: PullRequestNode[], orgs: string[]): { query: string; compares: Record<string, string> } {
+const repository = (repo: string) => {
+  const [owner, name] = repo.split("/");
+  return `repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)})`;
+};
+
+// After my PRs and Next up's issues: how far my PRs are behind their bases, the option order of org issue fields, and
+// what the issues my PRs' descriptions refer to are [GH-01, ATT-03].
+export function detailsQuery(prs: PullRequestNode[], orgs: string[], refs: IssueRef[] = []): { query: string; compares: Record<string, string> } {
   const compares: Record<string, string> = {};
   const fields = prs.map((pr, index) => {
     compares[`c${index}`] = prKey(pr);
-    const [owner, name] = pr.repository.nameWithOwner.split("/");
-    return `c${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
+    return `c${index}: ${repository(pr.repository.nameWithOwner)} {
       ref(qualifiedName: ${JSON.stringify(`refs/heads/${pr.baseRefName}`)}) { compare(headRef: ${JSON.stringify(pr.headRefName)}) { behindBy } }
     }`;
   });
+  refs.forEach((ref, index) =>
+    fields.push(`i${index}: ${repository(ref.repo)} {
+      issueOrPullRequest(number: ${ref.number}) { ... on Issue { number title url state repository { nameWithOwner } } }
+    }`),
+  );
   orgs.forEach((org, index) =>
     fields.push(`o${index}: organization(login: ${JSON.stringify(org)}) {
       issueFields(first: 50) { nodes { ... on IssueFieldSingleSelect { name options { name } } } }

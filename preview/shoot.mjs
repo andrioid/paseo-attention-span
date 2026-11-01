@@ -122,6 +122,10 @@ for (const layout of layouts) {
       await openSheet("Supplier prices are a week out of date");
       await modalShot("doing-issue-sheet");
       await closeSheet();
+      // A stack GitHub links to no issue, under the issue its descriptions name [ATT-03, ATT-04].
+      await openSheet("The calendar can't be used with a keyboard");
+      await modalShot("doing-stack-issue-sheet");
+      await closeSheet();
       await openSheet("Publish security.txt");
       await page.getByRole("button", { name: "Acknowledge" }).last().click();
       await page.getByRole("button", { name: "Acknowledge 2 comments" }).waitFor({ timeout: 10000 });

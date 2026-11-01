@@ -4,8 +4,9 @@ import { AttentionConfig, githubRepoOf } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
-import type { Details, HistoryResult, LiveResult } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import type { Details, HistoryResult, LinkedIssue, LiveResult } from "./github-types";
+import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, prKey, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import { toLookUp } from "./references";
 import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
 
@@ -258,15 +259,23 @@ export class AttentionService {
     const needsOptions = [priority, effort].some((field) => field && !field.order);
     const issues = [...data.unclaimed.nodes, ...data.assigned.nodes];
     const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
-    const details: Details = { behind: {}, fieldOptions: {} };
-    if (prs.length === 0 && orgs.length === 0) return details;
-    const { query, compares } = detailsQuery(prs, orgs as string[]);
-    type Result = { ref?: { compare: { behindBy: number } | null } | null; issueFields?: { nodes: { name?: string; options?: { name: string }[] }[] } } | null;
+    const refs = toLookUp(data.mine.nodes.filter((pr) => pr?.repository));
+    const details: Details = { behind: {}, fieldOptions: {}, issues: {} };
+    if (prs.length === 0 && orgs.length === 0 && refs.length === 0) return details;
+    const { query, compares } = detailsQuery(prs, orgs as string[], refs);
+    type Result = {
+      ref?: { compare: { behindBy: number } | null } | null;
+      issueFields?: { nodes: { name?: string; options?: { name: string }[] }[] };
+      issueOrPullRequest?: (LinkedIssue & { state?: string }) | null;
+    } | null;
+    // A reference to a repo I can't see fails only its own field.
     const result = await graphql<Record<string, Result>>(query);
     for (const [alias, value] of Object.entries(result)) {
       const behindBy = value?.ref?.compare?.behindBy;
       if (typeof behindBy === "number") details.behind[compares[alias]] = behindBy;
       for (const field of value?.issueFields?.nodes ?? []) if (field.name && field.options) details.fieldOptions[field.name] ??= field.options.map((o) => o.name);
+      const issue = value?.issueOrPullRequest; // empty for a PR
+      if (issue?.state === "OPEN") details.issues[prKey(issue)] = { number: issue.number, title: issue.title, url: issue.url, repository: issue.repository };
     }
     return details;
   }

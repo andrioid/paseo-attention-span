@@ -33,6 +33,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-doing.png` | Doing tab, every section |
    | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, then Fix CI as its running session with a "working" badge, Rerun failed jobs with the made-up failing checks, a muted "Start another session…", then the fetched size |
    | `<layout>-doing-issue-sheet.png` | The sheet of the issue "Supplier prices are a week out of date": its stack of PRs, each with a GitHub icon and opening that PR, then "Continue session" (no kind, needs you) first, Rebase stack as its working session, Open issue on GitHub |
+   | `<layout>-doing-stack-issue-sheet.png` | The sheet of the issue "The calendar can't be used with a keyboard": the a11y stack (#105–#107) that GitHub links to no issue, grouped under it because its bottom PR says "for #132" and its top PR "Closes #132" |
    | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, rendered as Markdown, both ticked |
    | `<layout>-doing-needs-reviewer.png` | The Needs a reviewer section: "Export invoices as CSV" with Request review and Merge in its sheet, "Log slow database queries" with a CI running chip |
    | `<layout>-doing-reviewers.png` | The reviewer picker from "Export invoices as CSV" (Needs a reviewer): Suggested by GitHub (carol, ticked), Recent on your PRs here, Teams, the login field, Request 1 reviewer |
