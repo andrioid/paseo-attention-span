@@ -135,6 +135,17 @@ While an item has an open session, its main action is **Open session** instead, 
 - **Profile**: looked up per reason in `config.json`, then materialised into `create_agent` from `list_profiles`. A missing `review` profile falls back to `default`; a missing `default` starts the agent with Paseo's defaults. Options ▾ still offers provider and model [SES-06].
 - **Prompt**: a built-in template per session type, filled with the item's context. A template in `config.json` replaces the built-in one [SES-04]. The context is fetched when the session starts, mostly from `gh`'s JSON output: `gh pr checks` and `gh run view --log-failed` for Fix, `gh pr view`/`gh issue view` for Review and Start, one GraphQL query for unresolved threads for Address. Rebase uses the stack already in the item.
 
+## Feedback
+
+"Enjoying Attention Span?" at the bottom of every tab opens a sheet with three lines [FB-01]:
+
+- **Something's wrong…** and **I have an idea…** *(agent)* ask for the first words in the sheet, then start a session with them in the prompt (`shared/feedback.ts`), so the agent's first message is already a follow-up. While one runs, its line becomes Continue, like an item's [SES-03]; the session is labelled with the item key `feedback:problem` or `feedback:idea`.
+- **I'll star it on GitHub** opens the repo on GitHub. No agent.
+
+The session runs read-only in the plugin's own installed source, found from the server's location, which is why the npm package ships `requirements.yaml` and this file. It starts in the provider's plan or read-only mode where there is one, with the default profile. Without the source it runs in the home directory and reads the repo through `gh api`. The prompt carries the version (`package.json`, or the commit in a checkout), phone or desktop, theme, tab and a failed refresh's error.
+
+The agent asks one question at a time from its kind's checklist, and checks the report against the requirements and docs, `config.json` and `state.json`, and open issues and discussions. A match gets its link and nothing else. It files an issue if a maintainer could finish and close it, otherwise a discussion in Q&A or Ideas, and says which and why. Posts are short up front, with the rest in collapsed `<details>` blocks, in English, in the user's voice, with nothing from their own setup they didn't write. It posts only after Post it in its question tool, or the reply "post" [SAFE-01], then archives itself. The prompts are built in: `config.json` can't replace them, since they carry those rules.
+
 ## GitHub requests
 
 Light on GitHub's API [GH-01], and quick when I press ⟳. Attention Span has two feeds, each with its own cache, schedule and error:

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AttentionView, ItemDetails, ReviewerChoices, Target } from "./attention";
 import { SessionKind } from "./config";
 import type { ConfigStatus, CoverageCheck, SetupStatus } from "./setup";
+import type { FeedbackInfo } from "./feedback";
 
 // Both sides are this plugin, so the types are checked by TypeScript, not repeated as schemas.
 const view = z.custom<AttentionView>();
@@ -69,3 +70,6 @@ export const sessionContext = defineRpc({
   input: z.object({ kind: SessionKind, target }),
   output: z.object({ context: z.string() }),
 });
+
+// Where a feedback session runs and the version it reports [FB-01].
+export const feedbackInfo = defineRpc({ name: "feedback.info", input: z.object({}), output: z.custom<FeedbackInfo>() });

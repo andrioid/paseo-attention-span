@@ -148,6 +148,18 @@ for (const layout of layouts) {
       await page.waitForTimeout(400);
       await shot("doing-merge-confirm");
       await page.getByRole("button", { name: "Cancel" }).click();
+      // Feedback from the bottom of the tab: the three lines, then the first words for a problem [FB-01].
+      await page.getByRole("button", { name: "Enjoying Attention Span?" }).click();
+      await page.getByText("I'll star it on GitHub").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("doing-feedback");
+      await page.getByRole("button", { name: "Something's wrong…" }).click();
+      await page.getByText("What happened?").waitFor({ timeout: 10000 });
+      await page.getByPlaceholder(/Waiting still shows/).fill("Waiting still shows a PR I merged yesterday.");
+      await page.waitForTimeout(400);
+      await modalShot("doing-feedback-ask");
+      await page.getByRole("button", { name: /close/i }).last().click();
+      await page.waitForTimeout(400);
       await page.getByRole("tab", { name: /History/ }).first().click();
       await page.getByText(/Reviewed \(\d+\)/).first().click();
       await page.waitForTimeout(800);

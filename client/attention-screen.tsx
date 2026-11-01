@@ -9,6 +9,7 @@ import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
+import { type FeedbackKind, themeName } from "../shared/feedback";
 import { blocks } from "../shared/setup";
 import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
@@ -16,6 +17,7 @@ import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
+import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
 import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
@@ -162,12 +164,16 @@ interface Undoable {
 export function AttentionScreen({ theme, layout, navigation, openSettings }: PluginScreenProps & { openSettings?: () => void }) {
   return (
     <StylesProvider theme={theme} compact={layout.compact}>
-      <AttentionList navigation={navigation} openSettings={openSettings} />
+      <AttentionList navigation={navigation} openSettings={openSettings} device={{ device: layout.compact ? "phone" : "desktop", platform: layout.platform, theme: themeName(theme.colors.surface0) }} />
     </StylesProvider>
   );
 }
 
-function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "navigation"> & { openSettings?: () => void }) {
+function AttentionList({
+  navigation,
+  openSettings,
+  device,
+}: Pick<PluginScreenProps, "navigation"> & { openSettings?: () => void; device: Omit<FeedbackScreen, "tab" | "refreshError"> }) {
   const styles = useStyles();
   const paseo = usePaseo();
   const toast = useToast();
@@ -203,6 +209,8 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [options, setOptions] = useState<OptionsSpec | null>(null);
+  // The feedback sheet, then the first words for the kind picked in it [FB-01].
+  const [feedback, setFeedback] = useState<"sheet" | FeedbackKind | null>(null);
   const view = attention.data;
   // Only when something fails: is it setup, and what's missing [SET-01]?
   const fetchSetup = useRpc(rpc.setupStatus);
@@ -461,6 +469,18 @@ function AttentionList({ navigation, openSettings }: Pick<PluginScreenProps, "na
             const done = `Closed #${issue.number} as ${reason === "completed" ? "completed" : "not planned"}`;
             change(issue.key, "Close", () => closeIssue({ key: issue.key, target, reason, comment: comment || undefined }), done, () => reopenIssue({ key: issue.key, target }));
           }}
+        />
+      ) : null}
+      <FeedbackLine onPress={() => setFeedback("sheet")} />
+      {feedback === "sheet" ? <FeedbackSheet agents={actions.agents} onOpenAgent={openAgent} onAsk={setFeedback} onClose={() => setFeedback(null)} /> : null}
+      {feedback && feedback !== "sheet" ? (
+        <FeedbackAsk
+          kind={feedback}
+          config={view.config}
+          screen={{ ...device, tab, refreshError: feed.error ?? null }}
+          onStarted={started}
+          onBack={() => setFeedback("sheet")}
+          onClose={() => setFeedback(null)}
         />
       ) : null}
       {options ? <SessionOptions spec={options} actions={actions} onClose={() => setOptions(null)} /> : null}
