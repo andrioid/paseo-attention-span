@@ -114,16 +114,6 @@ for (const layout of layouts) {
         if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
-      // The ▾ menu: a backdrop to tap on desktop, a bottom sheet with × on phones.
-      const closeMenu = async () => {
-        await page.keyboard.press("Escape");
-        await page.waitForTimeout(300);
-        if (await page.getByText("Start a new one").last().isVisible()) {
-          if (layout.isMobile) await page.getByRole("button", { name: /close/i }).last().click();
-          else await page.getByRole("button", { name: "Close menu" }).click();
-        }
-        await page.waitForTimeout(300);
-      };
       await doing();
       await openSheet("Show delivery dates on the order page");
       await modalShot("doing-sheet");
@@ -147,23 +137,9 @@ for (const layout of layouts) {
       await modalShot("doing-reviewers");
       await page.getByRole("button", { name: "Cancel" }).last().click();
       await page.waitForTimeout(300);
-      // A card's ▾ lists its sessions, then starting a new one [SES-03].
-      await page.getByRole("button", { name: "Session choices" }).first().click();
-      await page.getByText("Start a new one").last().waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
-      await modalShot("doing-session-menu");
-      await closeMenu();
-      // Two sessions on one item: one on the issue, one on its PR. The sheet's split entry opens the same menu.
-      await openSheet("Supplier prices are a week out of date");
-      await page.getByRole("button", { name: "Session choices" }).last().click();
-      await page.getByText("Start a new one").last().waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
-      await modalShot("doing-issue-session-menu");
-      await closeMenu();
-      // Without a session, a session action's ▾ offers it with options [SES-02].
+      // Without a session, a session action's line in the sheet asks first [SES-02].
       await openSheet("Harden the upload endpoint");
-      await page.getByRole("button", { name: "Address comments choices" }).last().click();
-      await page.getByRole("button", { name: "Address comments with options…" }).last().click();
+      await page.getByRole("button", { name: "Address comments…" }).last().click();
       await page.getByText("Agent profile").waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
       await modalShot("doing-options");
@@ -265,7 +241,7 @@ for (const layout of layouts) {
       await page.getByRole("tab", { name: /Doing/ }).first().waitFor({ timeout: 15000 });
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
-      await page.getByRole("button", { name: "More actions" }).first().click();
+      await page.getByRole("button", { name: /^Details for #/ }).first().click();
       await page.getByRole("button", { name: "Dismiss" }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");

@@ -1,4 +1,5 @@
 import type { AgentSummary, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
+import type { SessionKind } from "../shared/config";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_ATTENTION_SPAN_FIXTURE=1).
@@ -227,10 +228,12 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
 }
 
 // Sessions the preview shows as started from items: working, needs me, failed, idle.
-// Issue 90 has two, one on the issue and one on its PR, so the card shows the pick. #113 waits on CI while its agent works.
-const agent = (id: string, itemKey: string, status: string, minutesAgo: number, requiresAttention = false): AgentSummary => ({
+// Each sits in its action's line in the sheet. Issue 90 has two: an old one with no kind, which leads, and Rebase stack on its PR.
+// #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
+const agent = (id: string, itemKey: string, kind: SessionKind | undefined, status: string, minutesAgo: number, requiresAttention = false): AgentSummary => ({
   id,
   itemKey,
+  kind,
   status,
   requiresAttention,
   title: `Fixture session ${id}`,
@@ -238,13 +241,13 @@ const agent = (id: string, itemKey: string, status: string, minutesAgo: number, 
   lastActivityAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
 });
 export const FIXTURE_AGENTS: AgentSummary[] = [
-  agent("agent-101", `${REPO}#101`, "running", 4),
-  agent("agent-102", `${REPO}#102`, "idle", 30, true),
-  agent("agent-108", `${REPO}#108`, "error", 90),
-  agent("agent-150", `${REPO}#150`, "idle", 300),
-  agent("agent-90", `${REPO}#90`, "idle", 120, true),
-  agent("agent-103", `${REPO}#103`, "running", 6),
-  agent("agent-113", `${REPO}#113`, "running", 2),
+  agent("agent-101", `${REPO}#101`, "fix", "running", 4),
+  agent("agent-102", `${REPO}#102`, "address", "idle", 30, true),
+  agent("agent-108", `${REPO}#108`, "rebase", "error", 90),
+  agent("agent-150", `${REPO}#150`, "start", "idle", 300),
+  agent("agent-90", `${REPO}#90`, undefined, "idle", 120, true),
+  agent("agent-103", `${REPO}#103`, "rebase", "running", 6),
+  agent("agent-113", `${REPO}#113`, "fix", "running", 2),
 ];
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";

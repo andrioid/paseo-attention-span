@@ -75,9 +75,9 @@ There's a copy button per week that gives you a Markdown list of links. That's m
 
 Actions with an agent icon start a session; the rest change GitHub right away. Where GitHub allows it, an Undo shows up afterwards, because I mis-tap more than I'd like to admit.
 
-Sessions run in a worktree of the registered project, or pick up the existing workspace for that branch. They start with the item's context already in the prompt: failing checks, unresolved comments, the issue's discussion. Once an item has a session, its main button opens that session instead of starting another, and the ▾ next to it lets you pick a different one or start fresh on purpose.
+Sessions run in a worktree of the registered project, or pick up the existing workspace for that branch. They start with the item's context already in the prompt: failing checks, unresolved comments, the issue's discussion. Once an item has a session, its main button opens that session instead of starting another. Open the item and each session sits where the action that started it was, with its state: working, idle, or needs you. Starting another one is there too, on purpose and out of the way.
 
-![Session menu](docs/screenshots/desktop-dark-doing-session-menu.png)
+![An item's sessions](docs/screenshots/desktop-dark-doing-issue-sheet.png)
 
 ## However you use GitHub
 

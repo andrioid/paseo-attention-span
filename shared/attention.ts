@@ -1,4 +1,4 @@
-import type { AttentionConfig, MergeMethod } from "./config";
+import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
 
 // Tabs tell the story of my work: what I finished, what needs me, what waits on others, what's next.
 export type TabId = "history" | "doing" | "waiting" | "next";
@@ -214,6 +214,8 @@ export interface AgentSummary {
   id: string;
   // The item it was started on: an issue or a PR.
   itemKey: string;
+  // The action it was started for; sessions started before kinds were saved have none.
+  kind?: SessionKind;
   status: string;
   requiresAttention: boolean;
   title: string | null;
@@ -233,6 +235,12 @@ export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSumm
   return agents
     .filter((agent) => wanted.has(agent.itemKey.toLowerCase()))
     .sort((a, b) => Number(b.requiresAttention) - Number(a.requiresAttention) || (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));
+}
+
+// Sessions none of the item's actions would have started: no kind saved, or the action's gone, like Fix CI once checks pass.
+// They lead the sheet; the rest sit in their action's line [SES-03].
+export function looseSessions(sessions: AgentSummary[], kinds: SessionKind[]): AgentSummary[] {
+  return sessions.filter((agent) => !agent.kind || !kinds.includes(agent.kind));
 }
 
 export interface FeedStatus {

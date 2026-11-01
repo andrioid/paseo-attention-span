@@ -1,6 +1,6 @@
 import type { AgentSummary, Chip } from "../shared/attention";
 import { ago } from "../shared/format";
-import type { MenuGroup, SheetEntry } from "./sheet";
+import type { SheetEntry } from "./sheet";
 
 // A session started from the item, as a signal [ATT-07].
 export function agentSignal(agent: AgentSummary): Chip {
@@ -10,36 +10,28 @@ export function agentSignal(agent: AgentSummary): Chip {
   return { text: "agent idle", tone: "neutral" };
 }
 
-// "needs you · 2h ago"
-export function sessionStatus(agent: AgentSummary): string {
-  const status = agentSignal(agent).text.replace(/^agent /, "");
-  return agent.lastActivityAt ? `${status} · ${ago(agent.lastActivityAt)} ago` : status;
-}
-
-// With a session open, the item's main action opens it; ▾ picks another or starts a new one [SES-03].
-export function openSessionEntry(sessions: AgentSummary[], onOpen: (agentId: string) => void, onMenu: SheetEntry["menu"]): SheetEntry {
-  const first = sessions[0];
+// A session as a sheet line, under the name of what started it: it opens the session, its state at the end [SES-03, ATT-07].
+export function sessionEntry(agent: AgentSummary, label: string, onOpen: (agentId: string) => void): SheetEntry {
+  const signal = agentSignal(agent);
+  const when = agent.lastActivityAt ? `${ago(agent.lastActivityAt)} ago` : null;
   return {
-    key: "session",
+    key: agent.id,
     icon: "agent",
-    label: "Open session",
-    detail: `${first.title ?? "Session"} · ${sessionStatus(first)}`,
-    onPress: () => onOpen(first.id),
-    menu: onMenu,
+    label,
+    detail: [agent.title, when].filter(Boolean).join(" · ") || undefined,
+    badge: { ...signal, text: signal.text.replace(/^agent /, "") },
+    onPress: () => onOpen(agent.id),
   };
 }
 
-// Every open session; the first is the one Open session opens.
-export function sessionsGroup(sessions: AgentSummary[], onOpen: (agentId: string) => void): MenuGroup {
+// A session no action covers, or another one, only on purpose: quiet, near the end [SES-02, SES-03].
+export function startAnotherEntry(any: boolean, onPress: () => void): SheetEntry {
   return {
-    title: "Sessions",
-    entries: sessions.map((agent, index) => ({
-      key: agent.id,
-      icon: "agent",
-      label: agent.title ?? "Session",
-      detail: sessionStatus(agent),
-      checked: index === 0,
-      onPress: () => onOpen(agent.id),
-    })),
+    key: "start-another",
+    icon: "plus",
+    label: any ? "Start another session…" : "Start a session…",
+    detail: "Pick the workspace, agent profile and prompt",
+    quiet: true,
+    onPress,
   };
 }

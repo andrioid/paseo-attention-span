@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AgentSummary, itemSessions } from "./attention";
+import { type AgentSummary, itemSessions, looseSessions } from "./attention";
 
 const agent = (id: string, itemKey: string, lastActivityAt: string, requiresAttention = false): AgentSummary => ({
   id,
@@ -29,5 +29,18 @@ describe("itemSessions", () => {
 
   it("SES-03: has none once the item is merged or closed", () => {
     expect(itemSessions([agent("a", "acme/shop#90", "2026-10-01")], { ...item, closedAt: "2026-10-02" })).toEqual([]);
+  });
+});
+
+describe("looseSessions", () => {
+  const kinded = (id: string, kind?: AgentSummary["kind"]): AgentSummary => ({ ...agent(id, "acme/shop#90", "2026-10-01"), kind });
+
+  it("SES-03: keeps sessions with no kind, or whose action the item no longer offers, in order", () => {
+    const sessions = [kinded("old"), kinded("fix", "fix"), kinded("address", "address"), kinded("review", "review")];
+    expect(looseSessions(sessions, ["address", "rebase"]).map((a) => a.id)).toEqual(["old", "fix", "review"]);
+  });
+
+  it("SES-03: leaves out sessions that sit in one of the item's action lines", () => {
+    expect(looseSessions([kinded("a", "rebase")], ["rebase"])).toEqual([]);
   });
 });

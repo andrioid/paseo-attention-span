@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -14,11 +14,11 @@ import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
-import { agentSignal, openSessionEntry, sessionsGroup } from "./session-menu";
-import { ActionSheet, DetailLines, type MenuGroup, MenuSheet, type SheetEntry } from "./sheet";
+import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
+import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
-import { type Anchor, Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
+import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -515,12 +515,11 @@ function stateMark(item: Item): CardProps["mark"] {
   return item.draft ? { icon: "draft", tone: "neutral" } : { icon: "pr", tone: "good" };
 }
 
-// A card that works collapsed: its main action and ⋯. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
+// A card that works collapsed: its main action and ›. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
 const isRed = (chips: Chip[]) => chips.some((chip) => chip.tone === "bad");
 
-// The sheet, Acknowledge, the reviewer picker (after Ready for review, or on its own), or a split button's menu:
-// for the open sessions, or for starting one of `kind`.
-type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | { anchor?: Anchor; kind?: SessionKind } | null;
+// The sheet, Acknowledge, or the reviewer picker (after Ready for review, or on its own).
+type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | null;
 
 // A session on an item that has no session action of its own starts with this prompt; it's editable first.
 const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
@@ -532,7 +531,6 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
   const main = item.actions[0];
-  const mainKind = main ? ACTION_SESSION[main] : undefined;
   // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
   const open = () => setSheet("item");
@@ -548,13 +546,11 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
     else if (action === "ready") (actions.act(item, action), setSheet("reviewers-after-ready"));
     else actions.act(item, action);
   }
-  const onMenu = (kind?: SessionKind) => (anchor: Anchor | undefined) => setSheet({ anchor, kind });
-  const handlers: SheetHandlers = { onPerform: perform, onMenu, onClose: () => setSheet(null) };
-  // A menu with one action is a wasted tap: show that action instead of ⋯. The card still opens the sheet [ATT-06].
-  const entries = sheetEntries(item, sessions, actions, handlers);
-  const only = entries.length === 1 ? entries[0] : undefined;
+  const handlers: SheetHandlers = { onPerform: perform, onClose: () => setSheet(null) };
+  // A sheet with one action is a wasted tap: show that action instead of ›. The card still opens the sheet, quiet lines and all [ATT-06].
+  const loud = sheetEntries(item, sessions, actions, handlers).filter((entry) => !entry.quiet);
+  const only = loud.length === 1 ? loud[0] : undefined;
   const confirmed = (action: "merge" | "close") => (comment: string) => (setConfirm(null), actions.confirm(item, action, comment));
-  const sessionMenu = { label: "Session choices", onPress: onMenu() };
 
   return (
     <CardRow
@@ -578,18 +574,13 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       busy={actions.busy.has(item.key)}
       primary={
         sessions[0]
-          ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id), menu: sessionMenu }
+          ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id) }
           : main
-            ? {
-                label: actionLabel(main, item),
-                icon: ACTION_ICONS[main],
-                onPress: () => perform(main),
-                menu: mainKind ? { label: `${actionLabel(main, item)} choices`, onPress: onMenu(mainKind) } : undefined,
-              }
+            ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], onPress: () => perform(main) }
             : undefined
       }
       secondary={[
-        only ? { label: only.label, icon: only.icon, onPress: only.onPress } : { label: "More actions", icon: "dots", onPress: open },
+        only ? { label: only.label, icon: only.icon, onPress: only.onPress } : { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
         // History is where I report from, so its cards copy their link in one tap [ATT-15].
         ...(history ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
       ]}
@@ -622,52 +613,14 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
               onClose={() => setSheet(null)}
             />
           ) : null}
-          {sheet && typeof sheet === "object" ? (
-            <MenuSheet title={item.title} anchor={sheet.anchor} groups={menuGroups(item, sessions, sheet.kind, actions, perform, () => setSheet(null))} onClose={() => setSheet(null)} />
-          ) : null}
         </>
       }
     />
   );
 }
 
-// A split button's menu. With sessions open: each of them, then starting a new one. Without: the action with options [SES-02, SES-03].
-function menuGroups(
-  item: Item,
-  sessions: AgentSummary[],
-  kind: SessionKind | undefined,
-  actions: Actions,
-  perform: (action: ActionId) => void,
-  close: () => void,
-): MenuGroup[] {
-  const withOptions = (action: ActionId | undefined, sessionKind: SessionKind): SheetEntry => {
-    const label = action ? actionLabel(action, item) : "Start session";
-    return {
-      key: `${action ?? "start"}-options`,
-      icon: "agent",
-      label: `${label} with options…`,
-      detail: "Choose the workspace, agent profile and prompt first",
-      onPress: () => (close(), actions.startWithOptions({ itemKey: item.key, title: `${label}: ${item.title}`, kind: sessionKind, target: item.target })),
-    };
-  };
-  const sessionActions = item.actions.filter((action) => ACTION_SESSION[action]);
-  if (sessions.length === 0) {
-    const action = sessionActions.find((candidate) => ACTION_SESSION[candidate] === kind);
-    return [{ entries: [withOptions(action, kind ?? fallbackKind(item))] }];
-  }
-  const start = sessionActions.flatMap((action): SheetEntry[] => [
-    { key: action, icon: "agent", label: actionLabel(action, item), detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: () => perform(action) },
-    withOptions(action, ACTION_SESSION[action]!),
-  ]);
-  return [
-    sessionsGroup(sessions, (agentId) => (close(), actions.openAgent(agentId))),
-    { title: "Start a new one", entries: start.length ? start : [withOptions(undefined, fallbackKind(item))] },
-  ];
-}
-
 interface SheetHandlers {
   onPerform: (action: ActionId) => void;
-  onMenu: (kind?: SessionKind) => (anchor: Anchor | undefined) => void;
   onClose: () => void;
 }
 
@@ -705,29 +658,26 @@ function sheetEntries(
   item: Item,
   sessions: AgentSummary[],
   actions: Actions,
-  { onPerform, onMenu, onClose }: SheetHandlers,
+  { onPerform, onClose }: SheetHandlers,
   details?: { data?: { failing: FailingChecks[] }; isLoading: boolean },
 ): SheetEntry[] {
   const inDoing = SECTIONS[item.section].tab === "doing";
   const close = (then: () => void) => () => (onClose(), then());
 
-  // An open session first; starting another is in its menu [SES-03].
-  const entries: SheetEntry[] = sessions.length
-    ? [openSessionEntry(sessions, (agentId) => close(() => actions.openAgent(agentId))(), { label: "Session choices", onPress: onMenu() })]
-    : [];
+  const open = (agentId: string) => close(() => actions.openAgent(agentId))();
+  const withOptions = (label: string, kind: SessionKind) => close(() => actions.startWithOptions({ itemKey: item.key, title: `${label}: ${item.title}`, kind, target: item.target }));
+  // Sessions none of its actions would start lead, needs me first [SES-03].
+  const kinds = item.actions.flatMap((action) => ACTION_SESSION[action] ?? []);
+  const entries: SheetEntry[] = looseSessions(sessions, kinds).map((agent) => sessionEntry(agent, sessionLabel(agent.kind, item), open));
   for (const action of item.actions) {
     const kind = ACTION_SESSION[action];
     const label = actionLabel(action, item);
-    if (kind && sessions.length) continue;
-    else if (kind) {
-      entries.push({
-        key: action,
-        icon: "agent",
-        label,
-        detail: actionDetail(action as Exclude<ActionId, "rerun">, item),
-        onPress: () => onPerform(action),
-        menu: { label: `${label} choices`, onPress: onMenu(kind) },
-      });
+    if (kind) {
+      // An action's session takes its line once it runs, so work on it stays in one place [SES-03].
+      // Until then it asks first: the card's button is the one-tap start [SES-01, SES-02].
+      const running = sessions.filter((agent) => agent.kind === kind);
+      if (running.length) entries.push(...running.map((agent) => sessionEntry(agent, sessionLabel(kind, item), open)));
+      else entries.push({ key: action, icon: "agent", label: `${label}…`, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: withOptions(label, kind) });
     } else if (action === "rerun") {
       const { detail, runIds } = rerunEntry(details?.data?.failing, details?.isLoading ?? true);
       entries.push({ key: action, icon: ACTION_ICONS.rerun, label, detail, disabled: runIds.length === 0, onPress: close(() => actions.rerun(item, runIds)) });
@@ -744,9 +694,14 @@ function sheetEntries(
     onPress: close(() => void openExternalUrl(item.url)),
     copy: { text: item.url, label: `Copy link to #${item.number}`, done: `Copied link to #${item.number}` },
   });
+  // Nothing's left to start on once it's merged or closed.
+  if (!item.closedAt) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
   if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", onPress: close(() => actions.dismiss(item)) });
   return entries;
 }
+
+// A session is named for what started it; one of no kind, or a Start's, just continues.
+const sessionLabel = (kind: SessionKind | undefined, item: Item) => (kind && kind !== "start" ? actionLabel(kind, item) : "Continue session");
 
 // Pick which waiting comments get a 👍, after reading them in full; all are picked to start [MEN-07].
 function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (ids: string[]) => void; onClose: () => void }) {

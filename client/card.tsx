@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
-import { type Anchor, Button, Meta, SplitButton, TablerIcon, toneColor, useStyles } from "./ui";
+import { Button, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
 //
@@ -23,8 +23,6 @@ export interface CardAction {
   onPress: () => void;
   // Defaults to the label.
   accessibilityLabel?: string;
-  // ▾ beside it, for the choices around it: a split button [SES-03].
-  menu?: { label: string; onPress: (anchor: Anchor | undefined) => void };
 }
 
 export interface ConfirmSpec {
@@ -44,7 +42,7 @@ export interface CardProps {
   accessibilityLabel?: string;
   // Tapping the card opens its sheet [ATT-06].
   onOpen: () => void;
-  // The labelled main action; secondary ones are icon-only (⋯, copy).
+  // The labelled main action; secondary ones are icon-only (›, copy).
   primary?: CardAction;
   secondary: CardAction[];
   // "working…" in place of the actions while a GitHub change runs.
@@ -65,21 +63,13 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
   const styles = useStyles();
   const actions = (
     <View style={styles.wrap}>
-      {primary?.menu ? (
-        <SplitButton
-          label={primary.label}
-          accessibilityLabel={primary.accessibilityLabel}
-          icon={primary.icon}
-          busy={busy}
-          onPress={primary.onPress}
-          menuLabel={primary.menu.label}
-          onMenu={primary.menu.onPress}
-        />
-      ) : primary ? (
+      {primary ? (
         <Button label={primary.label} accessibilityLabel={primary.accessibilityLabel} icon={primary.icon} variant="calm" busy={busy} onPress={primary.onPress} />
       ) : busy ? (
         <ActivityIndicator size="small" color={styles.c.foregroundMuted} />
       ) : null}
+      {/* On phones › and copy sit at the far edge, apart from the labelled action. */}
+      {styles.compact && secondary.length ? <View style={{ flex: 1 }} /> : null}
       {secondary.map((action) => (
         <Button key={action.accessibilityLabel ?? action.label} icon={action.icon} variant="ghost" accessibilityLabel={action.accessibilityLabel ?? action.label} onPress={action.onPress} />
       ))}

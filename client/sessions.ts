@@ -1,12 +1,14 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
 import type { AgentSummary, Target } from "../shared/attention";
-import { type AttentionConfig, codeRepoFor, githubRepoOf, type SessionKind } from "../shared/config";
+import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 
 type Paseo = ReturnType<typeof usePaseo>;
 
 // Labels tie an agent to the item it works on [ATT-07, SES-03].
 export const LABEL = "attention-span";
 export const ITEM_LABEL = "attention-span-item";
+// The action it was started for, so the sheet shows it in that action's line.
+export const KIND_LABEL = "attention-span-kind";
 // Sessions started under the plugin's earlier names, "GitHub attention" and "GitHub inbox".
 const OLD_LABELS = ["github-attention", "github-inbox"];
 
@@ -21,6 +23,7 @@ export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
     byId.set(agent.id, {
       id: agent.id,
       itemKey,
+      kind: SessionKind.safeParse(agent.labels?.[KIND_LABEL]).data,
       status: agent.status,
       requiresAttention: !!agent.requiresAttention,
       title: agent.title ?? null,
@@ -198,7 +201,7 @@ export async function startSession(paseo: Paseo, input: StartSession): Promise<s
     config: agentConfig,
     title,
     prompt: input.prompt,
-    labels: { [LABEL]: "1", [ITEM_LABEL]: input.itemKey },
+    labels: { [LABEL]: "1", [ITEM_LABEL]: input.itemKey, [KIND_LABEL]: input.kind },
   });
   return agent.id;
 }
