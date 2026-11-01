@@ -7,7 +7,7 @@ function prStates(): PrState[] {
   const flags = ["draft", "ciFailing", "ciPending", "changes", "approved", "conflicts", "blocked", "autoMerge", "autoMergeAllowed", "stacked", "stale", "asked", "replied", "tooLong"] as const;
   const states: PrState[] = [];
   for (let bits = 0; bits < 1 << flags.length; bits++) {
-    const s = Object.fromEntries(flags.map((flag, index) => [flag, !!(bits & (1 << index))])) as Omit<PrState, "waiting" | "behindBy">;
+    const s = Object.fromEntries(flags.map((flag, index) => [flag, !!(bits & (1 << index))])) as Omit<PrState, "waiting" | "answer" | "behindBy">;
     // CI is one of passing, running or failing.
     if (s.ciFailing && s.ciPending) continue;
     for (const behindBy of [0, 3]) states.push({ ...s, behindBy });

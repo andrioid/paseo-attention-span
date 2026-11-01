@@ -28,6 +28,8 @@ export interface PrState {
   draft: boolean;
   // Someone mentioned me and is waiting [MEN-01].
   waiting?: Person;
+  // Someone commented on it after me, lately, and I haven't 👍'd it [ATT-16].
+  answer?: Person;
   ciFailing: boolean;
   ciPending: boolean;
   changes: boolean;
@@ -67,6 +69,7 @@ function draftActions(s: PrState): ActionId[] {
 
 export const PR_RULES: Rules<PrState> = {
   reply: { when: (s) => !!s.waiting, actions: (s) => replyActions(s.waiting) },
+  answered: { when: (s) => !!s.answer, actions: (s) => replyActions(s.answer) },
   // Rerun is for flaky checks, without an agent [PRS-09].
   ci: { when: (s) => !s.draft && s.ciFailing, actions: () => ["fix", "rerun"] },
   changes: { when: (s) => !s.draft && s.changes, actions: () => ["address"] },
@@ -87,23 +90,27 @@ export const PR_RULES: Rules<PrState> = {
   wait_ci: { when: (s) => !s.draft && s.asked && s.ciPending, label: waitingFor },
 };
 
-// ---- Issues where I commented [WAI-01, ATT-16] ----
+// ---- Issues and others' PRs I'm in [WAI-01, ATT-16] ----
 
 export interface IssueState {
+  // I opened it.
+  authored: boolean;
   // My comment is the last one from a person; bots don't count [MEN-05].
   mineLast: boolean;
-  // A person answered after me, and I haven't 👍'd it [MEN-02].
+  // A person commented after me (or after I opened it) within mentionDays, and I haven't 👍'd it [MEN-02].
   answered: boolean;
-  // My comment is at least waitingTooLongDays old.
+  // My last comment is within mentionDays.
+  fresh: boolean;
+  // My last comment is at least waitingTooLongDays old.
   tooLong: boolean;
 }
 
-// An issue may match none, and then isn't listed: an answer I 👍'd needs nothing more.
+// An issue may match none, and then isn't listed: an answer I 👍'd needs nothing more, nor an old thread of someone else's.
 // Mentions come first, through their own search [MEN-01].
 export const ISSUE_RULES: Rules<IssueState> = {
-  // Answered without mentioning me: mine until I reply, 👍 it or dismiss it [ATT-16].
-  answered: { when: (s) => !s.mineLast && s.answered },
-  // Nobody answered for too long: mine to nudge, however long ago [ATT-11].
-  too_long: { when: (s) => s.mineLast && s.tooLong, label: () => "waiting for an answer" },
-  wait_answer: { when: (s) => s.mineLast },
+  // A recent comment after mine, without mentioning me: mine until I reply, 👍 it or dismiss it [ATT-16].
+  answered: { when: (s) => s.answered },
+  // Nobody answered for too long: mine to nudge. On my own issues however long ago, on others' only while fresh [ATT-11].
+  too_long: { when: (s) => s.mineLast && (s.authored || s.fresh) && s.tooLong, label: () => "waiting for an answer" },
+  wait_answer: { when: (s) => s.mineLast && (s.authored || s.fresh) },
 };

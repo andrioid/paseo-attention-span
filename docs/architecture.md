@@ -48,7 +48,7 @@ The tabs tell the story of my work, left to right: what I finished, what needs m
 |---|---|
 | History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. The copy icon on a week's heading copies its finished items, not the reviews, as a Markdown list of links; an issue and the PRs that closed it are one line, linking the issue [HIS-03]. |
 | Doing | The sections below |
-| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (once a person or team is asked, or someone else has reviewed; with the requested reviewer or team), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (issues where my comment is the last from a person; bots don't count), with no age limit [ATT-11] |
+| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (once a person or team is asked, or someone else has reviewed; with the requested reviewer or team), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (threads where my comment is the last from a person; bots don't count): on my own issues however old, on others' only while my comment is within `mentionDays` [ATT-11] |
 | Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
 
 Every card in every tab is the same component, `CardRow` in `client/card.tsx` [ATT-05]: a tinted mark for what it is, a title of at most two lines, then "repo #number", when it happened and signal chips, then content only some lists have (tags, a quote, a stack line), and its actions: on the right on desktop, labelled under the text on phones. A change on GitHub asks first in a `ConfirmBar` on the card [SAFE-01]. Tabs differ only in what they pass in: each maps its data to the card's mark, meta, actions and slots. Marks and signals take a tone, never a raw theme color, because some themes draw `accent` close to white.
@@ -66,7 +66,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `s
 | Section | Shows |
 |---|---|
 | Waiting for your reply | Open threads with a mention waiting on me [MEN-01] |
-| Answered | Issues where a person commented after my last comment without mentioning me, and I haven't 👍'd it. Reply and Acknowledge clear it, and so does Dismiss until someone comments again [ATT-16, MEN-02] |
+| Answered | Issues and PRs where a person commented in the conversation after me, within `mentionDays` (default 30), without mentioning me, and I haven't 👍'd it. On a thread I opened, opening it counts as my last word until I comment; on someone else's, my comment must be among its last 10. Reply and Acknowledge clear it, and so does Dismiss until someone comments again [ATT-16, MEN-02] |
 | Review requested | PRs requesting my review by name, not via a team [REV-01] |
 | CI failing | My PRs with failing checks [PRS-01] |
 | Changes requested | My PRs with requested changes or unresolved threads [PRS-02] |
@@ -148,12 +148,13 @@ One GraphQL request per search, sent in parallel. GitHub runs the searches in on
 - `is:pr is:open user-review-requested:@me` (personal requests only)
 - `is:open mentions:@me updated:>=<30 days ago>` (fetching the description, recent comments, review-thread comments, their IDs for 👍, and `viewerHasReacted`)
 - `is:issue is:open assignee:@me`
-- `is:issue is:open commenter:@me sort:updated-desc`, 50 at most, with no date limit and the last 10 comments of each, as for mentions (for Answered and Questions I asked). Once my comment is out of those 10, the conversation has moved on and the issue isn't listed [ATT-16]
+- `is:open involves:@me updated:>=<30 days ago> sort:updated-desc`, 100 at most, issues and PRs with their last 10 conversation comments, as for mentions (for Answered and fresh questions) [ATT-16]
+- `is:issue is:open author:@me commenter:@me sort:updated-desc`, 50 at most, no date limit, the same fields (questions on my own issues nobody answered, however old) [ATT-11]
 - `is:issue is:open no:assignee` (Next up, with issue type and field values; one request per source [NXT-09], skipped when there's nowhere to look [NXT-08]). "My repos" needs my login, taken from the last fetch or asked once with `viewer { login }`
 
 Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, and the option order of org issue fields when Next up needs it. The other searches carry on meanwhile.
 
-A live refresh is 7 requests and about 75 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
+A live refresh is 8 requests and about 85 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
 
 ### History
 
@@ -170,5 +171,5 @@ It's a digest, not a live view. Opening the screen shows the cache. ⟳ fetches 
 | Live | Every `refreshMinutes` (default 15, at least 5) in the background [FRESH-01], after my own actions, and on ⟳ |
 | History | Once a day in the background, after a merge from Attention Span, and on ⟳ in History. Things I finish outside Attention Span show up by the next day. |
 
-A failed refresh is retried at most every 5 minutes. At the default 15 minutes that's about 28 requests and 300 points an hour, about 6% of GitHub's hourly allowance. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
+A failed refresh is retried at most every 5 minutes. At the default 15 minutes that's about 32 requests and 340 points an hour, about 7% of GitHub's hourly allowance. Actions use GraphQL mutations or `gh`. Session context is fetched only when a session starts, and a sheet's details only when it opens.
 

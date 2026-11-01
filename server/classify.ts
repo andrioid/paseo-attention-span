@@ -40,11 +40,13 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     if (waiting) mentions.set(prKey(node), waiting);
   }
 
-  // What each issue I commented on is waiting for: an answer, or me [ATT-16].
+  // What each thread I'm in is waiting for: an answer, or me [ATT-16]. Both searches can find one; it's the same thread.
+  const threads = new Map<string, IssueNode>();
+  for (const node of [...compact(data.involved.nodes), ...compact(data.asked.nodes)]) threads.set(prKey(node), node);
   const answers = new Map<string, { flags: IssueState; person?: Person; mine: string }>();
-  for (const issue of compact(data.commented.nodes)) {
-    const found = issueState(issue, me, now, config.waitingTooLongDays);
-    if (found) answers.set(prKey(issue), found);
+  for (const [key, node] of threads) {
+    const found = threadState(node, me, now, config);
+    if (found) answers.set(key, found);
   }
 
   // My PRs, minus those handed over to someone else [PRS-08].
@@ -116,12 +118,15 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const s = state(bottom);
     const outOfSync = stack.slice(1).some((pr) => state(pr).outOfSync || state(pr).conflicts);
     const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
+    // A conversation comment after mine on any PR in the stack [ATT-16].
+    const answer = stack.map((pr) => answers.get(prKey(pr))?.person).find(Boolean);
     const base = bottom.baseRefName;
     const waitingSince = latest(s.lastCommitAt, s.repliedAt);
     const replied = s.repliedAt > EPOCH || bottom.reviewDecision === "CHANGES_REQUESTED";
     const flags: PrState = {
       draft: bottom.isDraft,
       waiting,
+      answer,
       ciFailing: s.ciFailing,
       ciPending: s.ciPending,
       changes: s.changes,
@@ -170,9 +175,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       waited: SECTIONS[section].tab === "waiting" ? chip(ago(waitingSince, now)) : undefined,
       person:
         waiting ??
+        (section === "answered" ? answer : undefined) ??
         (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
         (section === "too_long" || SECTIONS[section].tab === "waiting" ? person(reviewer, waitingSince) : undefined),
-      othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since),
+      othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
     };
   });
   type Unit = (typeof units)[number];
@@ -291,11 +297,12 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     });
   }
 
-  // Issues where I commented: answered, or waiting on others and then mine to nudge, however long [WAI-01, ATT-11, ATT-16].
-  for (const issue of compact(data.commented.nodes)) {
-    const key = prKey(issue);
+  // Issues and others' PRs I'm in: answered, or waiting on others and then mine to nudge [WAI-01, ATT-11, ATT-16].
+  // My own PRs are listed above, or handed over and left out [PRS-08].
+  for (const [key, issue] of threads) {
     const found = answers.get(key);
-    if (listed.has(key) || !found) continue;
+    const kind = issue.__typename === "PullRequest" ? "pr" : "issue";
+    if (listed.has(key) || !found || (kind === "pr" && found.flags.authored)) continue;
     const { flags, person, mine } = found;
     const section = pick(ISSUE_RULES, flags);
     if (!section) continue;
@@ -303,7 +310,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const label = ISSUE_RULES[section]?.label?.(flags);
     const since = person?.since ?? mine;
     items.push({
-      ...plain(issue, "issue", section),
+      ...plain(issue, kind, section),
       chips: section === "answered" ? [] : [label ? chip(`${label} · ${ago(since, now)}`, "warn") : chip(ago(since, now))],
       person,
       actions: section === "answered" ? replyActions(person) : [],
@@ -344,14 +351,31 @@ export function classifyHistory(data: HistoryResult): Item[] {
 
 // Whether my last comment on an issue is the last one from a person, and if not, the answers since that I haven't 👍'd.
 // Bots don't count [MEN-05]. Only the last comments are fetched: once mine is out of them the conversation has moved on.
-export function issueState(issue: IssueNode, me: string, now: Date, tooLongDays: number): { flags: IssueState; person?: Person; mine: string } | null {
-  const people = issue.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
+// Whether my last comment on a thread is the last one from a person, and if not, the recent comments since that I haven't 👍'd.
+// On a thread I opened, my opening counts as my last word until I comment. Bots don't count [MEN-05]. Only the last comments
+// are fetched: on someone else's thread, once mine is out of them the conversation has moved on.
+export function threadState(
+  thread: IssueNode,
+  me: string,
+  now: Date,
+  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays">,
+): { flags: IssueState; person?: Person; mine: string } | null {
+  const authored = thread.author?.login.toLowerCase() === me;
+  const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
   const index = people.findLastIndex((c) => c.author?.login.toLowerCase() === me);
-  if (index < 0) return null;
-  const mine = people[index].createdAt;
+  if (index < 0 && !authored) return null;
+  const mine = index < 0 ? thread.createdAt : people[index].createdAt;
   const after = people.slice(index + 1);
-  const unread = after.filter((c) => !c.reactionGroups?.some((group) => group.viewerHasReacted));
-  const flags: IssueState = { mineLast: after.length === 0, answered: unread.length > 0, tooLong: daysSince(mine, now) >= tooLongDays };
+  const recent = (at: string) => daysSince(at, now) < config.mentionDays;
+  const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
+  const flags: IssueState = {
+    authored,
+    // Opening a thread isn't asking a question; a comment is.
+    mineLast: index >= 0 && after.length === 0,
+    answered: unread.length > 0,
+    fresh: recent(mine),
+    tooLong: daysSince(mine, now) >= config.waitingTooLongDays,
+  };
   const last = unread.at(-1);
   if (!last?.author) return { flags, mine };
   return {
@@ -361,9 +385,9 @@ export function issueState(issue: IssueNode, me: string, now: Date, tooLongDays:
       login: last.author.login,
       avatarUrl: last.author.avatarUrl,
       bot: false,
-      since: unread[0].createdAt,
+      since: last.createdAt,
       snippet: snippetAround(plainText(last.body ?? ""), 0),
-      url: last.url ?? issue.url,
+      url: last.url ?? thread.url,
       comments: unread.filter((c) => c.id).map((c) => ({ id: c.id!, author: c.author!.login, body: excerpt(c.body, 4000) ?? "", createdAt: c.createdAt, url: c.url })),
     },
   };

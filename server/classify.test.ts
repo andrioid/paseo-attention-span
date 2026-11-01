@@ -190,54 +190,85 @@ describe("waiting", () => {
   it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
     const attention = run({
       mine: [pr(1, { reviewRequests: asked }), pr(2, { reviewRequests: asked }, "PENDING")],
-      commented: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
+      involved: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
     expect(attention.items[0]).toMatchObject({ person: { login: "bob", avatarUrl: bob.avatarUrl }, chips: [{ text: "1d" }] });
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
-    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], commented: [issue(71, [comment(me, "", 5)])] });
+    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
     expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
   });
 });
 
 describe("answered", () => {
-  it("ATT-16: an issue where someone answered me without a mention is mine, with Reply and 👍", () => {
-    const [item] = run({ commented: [issue(70, [comment(me, "which shops?", 2), comment(alice, "Only **the Danish** one", 0.5)])] }).items;
-    expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "alice", snippet: "Only the Danish one" }, chips: [] });
+  it("ATT-16: a recent comment after mine without a mention is mine, with Reply and 👍", () => {
+    const [item] = run({ involved: [issue(70, [comment(me, "which shops?", 2), comment(alice, "Only **the Danish** one", 0.5)])] }).items;
+    expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "alice", snippet: "Only the Danish one", since: daysAgo(0.5) }, chips: [] });
     expect(item.person?.comments?.map((c) => c.body)).toEqual(["Only **the Danish** one"]);
     expect(item.othersActivityAt).toBe(daysAgo(0.5));
   });
 
   it("ATT-16, MEN-02: replying makes it wait again; a 👍 on the answer clears it", () => {
     const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
-    expect(sections(run({ commented: [replied] }).items)).toEqual([[70, "wait_answer"]]);
+    expect(sections(run({ involved: [replied] }).items)).toEqual([[70, "wait_answer"]]);
     const reacted = issue(71, [comment(me, "which shops?", 2), comment(alice, "Danish", 1, { reactionGroups: [{ viewerHasReacted: true }] })]);
-    expect(run({ commented: [reacted] }).items).toEqual([]);
+    expect(run({ involved: [reacted] }).items).toEqual([]);
   });
 
   it("ATT-16, MEN-05: a bot commenting after my question doesn't answer it", () => {
-    expect(sections(run({ commented: [issue(70, [comment(me, "?", 1), comment(bot, "labelled", 0.5)])] }).items)).toEqual([[70, "wait_answer"]]);
+    expect(sections(run({ involved: [issue(70, [comment(me, "?", 1), comment(bot, "labelled", 0.5)])] }).items)).toEqual([[70, "wait_answer"]]);
   });
 
-  it("ATT-11: a question nobody answered stays however old it is", () => {
-    const [item] = run({ commented: [issue(70, [comment(me, "still needed?", 45)])] }).items;
+  it("ATT-16: on someone else's thread, only comments from the last mentionDays count", () => {
+    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }).items).toEqual([]);
+    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }).items;
+    expect(item).toMatchObject({ section: "answered", person: { login: "bob" } });
+    expect(item.person?.comments?.map((c) => c.author)).toEqual(["bob"]);
+  });
+
+  it("ATT-16: on my own issue, any recent comment is an update, even if I never commented", () => {
+    const mine = issue(70, [comment(alice, "can't reproduce", 1)], "Mine", { author: me });
+    expect(run({ involved: [mine] }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
+    expect(run({ involved: [{ ...mine, comments: { nodes: [comment(alice, "old", 60)] } }] }).items).toEqual([]);
+  });
+
+  it("ATT-16: a conversation comment on my PR leads it, with Reply and 👍", () => {
+    const thread = issue(1, [comment(bob, "could you split this?", 0.2)], "PR 1", { __typename: "PullRequest", author: me });
+    const [item] = run({ mine: [pr(1, { reviewRequests: asked })], involved: [thread] }).items;
+    expect(item).toMatchObject({ section: "answered", actions: ["reply", "acknowledge"], person: { login: "bob" } });
+  });
+
+  it("PRS-08: a PR I handed over stays out, even with comments after mine", () => {
+    const thread = issue(1, [comment(bob, "?", 0.2)], "PR 1", { __typename: "PullRequest", author: me });
+    expect(run({ mine: [pr(1, { assignees: { nodes: [{ login: "bob" }] } })], involved: [thread] }).items).toEqual([]);
+  });
+
+  it("ATT-11: a question on my own issue stays however old; on someone else's, only while fresh", () => {
+    const [item] = run({ asked: [issue(70, [comment(me, "still needed?", 45)], "Mine", { author: me })] }).items;
     expect(item).toMatchObject({ section: "too_long" });
     expect(chips(item)).toEqual(["waiting for an answer · 45d"]);
-    expect(searchVariables(config, NOW).commented).not.toContain("updated:");
+    expect(run({ involved: [issue(71, [comment(me, "still needed?", 45)])] }).items).toEqual([]);
+    expect(searchVariables(config, NOW).asked).not.toContain("updated:");
+    expect(searchVariables(config, NOW).involved).toContain("involves:@me updated:>=");
   });
 
-  it("ATT-16: once my comment is out of the last ones, the conversation has moved on", () => {
-    expect(run({ commented: [issue(70, [comment(alice, "", 3), comment(bob, "", 2)])] }).items).toEqual([]);
+  it("ATT-16: once my comment is out of the last ones on someone else's thread, the conversation has moved on", () => {
+    expect(run({ involved: [issue(70, [comment(alice, "", 3), comment(bob, "", 2)])] }).items).toEqual([]);
+  });
+
+  it("ATT-16: a thread both searches found is listed once", () => {
+    const mine = issue(70, [comment(me, "still needed?", 5)], "Mine", { author: me });
+    expect(sections(run({ involved: [mine], asked: [mine] }).items)).toEqual([[70, "too_long"]]);
   });
 
   it("ATT-03, ATT-16: an answer on an issue my PR closes leads its item", () => {
     const closes = { nodes: [{ number: 50, title: "Issue 50", url: "u", repository: { nameWithOwner: REPO } }] };
     const attention = run({
       mine: [pr(1, { closingIssuesReferences: closes, reviewRequests: asked })],
-      commented: [issue(50, [comment(me, "which shops?", 2), comment(alice, "Danish", 1)])],
+      involved: [issue(50, [comment(me, "which shops?", 2), comment(alice, "Danish", 1)])],
     });
     expect(attention.items).toHaveLength(1);
     expect(attention.items[0]).toMatchObject({ kind: "issue", section: "answered", person: { login: "alice" }, actions: ["reply", "acknowledge"] });
@@ -484,7 +515,7 @@ describe("GitHub requests", () => {
   it("GH-01: sends each live search as its own request, and History as one, with only the fragments each uses", () => {
     expect(searchQuery(["mine"], true)).toMatch(/^query Attention\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
     expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
-    expect(searchQuery(["commented"]).match(/^fragment \w+/gm)).toEqual(["fragment comment", "fragment author"]);
+    expect(searchQuery(["involved"]).match(/^fragment \w+/gm)).toEqual(["fragment author", "fragment comment"]);
     expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
     expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].filter((name) => name !== "unclaimed").sort());
   });

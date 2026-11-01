@@ -12,7 +12,7 @@ This is the one you'll live in. It's split by reason: someone's waiting for your
 
 Each item shows up once, under whichever reason is most urgent. An issue and the PRs that close it count as one item, and so does a stack of PRs. A stack is one change wearing several PRs, so it shouldn't take up five rows.
 
-Mentions only count while the person is still waiting for you. Reply or react and it's gone. The same goes for an answer to a question you asked: if someone replies without tagging you, it shows up under **Answered** instead of quietly vanishing. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
+Mentions only count while the person is still waiting for you. Reply or react and it's gone. The same goes for replies in threads you're part of: if someone comments after you without tagging you, it shows up under **Answered**, as long as it's from the last 30 days. On your own issues and PRs that's any new comment; on other people's threads, only ones after yours. Old threads where strangers keep piling on stay out unless someone tags you. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
 Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
 
@@ -131,7 +131,7 @@ Everything else lives in `~/.config/paseo-attention-span/config.json` on the dae
 
 ## Your data
 
-- **GitHub:** it reads your PRs, review requests, mentions and issues through `gh`, limited to the orgs and repos you've configured. By default it refreshes every 15 minutes, which uses about 6% of GitHub's hourly API allowance. I checked.
+- **GitHub:** it reads your PRs, review requests, mentions and issues through `gh`, limited to the orgs and repos you've configured. By default it refreshes every 15 minutes, which uses about 7% of GitHub's hourly API allowance. I checked.
 - **Local files:** a cache of what it shows, your dismissals and your Next up filter live in `~/.config/paseo-attention-span/state.json` on the daemon host. That's it.
 - **Agent providers:** when a session starts, the item's context goes into the agent's prompt: descriptions, comments, review threads, failing CI logs. That prompt goes to whichever provider your agent profile uses, so it's worth knowing which one that is.
 

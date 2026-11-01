@@ -234,7 +234,7 @@ export class AttentionService {
     };
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
     const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
-    const others = Promise.all([search("reviews"), search("mentions"), search("commented")]);
+    const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked")]);
     const afterThem = forDetails.then((parts) => this.details(merge(parts)));
     const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
     return { data: merge([...first, ...rest]), details };

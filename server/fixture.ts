@@ -73,8 +73,9 @@ export function builders(now: Date) {
     };
   }
 
-  function issue(number: number, comments: Comment[] = [], title = `Issue ${number}`): IssueNode {
-    return { number, title, url: `https://github.com/${REPO}/issues/${number}`, repository, comments: { nodes: comments } };
+  // Someone else's issue unless `overrides` says otherwise.
+  function issue(number: number, comments: Comment[] = [], title = `Issue ${number}`, overrides: Partial<IssueNode> = {}): IssueNode {
+    return { __typename: "Issue", number, title, url: `https://github.com/${REPO}/issues/${number}`, createdAt: daysAgo(20), author: alice, repository, comments: { nodes: comments }, ...overrides };
   }
 
   function pickable(number: number, fields: Record<string, string>, createdDaysAgo = 10, type = "Bug", title = `Issue ${number}`, repo = REPO): PickableNode {
@@ -96,7 +97,8 @@ export function builders(now: Date) {
       mine: nodes("mine") as SearchResult["mine"],
       reviews: nodes("reviews") as SearchResult["reviews"],
       mentions: nodes("mentions") as SearchResult["mentions"],
-      commented: nodes("commented") as SearchResult["commented"],
+      involved: nodes("involved") as SearchResult["involved"],
+      asked: nodes("asked") as SearchResult["asked"],
       assigned: nodes("assigned") as SearchResult["assigned"],
       unclaimed: nodes("unclaimed") as SearchResult["unclaimed"],
       merged: nodes("merged") as SearchResult["merged"],
@@ -183,13 +185,18 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
         reviewThreads: { nodes: [{ isResolved: false, comments: { nodes: [comment(bot, "@me this endpoint leaks the API key in its response", 1)] } }] },
       }),
     ],
-    commented: [
+    involved: [
       issue(140, [comment(alice, "", 9), comment(me, "Which customers see this?", 1)], "Invoice totals round wrong"),
-      issue(141, [comment(me, "Is this still needed?", 12)], "Rotate the analytics token"),
       // Answered without mentioning me [ATT-16]; and a bot after my question, which doesn't count [MEN-05].
       issue(142, [comment(me, "Does this happen on every shop, or only some?", 2), comment(alice, "Only the Danish one, as far as I can tell. It started after the **VAT change** on Monday.", 0.4)], "Order confirmation shows the wrong VAT"),
       issue(143, [comment(me, "Can we drop the old endpoint yet?", 1), comment(bot, "This issue has been labelled `needs-triage`.", 0.5)], "Retire the v1 orders endpoint"),
+      // A comment on my PR's conversation [ATT-16].
+      issue(111, [comment(bob, "Big change. Could you split the index migration into its own PR?", 0.2)], "Faster product search", { __typename: "PullRequest", author: me, createdAt: daysAgo(2) }),
+      // Someone else's old thread where people kept going after me: not mine to follow [ATT-16].
+      issue(144, [comment(me, "Same here on 2.3", 400), comment(bob, "+1", 300)], "Crash on startup"),
     ],
+    // My own issue, asked about long ago and never answered [ATT-11].
+    asked: [issue(141, [comment(me, "Is this still needed?", 40)], "Rotate the analytics token", { author: me, createdAt: daysAgo(90) })],
     assigned: [
       pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"),
       pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO),

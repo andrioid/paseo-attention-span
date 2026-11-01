@@ -75,7 +75,11 @@ export interface MentionNode {
   reviewThreads?: Nodes<ReviewThread>;
 }
 
+// An issue or PR I'm in, with its last conversation comments.
 export interface IssueNode {
+  __typename?: "Issue" | "PullRequest";
+  createdAt: string;
+  author: Actor | null;
   number: number;
   title: string;
   url: string;
@@ -103,7 +107,8 @@ export interface LiveResult {
   mine: Nodes<PullRequestNode>;
   reviews: Nodes<PullRequestNode>;
   mentions: Nodes<MentionNode>;
-  commented: Nodes<IssueNode>;
+  involved: Nodes<IssueNode>;
+  asked: Nodes<IssueNode>;
   assigned: Nodes<PickableNode>;
   unclaimed: Nodes<PickableNode>;
 }
