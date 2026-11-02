@@ -22,6 +22,7 @@ import { FIXTURE } from "./server/gh";
 import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
 import type { Chip } from "./shared/attention";
+import { readyProviders } from "./shared/providers";
 import * as rpc from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
@@ -71,6 +72,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.itemDetails, ({ subject, target, checks }) => (FIXTURE ? Promise.resolve(fixtureDetails(subject, target, checks)) : itemDetails(subject, target, checks)));
   server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: FIXTURE ? "main" : await defaultBranch(repo) }));
   server.handle(rpc.feedbackInfo, () => feedbackInfo());
+  // The server's Paseo connection expands the snapshot; the app's may not (getpaseo compact snapshots) [SES-06].
+  server.handle(rpc.readyProviders, async (_input, { paseo }) => ({ providers: readyProviders((await paseo.providers.snapshot()).entries) }));
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: FIXTURE ? FIXTURE_CONTEXT : await sessionContext(kind, target) }));
 
   return () => attention.stop();

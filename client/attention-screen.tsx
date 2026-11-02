@@ -18,7 +18,7 @@ import { NextUpList } from "./next-up";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
-import { branchWorkspaces, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
+import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
 import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
@@ -202,6 +202,8 @@ function AttentionList({
   const fetchDetails = useRpc(rpc.itemDetails);
   const setCodeRepo = useRpc(rpc.setCodeRepo);
   const fetchDefaultBranch = useRpc(rpc.defaultBranch);
+  const fetchReadyProviders = useRpc(rpc.readyProviders);
+  const fetchProviders: FetchProviders = () => fetchReadyProviders({}).then((result) => result.providers);
   const defaultBranch: DefaultBranch = async (repo) => (await fetchDefaultBranch({ repo })).name;
   const [tab, setTab] = useState<TabId>("doing");
   // Every card with a change still running: each runs on its own.
@@ -263,7 +265,7 @@ function AttentionList({
     await before?.();
     const { context } = await fetchContext({ kind, target });
     const prompt = renderPrompt(kind, target, context, config);
-    await started(await startSession(paseo, { itemKey, kind, target, prompt, config, checkout }));
+    await started(await startSession(paseo, { itemKey, kind, target, prompt, config, fetchProviders, checkout }));
   }
 
   function place(codeRepo: string) {
@@ -320,6 +322,7 @@ function AttentionList({
     fetchDetails,
     fetchReviewers,
     defaultBranch,
+    fetchProviders,
     openAgent,
     started,
     act: (item, action) => {
@@ -518,6 +521,7 @@ interface Actions {
   fetchDetails: FetchDetails;
   fetchReviewers: FetchReviewers;
   defaultBranch: DefaultBranch;
+  fetchProviders: FetchProviders;
   act: (item: Item, action: ActionId) => void;
   requestReviewers: (item: Item, reviewers: string[]) => void;
   rerun: (item: Item, runIds: number[]) => void;
@@ -1037,7 +1041,7 @@ function SessionOptions({ spec, actions, onClose }: { spec: OptionsSpec; actions
         listProfiles(paseo),
         findCheckout(paseo, actions.config, target, actions.defaultBranch),
         // Without a ready provider, still show the options; starting reports the error.
-        resolveAgentConfig(paseo, kind, actions.config).catch(() => ({ label: "No agent provider is ready" })),
+        resolveAgentConfig(paseo, actions.fetchProviders, kind, actions.config).catch(() => ({ label: "No agent provider is ready" })),
       ]);
       const workspaces = checkout.project ? await branchWorkspaces(paseo, checkout.project.projectId, target.headRefName) : [];
       return { prompt: renderPrompt(kind, target, context, actions.config), profiles, checkout, workspaces, defaultLabel: defaults.label };
@@ -1055,7 +1059,7 @@ function SessionOptions({ spec, actions, onClose }: { spec: OptionsSpec; actions
     setStarting(true);
     try {
       await spec.before?.();
-      await actions.started(await startSession(paseo, { itemKey, kind, target, prompt: prompt ?? data.prompt, config: actions.config, checkout: data.checkout, profileId, workspaceId }));
+      await actions.started(await startSession(paseo, { itemKey, kind, target, prompt: prompt ?? data.prompt, config: actions.config, fetchProviders: actions.fetchProviders, checkout: data.checkout, profileId, workspaceId }));
       onClose();
     } catch (error) {
       toast.error(`Starting the session failed: ${(error as Error).message}`);

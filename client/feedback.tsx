@@ -90,6 +90,7 @@ export function FeedbackAsk({
   const paseo = usePaseo();
   const toast = useToast();
   const fetchInfo = useRpc(rpc.feedbackInfo);
+  const fetchProviders = useRpc(rpc.readyProviders);
   const [message, setMessage] = useState("");
   const [starting, setStarting] = useState(false);
 
@@ -98,7 +99,7 @@ export function FeedbackAsk({
     try {
       const info = await fetchInfo({});
       const prompt = feedbackPrompt(kind, { ...screen, message, dir: info.source, version: info.version });
-      const { agent } = await resolveAgentConfig(paseo, "start", config);
+      const { agent } = await resolveAgentConfig(paseo, () => fetchProviders({}).then((result) => result.providers), "start", config);
       const workspace = await paseo.workspaces.open({ cwd: info.cwd });
       const created = await workspace.agents.create({
         config: agent,

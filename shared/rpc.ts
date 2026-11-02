@@ -4,6 +4,7 @@ import type { AttentionView, ItemDetails, ReviewerChoices, Target } from "./atte
 import { SessionKind } from "./config";
 import type { ConfigStatus, CoverageCheck, SetupStatus } from "./setup";
 import type { FeedbackInfo } from "./feedback";
+import type { ReadyProvider } from "./providers";
 
 // Both sides are this plugin, so the types are checked by TypeScript, not repeated as schemas.
 const view = z.custom<AttentionView>();
@@ -73,3 +74,5 @@ export const sessionContext = defineRpc({
 
 // Where a feedback session runs and the version it reports [FB-01].
 export const feedbackInfo = defineRpc({ name: "feedback.info", input: z.object({}), output: z.custom<FeedbackInfo>() });
+// The host's ready providers, read by the plugin's server: the app's own snapshot can arrive compact, with no entries [SES-06].
+export const readyProviders = defineRpc({ name: "providers.ready", input: z.object({}), output: z.custom<{ providers: ReadyProvider[] }>() });
