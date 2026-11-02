@@ -1,5 +1,6 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
 import type { AgentSummary, Target } from "../shared/attention";
+import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 
 type Paseo = ReturnType<typeof usePaseo>;
@@ -107,10 +108,13 @@ export async function listProfiles(paseo: Paseo): Promise<ProfileChoice[]> {
 }
 
 type AgentConfig = Parameters<Paseo["agents"]["create"]>[0]["config"];
+// Asks the plugin's server, whose snapshot always has the entries [SES-06].
+export type FetchProviders = () => Promise<ReadyProvider[]>;
 
 // The profile configured for the session type, then "default", then Paseo's defaults [SES-01, SES-06].
 export async function resolveAgentConfig(
   paseo: Paseo,
+  fetchProviders: FetchProviders,
   kind: SessionKind,
   config: AttentionConfig,
   profileId?: string,
@@ -120,32 +124,9 @@ export async function resolveAgentConfig(
   const byName = (name: string | undefined) =>
     name ? profiles.find((p) => p.id === name || p.name.toLowerCase() === name.toLowerCase()) : undefined;
   const profile = profileId ? byName(profileId) : (byName(config.profiles[kind]) ?? byName(config.profiles.default));
-
-  const snapshot = await paseo.providers.snapshot();
-  const providers = snapshot.entries.filter((entry) => entry.status === "ready" && entry.enabled);
-  const defaultModel = (provider: string) => {
-    const entry = providers.find((candidate) => candidate.provider === provider);
-    return (entry?.models ?? []).find((model) => model.isDefault)?.id ?? entry?.models?.[0]?.id;
-  };
-
-  if (profile) {
-    const model = profile.model ?? defaultModel(profile.provider);
-    return {
-      label: profile.name,
-      agent: {
-        provider: model ? `${profile.provider}/${model}` : profile.provider,
-        modeId: profile.modeId,
-        thinkingOptionId: profile.thinkingOptionId,
-        featureValues: profile.featureValues,
-      },
-    };
-  }
-  const fallback = providers.find((entry) => defaultModel(entry.provider));
-  if (!fallback) throw new Error("No agent provider is ready on this host.");
-  return {
-    label: `Paseo default (${fallback.label})`,
-    agent: { provider: `${fallback.provider}/${defaultModel(fallback.provider)}`, modeId: fallback.defaultModeId ?? undefined },
-  };
+  // A profile that names its model needs no provider lookup.
+  const providers = profile?.model ? [] : await fetchProviders();
+  return chooseAgent(profile, providers);
 }
 
 function slug(text: string): string {
@@ -162,6 +143,7 @@ export interface StartSession {
   target: Target;
   prompt: string;
   config: AttentionConfig;
+  fetchProviders: FetchProviders;
   checkout: Checkout;
   profileId?: string;
   workspaceId?: string; // an existing workspace; otherwise a new worktree
@@ -172,7 +154,7 @@ export async function startSession(paseo: Paseo, input: StartSession): Promise<s
   const { target, checkout } = input;
   const project = checkout.project;
   if (!project) throw new Error(noProjectMessage(checkout, target));
-  const { agent: agentConfig } = await resolveAgentConfig(paseo, input.kind, input.config, input.profileId);
+  const { agent: agentConfig } = await resolveAgentConfig(paseo, input.fetchProviders, input.kind, input.config, input.profileId);
   const title = `${target.kind === "pr" ? "PR" : "Issue"} ${target.number}: ${target.title}`.slice(0, 120);
 
   const workspace = input.workspaceId
