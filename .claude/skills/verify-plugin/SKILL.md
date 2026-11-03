@@ -38,9 +38,10 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-doing-review-sheet.png` | Its sheet: "Continue session" (no kind, working) first, then Review… still offered, Open PR on GitHub, a muted "Start another session…" |
    | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, rendered as Markdown, both ticked |
    | `<layout>-doing-needs-reviewer.png` | The Needs a reviewer section: "Export invoices as CSV" with Request review and Merge in its sheet, "Log slow database queries" with a CI running chip |
+   | `<layout>-doing-ready.png` | The Ready to merge section: "Lazy-load product images" with an "optional checks failing" chip and "Compress API responses" with "required checks passed", both offering Merge [PRS-14]. "Sign the release artifacts" isn't here: it waits in Waiting for review with "blocked by repo rules" and no person [PRS-13] |
    | `<layout>-doing-reviewers.png` | The reviewer picker from "Export invoices as CSV" (Needs a reviewer): Suggested by GitHub (carol, ticked), Recent on your PRs here, Teams, the login field, Request 1 reviewer |
    | `<layout>-doing-options.png` | The Options modal from "Address comments…" in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
-   | `<layout>-doing-merge-confirm.png` | The Merge confirmation on "Dialog focus returns to the trigger" |
+   | `<layout>-doing-merge-confirm.png` | The Merge confirmation on the first Ready card, the a11y stack's |
    | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
    | `<layout>-history.png` | History by week, with Reviewed toggles |
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |

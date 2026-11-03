@@ -35,6 +35,8 @@ export interface PrState {
   changes: boolean;
   approved: boolean;
   conflicts: boolean;
+  // GitHub says the repo's rules block merging it now, for whatever reason [PRS-13].
+  mergeBlocked: boolean;
   // Conflicts, or a PR above it no longer builds on its parent [UPS-01, UPS-02].
   blocked: boolean;
   autoMerge: boolean;
@@ -49,6 +51,10 @@ export interface PrState {
   // Waited at least waitingTooLongDays [ATT-11].
   tooLong: boolean;
 }
+
+// Approved and nothing I know of in the way, yet GitHub's rules still block it: signed commits, a required check that never
+// reported, a resolved-conversations rule, and the like. Nothing for me to do here, so it waits [PRS-13].
+export const rulesBlock = (s: PrState) => !s.draft && s.mergeBlocked && s.approved && !s.ciPending && !s.ciFailing && !s.changes && !s.conflicts;
 
 const waitingFor = (s: PrState) => (s.ciPending ? "CI running" : s.replied ? "waiting for the reviewer" : "waiting for review");
 
@@ -74,19 +80,21 @@ export const PR_RULES: Rules<PrState> = {
   ci: { when: (s) => !s.draft && s.ciFailing, actions: () => ["fix", "rerun"] },
   changes: { when: (s) => !s.draft && s.changes, actions: () => ["address"] },
   // Auto-merge waiting on CI leaves nothing for me to do.
-  ready: { when: (s) => !s.draft && s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending), actions: readyActions },
+  // Blocked while CI runs counts as waiting on CI, which auto-merge covers [PRS-10, PRS-13].
+  ready: { when: (s) => !s.draft && s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending) && !rulesBlock(s), actions: readyActions },
   upstream: { when: (s) => !s.draft && s.blocked, actions: () => ["rebase"] },
-  // After too long it's mine to nudge [ATT-11].
-  too_long: { when: (s) => !s.draft && s.asked && s.tooLong, label: waitingFor },
-  // Mine until I ask someone, even while CI runs. Merge, for repos where nobody reviews, once CI passed on the current base [PRS-12, PRS-04].
+  // After too long it's mine to nudge [ATT-11]; a rule has no one to nudge [PRS-13].
+  too_long: { when: (s) => !s.draft && s.asked && s.tooLong && !rulesBlock(s), label: waitingFor },
+  // Mine until I ask someone, even while CI runs. Merge, for repos where nobody reviews, once CI passed on the current base
+  // and GitHub's rules allow it [PRS-12, PRS-04, PRS-13].
   needs_reviewer: {
     when: (s) => !s.draft && !s.asked,
-    actions: (s) => (!s.ciFailing && !s.ciPending && s.behindBy === 0 ? ["request_review", "merge"] : ["request_review"]),
+    actions: (s) => (!s.ciFailing && !s.ciPending && s.behindBy === 0 && !s.mergeBlocked ? ["request_review", "merge"] : ["request_review"]),
   },
   drafts: { when: (s) => s.draft, actions: draftActions },
-  // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01].
-  wait_review: { when: (s) => !s.draft && s.asked && !s.ciPending && !s.replied, label: waitingFor },
-  wait_reviewer: { when: (s) => !s.draft && s.asked && !s.ciPending && s.replied, label: waitingFor },
+  // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01]. Blocked by rules waits with reviews [PRS-13].
+  wait_review: { when: (s) => !s.draft && s.asked && !s.ciPending && (!s.replied || rulesBlock(s)), label: waitingFor },
+  wait_reviewer: { when: (s) => !s.draft && s.asked && !s.ciPending && s.replied && !rulesBlock(s), label: waitingFor },
   wait_ci: { when: (s) => !s.draft && s.asked && s.ciPending, label: waitingFor },
 };
 

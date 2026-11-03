@@ -164,6 +164,11 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(125, { title: "Log slow database queries" }, "PENDING"),
       // A review that only commented keeps it waiting on that reviewer.
       pr(126, { title: "Tidy the admin menu", latestReviews: { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(0.8) }] } }),
+      // Approved and green, yet a repo rule blocks it, so it waits [PRS-13].
+      pr(127, { title: "Sign the release artifacts", reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" }),
+      // Only checks the repo doesn't require fail, or still run: ready all the same [PRS-14].
+      pr(128, { title: "Lazy-load product images", reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE"),
+      pr(129, { title: "Compress API responses", reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "PENDING"),
     ],
     reviews: [pr(120, { title: "Add a status page", author: bob }), pr(121, { title: "Rework the cart totals", author: alice })],
     mentions: [
@@ -231,6 +236,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 },
       fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] },
       issues: { [key(132)]: { number: 132, title: "The calendar can't be used with a keyboard", url: `https://github.com/${REPO}/issues/132`, repository } },
+      checks: { [key(128)]: { required: 2, failing: 0, pending: 0 }, [key(129)]: { required: 1, failing: 0, pending: 0 } },
     },
   };
 }

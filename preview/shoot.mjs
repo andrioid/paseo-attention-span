@@ -101,6 +101,8 @@ for (const layout of layouts) {
       };
       await page.screenshot({ path: `/out/${prefix}-doing-too-long.png`, clip: await band("Waiting too long", "Needs a reviewer") });
       await page.screenshot({ path: `/out/${prefix}-doing-needs-reviewer.png`, clip: await band("Needs a reviewer", "My drafts") });
+      // Optional checks failing or still running leave a PR ready [PRS-14].
+      await page.screenshot({ path: `/out/${prefix}-doing-ready.png`, clip: await band("Ready to merge", "Needs upstream") });
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
       const openSheet = async (title) => {
@@ -153,7 +155,8 @@ for (const layout of layouts) {
       await page.waitForTimeout(500);
       await modalShot("doing-options");
       await page.getByRole("button", { name: "Cancel" }).last().click();
-      await page.getByRole("button", { name: "Merge", exact: true }).click();
+      // The first Ready card's: the a11y stack's.
+      await page.getByRole("button", { name: "Merge", exact: true }).first().click();
       await page.waitForTimeout(400);
       await shot("doing-merge-confirm");
       await page.getByRole("button", { name: "Cancel" }).click();

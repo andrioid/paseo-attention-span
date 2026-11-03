@@ -5,7 +5,7 @@ import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, Li
 import { excerpt, plainText } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
-import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions } from "./rules";
+import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
@@ -79,6 +79,14 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   const state = (pr: PullRequestNode) => {
     const commit = pr.commits.nodes[0]?.commit;
     const ci = commit?.statusCheckRollup?.state;
+    const anyFailing = ci === "FAILURE" || ci === "ERROR";
+    const anyPending = ci === "PENDING" || ci === "EXPECTED";
+    const mergeBlocked = pr.mergeStateStatus === "BLOCKED";
+    // Where the repo requires checks, only those count; one that hasn't reported yet shows as GitHub blocking while CI runs.
+    // Where it requires none, every check counts [PRS-14].
+    const required = details.checks[prKey(pr)];
+    const ciFailing = required?.required ? required.failing > 0 : anyFailing;
+    const ciPending = !ciFailing && (required?.required ? required.pending > 0 || (anyPending && mergeBlocked) : anyPending);
     const unresolved = pr.reviewThreads.nodes.filter((thread) => !thread.isResolved);
     const last = (thread: (typeof unresolved)[number]) => thread.comments.nodes.at(-1);
     const onMe = unresolved.filter((thread) => !isMe(last(thread)?.author));
@@ -86,9 +94,12 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const changesRequestedAt = latest(...pr.latestReviews.nodes.filter((r) => r.state === "CHANGES_REQUESTED").map((r) => r.submittedAt));
     const behindBy = details.behind[prKey(pr)] ?? 0;
     return {
-      ciFailing: ci === "FAILURE" || ci === "ERROR",
-      ciPending: ci === "PENDING" || ci === "EXPECTED",
+      ciFailing,
+      ciPending,
+      optionalFailing: !ciFailing && anyFailing,
+      optionalPending: !ciFailing && !ciPending && anyPending,
       conflicts: pr.mergeable === "CONFLICTING",
+      mergeBlocked,
       approved: pr.reviewDecision === "APPROVED",
       // A request counts even when its reviewer can't be seen, like a team I can't read; so does any review [PRS-12].
       asked:
@@ -138,6 +149,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       changes: s.changes,
       approved: s.approved,
       conflicts: s.conflicts,
+      mergeBlocked: s.mergeBlocked,
       blocked: s.conflicts || outOfSync,
       autoMerge: s.autoMerge,
       autoMergeAllowed: !!bottom.repository.autoMergeAllowed,
@@ -152,6 +164,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const section = pick(PR_RULES, flags) ?? "wait_review";
     const rule = PR_RULES[section];
     const actions = rule?.actions?.(flags) ?? [];
+    const rulesBlocked = rulesBlock(flags);
     // Who it waits on: the reviewer who asked for changes, else who's requested, else who reviewed.
     const reviewer = replied
       ? bottom.latestReviews.nodes.find((review) => review.state === "CHANGES_REQUESTED")?.author
@@ -162,12 +175,14 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
+    if (rulesBlocked) chips.push(chip("blocked by repo rules", "warn"));
     if (s.autoMerge) chips.push(chip("auto-merge on", "good"));
     if (bottom.reviewDecision === "CHANGES_REQUESTED") chips.push(chip("changes requested", "warn"));
     if (s.threadsOnMe > 0) chips.push(chip(`${s.threadsOnMe} unresolved`, "warn"));
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
     else if (s.ciPending) chips.push(chip("CI running", "warn"));
-    else if (section === "ready" && s.behindBy === 0) chips.push(chip("CI passed", "good"));
+    else if (s.optionalFailing) chips.push(chip("optional checks failing", "warn"));
+    else if (section === "ready" && s.behindBy === 0) chips.push(chip(s.optionalPending ? "required checks passed" : "CI passed", "good"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
     if (s.behindBy > 0) chips.push(behindChip(s.behindBy, base));
     if (stack.length > 1) chips.push(chip(`stack of ${stack.length}`));
@@ -183,7 +198,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
         waiting ??
         (section === "answered" ? answer : undefined) ??
         (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
-        (section === "too_long" || SECTIONS[section].tab === "waiting" ? person(reviewer, waitingSince) : undefined),
+        // A rule, not a person, holds it up [PRS-13].
+        (!rulesBlocked && (section === "too_long" || SECTIONS[section].tab === "waiting") ? person(reviewer, waitingSince) : undefined),
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
     };
   });
