@@ -1,5 +1,6 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
 import type { AgentSummary, Target } from "../shared/attention";
+import { linkedSessions } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 
@@ -13,10 +14,15 @@ export const KIND_LABEL = "attention-span-kind";
 // Sessions started under the plugin's earlier names, "GitHub attention" and "GitHub inbox".
 const OLD_LABELS = ["github-attention", "github-inbox"];
 
-// Agents started from Attention Span, each with the item it was started on.
+// Agents started from Attention Span, each with the item it was started on, and the agents
+// started outside it in a workspace that belongs to an item [SES-08].
 export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
   const labels = [LABEL, ...OLD_LABELS];
-  const lists = await Promise.all(labels.map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } })));
+  const [lists, all, workspaces] = await Promise.all([
+    Promise.all(labels.map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } }))),
+    paseo.agents.list(),
+    paseo.workspaces.list(),
+  ]);
   const byId = new Map<string, AgentSummary>();
   for (const { agent } of lists.flatMap((list) => list.entries)) {
     const itemKey = labels.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
@@ -32,7 +38,9 @@ export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
       lastActivityAt: agent.updatedAt ?? null,
     });
   }
-  return [...byId.values()];
+  const labelled = [...byId.values()];
+  const unlabelled = all.entries.map((entry) => entry.agent).filter((agent) => !labels.some((label) => agent.labels?.[label]));
+  return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)];
 }
 
 export interface ProjectMatch {

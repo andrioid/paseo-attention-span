@@ -126,6 +126,11 @@ for (const layout of layouts) {
       await openSheet("The calendar can't be used with a keyboard");
       await modalShot("doing-stack-issue-sheet");
       await closeSheet();
+      // A session started outside Attention Span, on the PR its workspace is linked to [SES-08].
+      await page.screenshot({ path: `/out/${prefix}-doing-review.png`, clip: await band("Review requested", "CI failing") });
+      await openSheet("Add a status page");
+      await modalShot("doing-review-sheet");
+      await closeSheet();
       await openSheet("Publish security.txt");
       await page.getByRole("button", { name: "Acknowledge" }).last().click();
       await page.getByRole("button", { name: "Acknowledge 2 comments" }).waitFor({ timeout: 10000 });

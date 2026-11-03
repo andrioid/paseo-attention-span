@@ -238,6 +238,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
 // Sessions the preview shows as started from items: working, needs me, failed, idle.
 // Each sits in its action's line in the sheet. Issue 90 has two: an old one with no kind, which leads, and Rebase stack on its PR.
 // #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
+// #120's was started outside Attention Span, in a workspace Paseo linked to the PR, so it has no kind [SES-08].
 const agent = (id: string, itemKey: string, kind: SessionKind | undefined, status: string, minutesAgo: number, requiresAttention = false): AgentSummary => ({
   id,
   itemKey,
@@ -256,6 +257,7 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-90", `${REPO}#90`, undefined, "idle", 120, true),
   agent("agent-103", `${REPO}#103`, "rebase", "running", 6),
   agent("agent-113", `${REPO}#113`, "fix", "running", 2),
+  agent("agent-120", `${REPO}#120`, undefined, "running", 3),
 ];
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
