@@ -60,6 +60,8 @@ functional:
       PRS-10: turn on auto-merge for an approved pull request whose checks are still running; so that it ships without me waiting for CI.
       PRS-11: mark a healthy draft ready for review and pick its reviewers in one step; so that finished drafts reach reviewers.
       PRS-12: see my pull requests that nobody has been asked to review, and ask people or teams from there, or merge where nobody reviews; so that work doesn't sit as "waiting" when nobody has the next move.
+      PRS-13: see an approved pull request that the repo's rules still block as waiting, without Merge; so that Merge is offered only when GitHub would allow it.
+      PRS-14: have checks the repo doesn't require not hold up a pull request, where the repo requires others; so that a failing or slow optional check doesn't keep finished work from shipping.
   upstream:
     As a developer, I can:
       UPS-01: see my pull requests that conflict with their base; so that pull requests needing updates from upstream are easy to fix.

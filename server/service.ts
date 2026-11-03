@@ -5,7 +5,7 @@ import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
 import type { Details, HistoryResult, LinkedIssue, LiveResult } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, prKey, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import { type CheckContext, detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, prKey, requiredChecks, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import { toLookUp } from "./references";
 import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
@@ -252,7 +252,7 @@ export class AttentionService {
     return Object.fromEntries(names.map((name) => [name, all[name]]));
   }
 
-  // Behind counts [UPS-07] and issue field option order [NXT-02].
+  // Behind counts [UPS-07], required checks [PRS-14] and issue field option order [NXT-02].
   private async details(data: Pick<LiveResult, "mine" | "assigned" | "unclaimed">): Promise<Details> {
     const prs = data.mine.nodes.filter((pr) => pr?.headRefName && !pr.isCrossRepository);
     const { priority, effort } = this.config.nextUp;
@@ -260,19 +260,22 @@ export class AttentionService {
     const issues = [...data.unclaimed.nodes, ...data.assigned.nodes];
     const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
     const refs = toLookUp(data.mine.nodes.filter((pr) => pr?.repository));
-    const details: Details = { behind: {}, fieldOptions: {}, issues: {} };
+    const details: Details = { behind: {}, fieldOptions: {}, issues: {}, checks: {} };
     if (prs.length === 0 && orgs.length === 0 && refs.length === 0) return details;
     const { query, compares } = detailsQuery(prs, orgs as string[], refs);
     type Result = {
       ref?: { compare: { behindBy: number } | null } | null;
       issueFields?: { nodes: { name?: string; options?: { name: string }[] }[] };
       issueOrPullRequest?: (LinkedIssue & { state?: string }) | null;
+      pullRequest?: { commits: { nodes: { commit: { statusCheckRollup: { contexts: { nodes: CheckContext[] } } | null } }[] } } | null;
     } | null;
     // A reference to a repo I can't see fails only its own field.
     const result = await graphql<Record<string, Result>>(query);
     for (const [alias, value] of Object.entries(result)) {
       const behindBy = value?.ref?.compare?.behindBy;
       if (typeof behindBy === "number") details.behind[compares[alias]] = behindBy;
+      const contexts = value?.pullRequest?.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes;
+      if (contexts) details.checks[compares[alias]] = requiredChecks(contexts);
       for (const field of value?.issueFields?.nodes ?? []) if (field.name && field.options) details.fieldOptions[field.name] ??= field.options.map((o) => o.name);
       const issue = value?.issueOrPullRequest; // empty for a PR
       if (issue?.state === "OPEN") details.issues[prKey(issue)] = { number: issue.number, title: issue.title, url: issue.url, repository: issue.repository };

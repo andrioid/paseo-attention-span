@@ -4,7 +4,7 @@ import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
-import { HISTORY_SEARCHES, LIVE_SEARCHES, mergeUnclaimed, searchQuery, searchVariables, unclaimedSearches } from "./queries";
+import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, mergeUnclaimed, requiredChecks, searchQuery, searchVariables, unclaimedSearches } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = AttentionConfig.parse({ orgs: ["acme"] });
@@ -16,9 +16,10 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(
   parts: Parameters<typeof search>[0],
   behind: Record<string, number> = {},
-  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; issues?: Details["issues"] } = {},
+  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; issues?: Details["issues"]; checks?: Details["checks"] } = {},
 ) {
-  return classify({ data: search(parts), details: { behind, fieldOptions: options.fieldOptions ?? {}, issues: options.issues ?? {} }, config: options.config ?? config, now: NOW });
+  const details = { behind, fieldOptions: options.fieldOptions ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {} };
+  return classify({ data: search(parts), details, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
 const follow = AttentionConfig.parse({ orgs: ["acme"], followThreads: true });
@@ -97,6 +98,86 @@ describe("ready to merge and behind base", () => {
     const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { [key(1)]: 139 }).items;
     expect(item).toMatchObject({ section: "upstream", actions: ["rebase"] });
     expect(chips(item)).toEqual(["conflicts", "139 behind main"]);
+  });
+
+  it("PRS-13: approved and green but blocked by a repo rule, it waits for review without Merge or a person", () => {
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" })] }).items;
+    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined });
+    expect(chips(item)).toEqual(["approved", "blocked by repo rules", "1d"]);
+  });
+
+  it("PRS-13: blocked by a rule never counts as waiting too long, even after I replied", () => {
+    const old = { reviewDecision: "APPROVED" as const, mergeStateStatus: "BLOCKED" as const, commits: commit("SUCCESS", 30), reviewThreads: { nodes: [thread(me, 20)] } };
+    expect(sections(run({ mine: [pr(1, old)] }).items)).toEqual([[1, "wait_review"]]);
+  });
+
+  it("PRS-13: what we already know explains a block, so it doesn't count as a rule", () => {
+    const blocked = { reviewDecision: "APPROVED" as const, mergeStateStatus: "BLOCKED" as const };
+    expect(run({ mine: [pr(1, blocked, "PENDING")] }).items[0]).toMatchObject({ section: "ready" });
+    expect(run({ mine: [pr(1, { ...blocked, reviewDecision: "REVIEW_REQUIRED", reviewRequests: asked })] }).items[0].chips.map((c) => c.text)).not.toContain("blocked by repo rules");
+  });
+
+  it("PRS-13: UNKNOWN or missing merge state decides nothing", () => {
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNKNOWN" })] }).items[0]).toMatchObject({ section: "ready", actions: ["merge"] });
+  });
+
+  it("PRS-12, PRS-13: where nobody reviews, Merge is offered only when the rules allow it", () => {
+    expect(run({ mine: [pr(1, { mergeStateStatus: "CLEAN" })] }).items[0].actions).toEqual(["request_review", "merge"]);
+    expect(run({ mine: [pr(1, { mergeStateStatus: "BLOCKED" })] }).items[0].actions).toEqual(["request_review"]);
+  });
+
+  it("PRS-14: with required checks passing, failing optional ones leave it ready", () => {
+    const checks = { [key(1)]: { required: 2, failing: 0, pending: 0 } };
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }, {}, { checks }).items;
+    expect(item).toMatchObject({ section: "ready", actions: ["merge"] });
+    expect(chips(item)).toEqual(["approved", "optional checks failing"]);
+  });
+
+  it("PRS-14: with required checks passing, optional ones still running don't hold up Merge", () => {
+    const checks = { [key(1)]: { required: 1, failing: 0, pending: 0 } };
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }, {}, { checks }).items;
+    expect(item).toMatchObject({ section: "ready", actions: ["merge"] });
+    expect(chips(item)).toEqual(["approved", "required checks passed"]);
+  });
+
+  it("PRS-14: a failing or running required check counts as before", () => {
+    const failing = { [key(1)]: { required: 2, failing: 1, pending: 0 } };
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "FAILURE")] }, {}, { checks: failing }).items[0].section).toBe("ci");
+    const running = { [key(1)]: { required: 2, failing: 0, pending: 1 } };
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }, {}, { checks: running }).items[0]).toMatchObject({ section: "ready", actions: [] });
+  });
+
+  it("PRS-14: a required check that hasn't reported yet shows as GitHub blocking while CI runs", () => {
+    const checks = { [key(1)]: { required: 1, failing: 0, pending: 0 } };
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" }, "PENDING")] }, {}, { checks }).items;
+    expect(item).toMatchObject({ section: "ready", actions: [] });
+    expect(chips(item)).toContain("CI running");
+  });
+
+  it("PRS-14: where the repo requires no checks, every check counts", () => {
+    const checks = { [key(1)]: { required: 0, failing: 0, pending: 0 } };
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }, {}, { checks }).items[0].section).toBe("ci");
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }).items[0].section).toBe("ci");
+  });
+
+  it("PRS-14: counts only required checks; a check run passes as success, neutral or skipped", () => {
+    const contexts = [
+      { status: "COMPLETED", conclusion: "SUCCESS", isRequired: true },
+      { status: "COMPLETED", conclusion: "SKIPPED", isRequired: true },
+      { status: "COMPLETED", conclusion: "CANCELLED", isRequired: true },
+      { status: "IN_PROGRESS", conclusion: null, isRequired: true },
+      { state: "ERROR", isRequired: true },
+      { state: "EXPECTED", isRequired: true },
+      { status: "COMPLETED", conclusion: "FAILURE", isRequired: false },
+      { state: "PENDING", isRequired: false },
+    ];
+    expect(requiredChecks(contexts)).toEqual({ required: 6, failing: 2, pending: 2 });
+  });
+
+  it("PRS-14: asks which checks are required apart from the compare", () => {
+    const { query, compares } = detailsQuery([pr(7)], []);
+    expect(query).toContain("isRequired(pullRequestNumber: 7)");
+    expect(compares).toEqual({ c0: key(7), r0: key(7) });
   });
 
   it("PRS-04: uses the merge method from config, else the first the repo allows", () => {

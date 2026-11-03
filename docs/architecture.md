@@ -50,7 +50,7 @@ The tabs tell the story of my work, left to right: what I finished, what needs m
 |---|---|
 | History | The last `historyWeeks` (default 4) by week, newest first, in the device's time zone: issues assigned to me that closed, with the PRs that closed them, and my other merged PRs [HIS-01]. Per week, a collapsed "Reviewed (n)" lists others' merged PRs I reviewed [HIS-02]. The copy icon on a week's heading copies its finished items, not the reviews, as a Markdown list of links; an issue and the PRs that closed it are one line, linking the issue [HIS-03]. |
 | Doing | The sections below |
-| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (once a person or team is asked, or someone else has reviewed; with the requested reviewer or team), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (threads where my comment is the last from a person; bots don't count): on my own issues however old, on others' only while my comment is within `mentionDays` [ATT-11] |
+| Waiting | My work where someone else has the next move [WAI-01]: *Waiting for review* (once a person or team is asked, or someone else has reviewed; with the requested reviewer or team; or approved but blocked by a repo rule [PRS-13]), *Waiting for the reviewer* (after I replied or pushed), *CI running*, *Questions I asked* (threads where my comment is the last from a person; bots don't count): on my own issues however old, on others' only while my comment is within `mentionDays` [ATT-11] |
 | Next up | *Assigned to you* [NXT-06], then *Unclaimed* [NXT-01] |
 
 Every card in every tab is the same component, `CardRow` in `client/card.tsx` [ATT-05]: a tinted mark for what it is, a title of at most two lines, then "repo #number", when it happened and signal chips, then content only some lists have (tags, a quote, a stack line), and its actions: on the right on desktop, labelled under the text on phones. A change on GitHub asks first in a `ConfirmBar` on the card [SAFE-01]. Tabs differ only in what they pass in: each maps its data to the card's mark, meta, actions and slots. Marks and signals take a tone, never a raw theme color, because some themes draw `accent` close to white.
@@ -72,7 +72,7 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `s
 | Review requested | PRs requesting my review by name, not via a team [REV-01] |
 | CI failing | My PRs with failing checks [PRS-01] |
 | Changes requested | My PRs with requested changes or unresolved threads [PRS-02] |
-| Ready to merge | My approved, mergeable PRs [PRS-03] |
+| Ready to merge | My approved PRs without conflicts or failing checks, that GitHub's rules let me merge [PRS-03, PRS-13] |
 | Needs upstream | My PRs with conflicts or an out-of-sync stack [UPS-01, UPS-02] |
 | Waiting too long | Waiting items older than `waitingTooLongDays` (default 3); it's mine to nudge [ATT-11] |
 | Needs a reviewer | My PRs nobody has been asked to review, even while CI runs [PRS-12] |
@@ -91,6 +91,8 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `s
   2. a stacked PR no longer builds on its parent's head,
   3. it is ready to merge (CI ran against an old base).
   Otherwise the behind count is shown on rows that appear anyway, but never puts an item on the list by itself. Its chip stays neutral; only conflicts are flagged, in red.
+- **Repo rules** [PRS-13]: GitHub's `mergeStateStatus` says whether branch protection and rulesets let a PR merge now, but not which rule blocks it. Approvals already show in `reviewDecision`, conflicts in `mergeable`, and running CI blocks too, so a block only counts as a rule's when none of those explain it: an approved PR without conflicts, failing checks, requested changes or running CI. It then waits in Waiting for review with a "blocked by repo rules" chip, no Merge and no person, and never moves to Waiting too long. Needs a reviewer offers Merge only when GitHub doesn't say blocked. `UNKNOWN` (not computed yet) decides nothing.
+- **Required checks** [PRS-14]: the details request asks which checks on each of my PRs the repo requires (`isRequired`). Where some are required, only they count: failing optional checks leave the PR ready with an "optional checks failing" chip, and optional ones still running don't hold up Merge. A required check that hasn't reported yet isn't listed, so GitHub blocking while CI runs counts as CI running. Where none are required, every check counts.
 - **Stale draft** [PRS-07]: a draft untouched for 30 days offers Refresh and Close instead of Rebase.
 
 ## Next up

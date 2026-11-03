@@ -1,6 +1,6 @@
 import type { UnclaimedSource } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
-import type { PickableNode, PullRequestNode } from "./github-types";
+import type { PickableNode, PullRequestNode, RequiredChecks } from "./github-types";
 import type { IssueRef } from "./references";
 
 // An issue or PR with its last conversation comments [ATT-16].
@@ -60,7 +60,7 @@ const FRAGMENTS: Record<string, string> = {
   id number title url body isDraft createdAt updatedAt
   author { ...author }
   repository { nameWithOwner squashMergeAllowed mergeCommitAllowed autoMergeAllowed defaultBranchRef { name } }
-  baseRefName headRefName headRefOid isCrossRepository mergeable reviewDecision
+  baseRefName headRefName headRefOid isCrossRepository mergeable mergeStateStatus reviewDecision
   autoMergeRequest { enabledAt }
   assignees(first: 10) { nodes { login } }
   closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
@@ -181,15 +181,26 @@ const repository = (repo: string) => {
   return `repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)})`;
 };
 
-// After my PRs and Next up's issues: how far my PRs are behind their bases, the option order of org issue fields, and
-// what the issues my PRs' descriptions refer to are [GH-01, ATT-03].
+// After my PRs and Next up's issues: how far my PRs are behind their bases, which of their checks the repo requires, the
+// option order of org issue fields, and what the issues my PRs' descriptions refer to are [GH-01, ATT-03, PRS-14].
 export function detailsQuery(prs: PullRequestNode[], orgs: string[], refs: IssueRef[] = []): { query: string; compares: Record<string, string> } {
   const compares: Record<string, string> = {};
-  const fields = prs.map((pr, index) => {
+  const fields = prs.flatMap((pr, index) => {
     compares[`c${index}`] = prKey(pr);
-    return `c${index}: ${repository(pr.repository.nameWithOwner)} {
+    compares[`r${index}`] = prKey(pr);
+    const required = `isRequired(pullRequestNumber: ${pr.number})`;
+    // Apart from the compare, so a repo that won't say which checks are required costs only this field.
+    return [
+      `c${index}: ${repository(pr.repository.nameWithOwner)} {
       ref(qualifiedName: ${JSON.stringify(`refs/heads/${pr.baseRefName}`)}) { compare(headRef: ${JSON.stringify(pr.headRefName)}) { behindBy } }
-    }`;
+    }`,
+      `r${index}: ${repository(pr.repository.nameWithOwner)} {
+      pullRequest(number: ${pr.number}) { commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+        ... on CheckRun { status conclusion ${required} }
+        ... on StatusContext { state ${required} }
+      } } } } } } }
+    }`,
+    ];
   });
   refs.forEach((ref, index) =>
     fields.push(`i${index}: ${repository(ref.repo)} {
@@ -202,4 +213,14 @@ export function detailsQuery(prs: PullRequestNode[], orgs: string[], refs: Issue
     }`),
   );
   return { query: `query Details {\n${fields.join("\n")}\n}`, compares };
+}
+
+export type CheckContext = { status?: string; conclusion?: string | null; state?: string; isRequired?: boolean };
+
+// How the checks the repo requires stand. A check run passes as success, neutral or skipped, like GitHub counts it [PRS-14].
+export function requiredChecks(contexts: CheckContext[]): RequiredChecks {
+  const required = contexts.filter((context) => context.isRequired);
+  const pending = (c: CheckContext) => (c.state ? c.state === "PENDING" || c.state === "EXPECTED" : c.status !== "COMPLETED");
+  const failing = (c: CheckContext) => (c.state ? c.state === "FAILURE" || c.state === "ERROR" : !pending(c) && !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(c.conclusion ?? ""));
+  return { required: required.length, failing: required.filter(failing).length, pending: required.filter(pending).length };
 }

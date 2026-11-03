@@ -47,6 +47,8 @@ export interface PullRequestNode {
   headRefOid: string;
   isCrossRepository?: boolean;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  // GitHub's own answer to whether the repo's rules let it merge now; BLOCKED doesn't say which rule [PRS-13].
+  mergeStateStatus?: "BEHIND" | "BLOCKED" | "CLEAN" | "DIRTY" | "DRAFT" | "HAS_HOOKS" | "UNKNOWN" | "UNSTABLE";
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   autoMergeRequest?: { enabledAt: string } | null;
   assignees: Nodes<{ login: string }>;
@@ -131,6 +133,10 @@ export interface Details {
   fieldOptions: Record<string, string[]>;
   // "owner/name#number" -> the open issue my PRs' descriptions refer to; PRs and closed issues are left out [ATT-03].
   issues: Record<string, LinkedIssue>;
+  // "owner/name#number" -> the checks the repo requires on my PR's last commit, as far as they've reported [PRS-14].
+  checks: Record<string, RequiredChecks>;
 }
+
+export type RequiredChecks = { required: number; failing: number; pending: number };
 
 export type LinkedIssue = { number: number; title: string; url: string; repository: Repo };
