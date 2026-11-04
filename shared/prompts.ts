@@ -1,14 +1,17 @@
-import type { ActionId, Target } from "./attention";
+import { type ActionId, ownStack, type Target } from "./attention";
 import type { AttentionConfig, SessionKind } from "./config";
 
 // Built-in prompt templates [SES-04]. A template in config.json replaces one.
-// Placeholders: {{repo}} {{number}} {{title}} {{url}} {{head}} {{base}} {{stack}} {{context}}
+// Placeholders: {{repo}} {{number}} {{title}} {{url}} {{head}} {{base}} {{stack}} {{review}} {{context}}
+// For Review of a stack, {{head}} is its top branch and {{review}} the PRs asking for my review.
+const SWEEP = `Browser sweep, only if you're equipped to (you can run this repo's app and have browser tools): work out which pages and screens the change affects and check each one. If you can't, skip this and say so. Don't spend the session getting the app to run.`;
+
 export const PROMPT_TEMPLATES: Record<SessionKind, string> = {
   review: `Review pull request {{repo}}#{{number}}: "{{title}}" ({{url}}). You are in a checkout of the PR branch.
 
 1. Review: read the description and the diff against {{base}}.
 2. Investigate: dig into anything risky or unclear in the code it touches.
-3. Browser sweep, only if you're equipped to (you can run this repo's app and have browser tools): work out which pages and screens the change affects and check each one. If you can't, skip this and say so. Don't spend the session getting the app to run.
+3. ${SWEEP}
 4. Report back:
    - Findings, most important first.
    - Verdict: approve, request changes or comment, with a one-line reason.
@@ -59,6 +62,21 @@ Read the issue and the code it touches, then propose a plan before changing anyt
 {{context}}`,
 };
 
+// Review of a stack, while config.json doesn't replace the review template: one session for every PR asking for my review [ATT-04].
+export const REVIEW_STACK_TEMPLATE = `Review the pull requests {{review}} in {{repo}}, part of the stack {{stack}} (bottom first). You are in a checkout of the top branch, {{head}}, which has every PR's changes.
+
+1. Review: for each of {{review}}, read its description and its diff against its own base (\`git diff origin/<base>...origin/<head>\`, branches below). Review only those; the rest of the stack is context.
+2. Investigate: dig into anything risky or unclear in the code they touch.
+3. ${SWEEP}
+4. Report back, for each PR:
+   - Findings, most important first.
+   - Verdict: approve, request changes or comment, with a one-line reason.
+   - Draft review comments, ready to paste, each with file:line.
+
+Do not post anything to GitHub.
+
+{{context}}`;
+
 export const ACTION_SESSION: Partial<Record<ActionId, SessionKind>> = {
   review: "review",
   fix: "fix",
@@ -74,15 +92,22 @@ export function renderPrompt(
   context: string,
   config: Pick<AttentionConfig, "prompts">,
 ): string {
-  const template = config.prompts[kind] ?? PROMPT_TEMPLATES[kind];
+  const stack = target.stack ?? [];
+  const reviewStack = kind === "review" && stack.length > 1;
+  const template = config.prompts[kind] ?? (reviewStack ? REVIEW_STACK_TEMPLATE : PROMPT_TEMPLATES[kind]);
+  // Review reads the whole stack; the rest act on my PRs in it [ATT-04].
+  const shown = kind === "review" ? stack : ownStack(target);
+  const asking = stack.filter((pr) => pr.review);
+  const numbers = (prs: { number: number }[], join: string) => (prs.length ? prs : [{ number: target.number }]).map((pr) => `#${pr.number}`).join(join);
   const values: Record<string, string> = {
     repo: target.repo,
     number: String(target.number),
     title: target.title,
     url: target.url,
-    head: target.headRefName ?? "",
+    head: (reviewStack ? stack.at(-1)?.head : target.headRefName) ?? "",
     base: target.baseRefName ?? target.defaultBranch ?? "",
-    stack: (target.stack ?? [{ number: target.number }]).map((pr) => `#${pr.number}`).join(" → "),
+    stack: numbers(shown, " → "),
+    review: numbers(asking.length ? asking : shown, ", "),
     context: context.trim(),
   };
   return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => values[name] ?? match).trim();

@@ -21,7 +21,7 @@ functional:
       ATT-01: see in one place the open issues and pull requests that need me; so that I don't depend on noisy GitHub notifications.
       ATT-02: see why each item needs me, with items grouped by that reason; so that I know what to do about an item at a glance.
       ATT-03: see an issue and the pull requests that resolve it as one item, led by the issue; so that related work isn't scattered across the list.
-      ATT-04: see a stack of dependent pull requests as one item; so that a stack is handled as the single change it is.
+      ATT-04: see any stack of dependent pull requests as one item, whoever opened them, with a session on any of its pull requests shown on it and, where my review is requested, one review for the whole stack; so that a stack is handled as the single change it is.
       ATT-05: judge an item from the list without opening it; so that triage is quick and I'm not visually overloaded.
       ATT-06: open an item for more detail and every action, each saying what it will do; so that the list stays minimal by default and pressing a button makes sense.
       ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that I don't start duplicate work.

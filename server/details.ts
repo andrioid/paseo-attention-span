@@ -1,4 +1,4 @@
-import type { FailingChecks, ItemDetails, Target } from "../shared/attention";
+import { type FailingChecks, type ItemDetails, ownStack, type Target } from "../shared/attention";
 import { graphql, runGh } from "./gh";
 
 // What an item's sheet shows beyond the card, fetched when it opens [ATT-06, GH-01].
@@ -32,7 +32,9 @@ const repository = (repo: string) => {
 // One GraphQL request, plus one REST call per failing workflow run for its attempt number.
 export async function itemDetails(subject: Subject, target: Target | undefined, checks: boolean): Promise<ItemDetails> {
   const pr = target?.kind === "pr" ? target : undefined;
-  const numbers = pr ? (checks ? (pr.stack ?? [{ number: pr.number }]).map((p) => p.number) : [pr.number]) : [];
+  // Rerun covers my PRs in the stack, not others' asking for my review [ATT-04].
+  const mine = pr ? ownStack(pr) : [];
+  const numbers = pr ? (checks && mine.length > 0 ? mine.map((p) => p.number) : [pr.number]) : [];
   const contexts = `commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
     __typename
     ... on CheckRun { name conclusion checkSuite { workflowRun { databaseId } } }

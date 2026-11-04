@@ -144,6 +144,10 @@ for (const layout of layouts) {
       await openSheet("Add a status page");
       await modalShot("doing-review-sheet");
       await closeSheet();
+      // Someone else's stack asking for my review: one Review stack, and the session started on its upper PR [ATT-04].
+      await openSheet("Price rules: data model");
+      await modalShot("doing-review-stack-sheet");
+      await closeSheet();
       await openSheet("Publish security.txt");
       await page.getByRole("button", { name: "Acknowledge" }).last().click();
       await page.getByRole("button", { name: "Acknowledge 2 comments" }).waitFor({ timeout: 10000 });
