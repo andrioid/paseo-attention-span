@@ -166,7 +166,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       // Nobody asked yet: green, so Merge too; and one still in CI [PRS-12].
       pr(124, { title: "Export invoices as CSV", commits: commit("SUCCESS", 0.5) }),
       pr(125, { title: "Log slow database queries" }, "PENDING"),
-      // A review that only commented, and nobody asked again: it waits, on nobody in particular [WAI-02].
+      // A review that only commented, and nobody asked again: GitHub says nobody owes a look, so it's mine to re-request [PRS-12].
       pr(126, { title: "Tidy the admin menu", latestReviews: { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(0.8) }] } }),
       // Approved and green, yet a repo rule blocks it, so it waits [PRS-13].
       pr(127, { title: "Sign the release artifacts", reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" }),
@@ -252,6 +252,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] },
       issues: { [key(132)]: { number: 132, title: "The calendar can't be used with a keyboard", url: `https://github.com/${REPO}/issues/132`, repository } },
       checks: { [key(128)]: { required: 2, failing: 0, pending: 0 }, [key(129)]: { required: 1, failing: 0, pending: 0 } },
+      mergeState: {},
     },
   };
 }

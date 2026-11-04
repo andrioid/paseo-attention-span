@@ -94,7 +94,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const ci = commit?.statusCheckRollup?.state;
     const anyFailing = ci === "FAILURE" || ci === "ERROR";
     const anyPending = ci === "PENDING" || ci === "EXPECTED";
-    const mergeBlocked = pr.mergeStateStatus === "BLOCKED";
+    // Asked a few PRs at a time where we could; search's answer is BLOCKED for all once there are more than a few [PRS-13].
+    const mergeBlocked = (details.mergeState[prKey(pr)] ?? pr.mergeStateStatus) === "BLOCKED";
     // Where the repo requires checks, only those count; one that hasn't reported yet shows as GitHub blocking while CI runs.
     // Where it requires none, every check counts [PRS-14].
     const required = details.checks[prKey(pr)];
@@ -114,12 +115,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       conflicts: pr.mergeable === "CONFLICTING",
       mergeBlocked,
       approved: pr.reviewDecision === "APPROVED",
-      // A request counts even when its reviewer can't be seen, like a team I can't read; so does any review [PRS-12].
-      asked:
-        pr.reviewRequests.nodes.length > 0 ||
-        pr.latestReviews.nodes.some((review) => isOther(review.author)) ||
-        pr.reviewDecision === "APPROVED" ||
-        pr.reviewDecision === "CHANGES_REQUESTED",
+      // Only what GitHub records as owed: a pending request, even one whose reviewer I can't see, or a decision. Who has
+      // reviewed doesn't count; GitHub drops a reviewer's request once they review, so a comment leaves the next move to
+      // me. The repo decides what counts as a review, not us [PRS-12].
+      asked: pr.reviewRequests.nodes.length > 0 || pr.reviewDecision === "APPROVED" || pr.reviewDecision === "CHANGES_REQUESTED",
       autoMerge: !!pr.autoMergeRequest,
       threadsOnMe: onMe.length,
       botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
@@ -194,9 +193,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
           : "review"
         : rulesBlocked || s.approved || s.ciPending
           ? undefined
-          : bottom.reviewRequests.nodes.length > 0
-            ? "review"
-            : "nobody asked again";
+          : "review";
 
     const chips: Chip[] = [];
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));

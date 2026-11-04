@@ -50,7 +50,8 @@ export interface PullRequestNode {
   isCrossRepository?: boolean;
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   // GitHub's own answer to whether the repo's rules let it merge now; BLOCKED doesn't say which rule [PRS-13].
-  mergeStateStatus?: "BEHIND" | "BLOCKED" | "CLEAN" | "DIRTY" | "DRAFT" | "HAS_HOOKS" | "UNKNOWN" | "UNSTABLE";
+  // Wrong when a request asks about more than a few PRs, as search does, so Details' answer comes first.
+  mergeStateStatus?: MergeStateStatus;
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   autoMergeRequest?: { enabledAt: string } | null;
   assignees: Nodes<{ login: string }>;
@@ -137,7 +138,11 @@ export interface Details {
   issues: Record<string, LinkedIssue>;
   // "owner/name#number" -> the checks the repo requires on my PR's last commit, as far as they've reported [PRS-14].
   checks: Record<string, RequiredChecks>;
+  // "owner/name#number" -> my PR's merge state, asked a few PRs at a time: asked about more, GitHub says BLOCKED [PRS-13].
+  mergeState: Record<string, MergeStateStatus>;
 }
+
+export type MergeStateStatus = "BEHIND" | "BLOCKED" | "CLEAN" | "DIRTY" | "DRAFT" | "HAS_HOOKS" | "UNKNOWN" | "UNSTABLE";
 
 export type RequiredChecks = { required: number; failing: number; pending: number };
 

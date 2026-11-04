@@ -4,8 +4,8 @@ import { AttentionConfig, githubRepoOf } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
 import { fixture, FIXTURE_AGENTS } from "./fixture";
-import type { Details, HistoryResult, LinkedIssue, LiveResult } from "./github-types";
-import { type CheckContext, detailsQuery, HISTORY_SEARCHES, mergeUnclaimed, prKey, requiredChecks, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import type { Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
+import { type CheckContext, detailsQuery, HISTORY_SEARCHES, MERGE_STATE_BATCH, mergeStateQuery, mergeUnclaimed, prKey, requiredChecks, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import { toLookUp } from "./references";
 import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
@@ -260,8 +260,9 @@ export class AttentionService {
     const issues = [...data.unclaimed.nodes, ...data.assigned.nodes];
     const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
     const refs = toLookUp(data.mine.nodes.filter((pr) => pr?.repository));
-    const details: Details = { behind: {}, fieldOptions: {}, issues: {}, checks: {} };
-    if (prs.length === 0 && orgs.length === 0 && refs.length === 0) return details;
+    const mergeStates = this.mergeStates(data.mine.nodes.filter((pr) => pr?.repository));
+    const details: Details = { behind: {}, fieldOptions: {}, issues: {}, checks: {}, mergeState: {} };
+    if (prs.length === 0 && orgs.length === 0 && refs.length === 0) return { ...details, mergeState: await mergeStates };
     const { query, compares } = detailsQuery(prs, orgs as string[], refs);
     type Result = {
       ref?: { compare: { behindBy: number } | null } | null;
@@ -280,7 +281,21 @@ export class AttentionService {
       const issue = value?.issueOrPullRequest; // empty for a PR
       if (issue?.state === "OPEN") details.issues[prKey(issue)] = { number: issue.number, title: issue.title, url: issue.url, repository: issue.repository };
     }
-    return details;
+    return { ...details, mergeState: await mergeStates };
+  }
+
+  // My PRs' merge state, a few per request in parallel, as GitHub only works it out for a few at a time; search's answer
+  // for more is BLOCKED for all [PRS-13]. A request that fails leaves its PRs to search's answer.
+  private async mergeStates(prs: PullRequestNode[]): Promise<Details["mergeState"]> {
+    const batches = Array.from({ length: Math.ceil(prs.length / MERGE_STATE_BATCH) }, (_, i) => prs.slice(i * MERGE_STATE_BATCH, (i + 1) * MERGE_STATE_BATCH));
+    const results = await Promise.all(
+      batches.map(async (batch) => {
+        const { query, keys } = mergeStateQuery(batch);
+        const result = await graphql<Record<string, { pullRequest: { mergeStateStatus?: MergeStateStatus } | null } | null>>(query).catch(() => ({}) as Record<string, never>);
+        return Object.entries(result).flatMap(([alias, value]) => (value?.pullRequest?.mergeStateStatus ? [[keys[alias], value.pullRequest.mergeStateStatus] as const] : []));
+      }),
+    );
+    return Object.fromEntries(results.flat());
   }
 
   private async reloadConfig(): Promise<void> {
