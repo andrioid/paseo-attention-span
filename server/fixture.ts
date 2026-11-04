@@ -174,7 +174,13 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(128, { title: "Lazy-load product images", reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE"),
       pr(129, { title: "Compress API responses", reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "PENDING"),
     ],
-    reviews: [pr(120, { title: "Add a status page", author: bob }), pr(121, { title: "Rework the cart totals", author: alice })],
+    reviews: [
+      pr(120, { title: "Add a status page", author: bob }),
+      pr(121, { title: "Rework the cart totals", author: alice }),
+      // Bob's stack asking for my review: one item with one Review [ATT-04].
+      pr(196, { title: "Price rules: data model", author: bob, headRefName: "rules-1", commits: commit("SUCCESS", 0.4) }),
+      pr(197, { title: "Price rules: admin screen", author: bob, baseRefName: "rules-1", headRefName: "rules-2", commits: commit("SUCCESS", 0.3) }),
+    ],
     mentions: [
       mention(95, [comment(bob, "@me should reminders go out on weekends too, or only on workdays?", 0.5)], { title: "Customers forget unpaid invoices", author: bob }),
       mention(121, [comment(alice, "@me could you look at the rounding in `totals.ts` first? That's the **risky** part.", 0.2)], { __typename: "PullRequest", title: "Rework the cart totals" }),
@@ -261,6 +267,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
 // Each sits in its action's line in the sheet. Issue 90 has two: an old one with no kind, which leads, and Rebase stack on its PR.
 // #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
 // #120's was started outside Attention Span, in a workspace Paseo linked to the PR, so it has no kind [SES-08].
+// #197's too, so it shows on its stack, led by #196 [ATT-04].
 const agent = (id: string, itemKey: string, kind: SessionKind | undefined, status: string, minutesAgo: number, requiresAttention = false): AgentSummary => ({
   id,
   itemKey,
@@ -280,6 +287,7 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-103", `${REPO}#103`, "rebase", "running", 6),
   agent("agent-113", `${REPO}#113`, "fix", "running", 2),
   agent("agent-120", `${REPO}#120`, undefined, "running", 3),
+  agent("agent-197", `${REPO}#197`, undefined, "idle", 15),
 ];
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";

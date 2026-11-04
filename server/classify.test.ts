@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type Item, SECTIONS } from "../shared/attention";
+import { type Item, itemSessions, SECTIONS } from "../shared/attention";
+import { linkedSessions } from "../shared/linked-sessions";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
@@ -230,6 +231,83 @@ describe("stacks", () => {
   it("UPS-03: a stacked ready PR behind its base gets Rebase, not Update", () => {
     const [item] = run({ mine: [pr(10, { headRefName: "a", reviewDecision: "APPROVED" }), middle] }, { [key(10)]: 2 }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["rebase"] });
+  });
+});
+
+describe("stacks whoever opened them", () => {
+  // Alice's stack asking for my review, and my PR on top of her top one.
+  const hers = pr(20, { author: alice, headRefName: "x" });
+  const hersTop = pr(21, { author: alice, baseRefName: "x", headRefName: "y" });
+  const minesOnHers = pr(22, { baseRefName: "y", headRefName: "z" }, "FAILURE");
+
+  it("ATT-04, REV-01: a stack asking for my review is one item with one Review for all of it", () => {
+    const attention = run({ reviews: [hersTop, hers] });
+    expect(attention.items).toHaveLength(1);
+    const [item] = attention.items;
+    expect(item).toMatchObject({ key: key(20), number: 20, section: "review", actions: ["review"], person: { login: "alice" }, target: { number: 20 } });
+    expect(item.children.map((child) => [child.number, chips(child)])).toEqual([[21, ["2/2"]]]);
+    expect(chips(item)).toEqual(["stack of 2"]);
+    expect(item.target.stack).toEqual([
+      { number: 20, head: "x", base: "main", review: true },
+      { number: 21, head: "y", base: "x", review: true },
+    ]);
+  });
+
+  it("ATT-04: shows CI failing on a stack asking for my review when any PR in it fails", () => {
+    expect(chips(run({ reviews: [hers, pr(21, { author: alice, baseRefName: "x" }, "FAILURE")] }).items[0])).toEqual(["CI failing", "stack of 2"]);
+  });
+
+  it("ATT-04, MEN-01: a mention on an upper PR of the stack makes the whole stack a reply", () => {
+    const mentioned = mention(21, [comment(bob, "@me can you look at this one first?", 0.5)], { __typename: "PullRequest" });
+    const attention = run({ reviews: [hers, hersTop], mentions: [mentioned] });
+    expect(attention.items).toHaveLength(1);
+    expect(attention.items[0]).toMatchObject({ number: 20, section: "reply", actions: ["reply", "acknowledge", "review"], person: { login: "bob" } });
+  });
+
+  it("ATT-04: my PR on someone else's asking for my review is one item: Review first, then my actions on my PR", () => {
+    const attention = run({ mine: [minesOnHers], reviews: [hers, hersTop] });
+    expect(attention.items).toHaveLength(1);
+    const [item] = attention.items;
+    // Led by the stack's bottom; GitHub actions act on my PR.
+    expect(item).toMatchObject({ number: 20, section: "review", actions: ["review", "fix", "rerun"], target: { number: 22, headRefName: "z" } });
+    expect(item.children.map((child) => child.number)).toEqual([21, 22]);
+    expect(item.target.stack?.map((p) => [p.number, !!p.review])).toEqual([[20, true], [21, true], [22, false]]);
+    expect(chips(item)).toEqual(["stack of 3"]);
+  });
+
+  it("ATT-04: someone else's PR on mine is one item, the more urgent part leading", () => {
+    const mine = pr(30, { headRefName: "m" }, "FAILURE");
+    const theirs = pr(31, { author: alice, baseRefName: "m" });
+    const [item, ...rest] = run({ mine: [mine], reviews: [theirs] }).items;
+    expect(rest).toEqual([]);
+    expect(item).toMatchObject({ number: 30, section: "review", actions: ["review", "fix", "rerun"], target: { number: 30 } });
+    // A mention on my PR outranks the review.
+    const mentioned = mention(30, [comment(bob, "@me ping", 0.5)], { __typename: "PullRequest" });
+    expect(run({ mine: [mine], reviews: [theirs], mentions: [mentioned] }).items[0]).toMatchObject({ section: "reply", actions: ["reply", "acknowledge", "review"] });
+  });
+
+  it("ATT-04, UPS-02: my PR behind the PR of someone else's it builds on says so", () => {
+    const [item] = run({ mine: [minesOnHers], reviews: [hers, hersTop] }, { [key(22)]: 2 }).items;
+    expect(item.children.find((child) => child.number === 22)).toMatchObject({ attention: true });
+    expect(chips(item.children.find((child) => child.number === 22)!)).toContain("2 behind #21");
+  });
+
+  it("ATT-04: a PR from a fork never parents another, whatever its branch is called", () => {
+    const fork = pr(40, { author: alice, headRefName: "main-fix", isCrossRepository: true });
+    const other = pr(41, { author: bob, baseRefName: "main-fix" });
+    expect(run({ reviews: [fork, other] }).items.map((item) => item.number).sort()).toEqual([40, 41]);
+  });
+
+  it("REV-01: a stack only asking for my review stays a pull request, even if it closes an issue", () => {
+    const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
+    expect(run({ reviews: [pr(20, { author: alice, closingIssuesReferences: closes })] }).items[0]).toMatchObject({ kind: "pr", number: 20 });
+  });
+
+  it("SES-03, SES-08: a session on any PR in the stack shows on its item", () => {
+    const [item] = run({ reviews: [hers, hersTop] }).items;
+    // Started from Paseo on the top PR, outside Attention Span.
+    const linked = linkedSessions([], [{ id: "a", status: "running", workspaceId: "w" }], [{ id: "w", workspaceKind: "worktree", githubRuntime: { pullRequest: { url: hersTop.url } } }]);
+    expect(itemSessions(linked, item).map((agent) => agent.id)).toEqual(["a"]);
   });
 });
 

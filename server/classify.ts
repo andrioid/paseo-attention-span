@@ -1,4 +1,5 @@
 import {
+  type ActionId,
   type Attention,
   type Chip,
   type Item,
@@ -27,6 +28,17 @@ export interface ClassifyInput {
   details: Details;
   config: AttentionConfig;
   now: Date;
+}
+
+// My PRs in a stack, or others' asking for my review: what each says about the stack's item [ATT-04].
+interface Part {
+  section: SectionId;
+  actions: ActionId[];
+  chips: Chip[];
+  person?: Person;
+  waitingOn?: WaitingOn[];
+  wait?: Item["wait"];
+  othersActivityAt: string;
 }
 
 const EPOCH = "1970-01-01T00:00:00Z";
@@ -71,8 +83,15 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   // My PRs, minus those handed over to someone else [PRS-08].
   const mine = compact(data.mine.nodes).filter((pr) => pr.assignees.nodes.length === 0 || pr.assignees.nodes.some(isMe));
 
-  // Stacks, followed through base/head branch names [ATT-04].
-  const byHead = new Map(mine.map((pr) => [`${pr.repository.nameWithOwner}\0${pr.headRefName}`, pr]));
+  // Others' PRs asking for my review [REV-01]. A PR of mine is mine, even if it asks me too.
+  const ownKeys = new Set(mine.map(prKey));
+  const requests = compact(data.reviews.nodes).filter((pr) => !ownKeys.has(prKey(pr)));
+  const isOwn = (pr: PullRequestNode) => ownKeys.has(prKey(pr));
+
+  // Stacks, followed through base/head branch names, among my PRs and those asking for my review, whoever opened them [ATT-04].
+  // A fork's branch isn't the repo's, so a PR from a fork is never a parent.
+  const prs = [...mine, ...requests];
+  const byHead = new Map(prs.filter((pr) => !pr.isCrossRepository).map((pr) => [`${pr.repository.nameWithOwner}\0${pr.headRefName}`, pr]));
   const parentOf = (pr: PullRequestNode) => {
     const parent = byHead.get(`${pr.repository.nameWithOwner}\0${pr.baseRefName}`);
     return parent === pr ? undefined : parent;
@@ -83,9 +102,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     if (seen.has(pr)) return;
     seen.add(pr);
     stack.push(pr);
-    for (const child of mine.filter((candidate) => parentOf(candidate) === pr)) walk(child, stack);
+    for (const child of prs.filter((candidate) => parentOf(candidate) === pr)) walk(child, stack);
   };
-  const byNumber = [...mine].sort((a, b) => a.number - b.number);
+  const byNumber = [...prs].sort((a, b) => a.number - b.number);
   for (const pr of byNumber) if (!parentOf(pr)) stacks.push([]), walk(pr, stacks[stacks.length - 1]);
   for (const pr of byNumber) if (!seen.has(pr)) stacks.push([pr]); // cycles, in theory
 
@@ -141,8 +160,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   const items: Item[] = [];
   const listed = new Set<string>();
 
-  // One unit per stack (or single PR) of mine.
-  const units = stacks.map((stack) => {
+  // My PRs in a stack, decided by their bottom PR [ATT-04].
+  const ownPart = (stack: PullRequestNode[]): Part => {
     const bottom = stack[0];
     const s = state(bottom);
     const outOfSync = stack.slice(1).some((pr) => state(pr).outOfSync || state(pr).conflicts);
@@ -208,10 +227,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     else if (section === "ready" && s.behindBy === 0) chips.push(chip(s.optionalPending ? "required checks passed" : "CI passed", "good"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
     if (s.behindBy > 0) chips.push(behindChip(s.behindBy, base));
-    if (stack.length > 1) chips.push(chip(`stack of ${stack.length}`));
 
     return {
-      stack,
       section,
       actions,
       chips,
@@ -224,6 +241,36 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       waitingOn: waitingOn.length > 0 ? waitingOn : undefined,
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
     };
+  };
+
+  // Others' PRs in a stack that ask for my review: one Review for them all [REV-01, ATT-04].
+  const reviewPart = (stack: PullRequestNode[]): Part => {
+    const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
+    const lastCommitAt = latest(...stack.map((pr) => state(pr).lastCommitAt));
+    return {
+      section: waiting ? "reply" : "review",
+      actions: waiting ? [...replyActions(waiting), "review"] : ["review"],
+      chips: stack.some((pr) => state(pr).ciFailing) ? [chip("CI failing", "bad")] : [],
+      person: waiting ?? person(stack[0].author, lastCommitAt),
+      othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), lastCommitAt, waiting?.since),
+    };
+  };
+
+  // One unit per stack (or single PR), whoever opened it. Where it has both, its section is the more urgent of my PRs' and
+  // the review's, and it offers both, the winner's actions first [ATT-04].
+  const units = stacks.map((stack) => {
+    const own = stack.filter(isOwn);
+    const asking = stack.filter((pr) => !isOwn(pr));
+    const parts = [own.length ? ownPart(own) : undefined, asking.length ? reviewPart(asking) : undefined].filter((part) => !!part);
+    const [lead, other] = parts.sort((a, b) => rank(a.section) - rank(b.section));
+    return {
+      ...lead,
+      stack,
+      own,
+      actions: [...new Set([...lead.actions, ...(other?.actions ?? [])])],
+      chips: [...lead.chips, ...(stack.length > 1 ? [chip(`stack of ${stack.length}`)] : [])],
+      othersActivityAt: latest(lead.othersActivityAt, other?.othersActivityAt),
+    };
   });
   type Unit = (typeof units)[number];
 
@@ -233,7 +280,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const chips: Chip[] = [];
     if (stack.length > 1) chips.push(chip(`${index + 1}/${stack.length}`));
     if (s.approved) chips.push(chip("approved", "good"));
-    if (!pr.isDraft && !s.asked) chips.push(chip("no reviewer", "warn"));
+    // Only mine are mine to ask someone on [PRS-12].
+    if (isOwn(pr) && !pr.isDraft && !s.asked) chips.push(chip("no reviewer", "warn"));
     if (s.ciFailing) chips.push(chip("CI failing", "bad"));
     if (s.conflicts) chips.push(chip("conflicts", "bad"));
     if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName));
@@ -252,16 +300,17 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     headRefOid: pr.headRefOid,
     defaultBranch: pr.repository.defaultBranchRef?.name,
     mergeMethod: mergeMethodFor(pr, config),
-    stack: stack.map((p) => ({ number: p.number, head: p.headRefName, base: p.baseRefName })),
+    stack: stack.map((p) => ({ number: p.number, head: p.headRefName, base: p.baseRefName, ...(isOwn(p) ? {} : { review: true as const }) })),
   });
 
-  // One item per issue: PRs grouped under the issue they work on [ATT-03]. Otherwise one per unit.
+  // One item per issue: my PRs grouped under the issue they work on [ATT-03]. Otherwise one per unit, led by its bottom PR.
   const issues = new Map(Object.entries(details.issues));
   for (const pr of mine) for (const issue of pr.closingIssuesReferences.nodes) issues.set(prKey(issue), issue);
   const groups = new Map<string, { lead?: LinkedIssue; units: Unit[] }>();
   for (const unit of units) {
     const prs = unit.stack.map((pr) => ({ repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) }));
-    const issue = issueFor(prs, (key) => issues.has(key));
+    // Only my work goes under an issue; a stack only asking for my review stays a pull request [REV-01].
+    const issue = unit.own.length > 0 ? issueFor(prs, (key) => issues.has(key)) : undefined;
     const key = issue ?? prKey(unit.stack[0]);
     groups.set(key, { lead: issue ? issues.get(issue) : undefined, units: [...(groups.get(key)?.units ?? []), unit] });
   }
@@ -290,33 +339,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       wait: issueWaiting ? undefined : unit.wait,
       actions: issueWaiting ? replyActions(issueWaiting) : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
-      target: target(bottom, unit.stack),
+      // Actions on GitHub act on my PRs, from my bottom one; Review checks out the top of the stack [ATT-04].
+      target: target(unit.own[0] ?? bottom, unit.stack),
       othersActivityAt: latest(...grouped.map((u) => u.othersActivityAt), issueWaiting?.since),
-    });
-  }
-
-  // Review requests [REV-01].
-  for (const pr of compact(data.reviews.nodes)) {
-    const key = prKey(pr);
-    if (listed.has(key)) continue;
-    listed.add(key);
-    const s = state(pr);
-    const waiting = mentions.get(key);
-    items.push({
-      key,
-      section: waiting ? "reply" : "review",
-      kind: "pr",
-      draft: pr.isDraft,
-      repo: pr.repository.nameWithOwner,
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      chips: s.ciFailing ? [chip("CI failing", "bad")] : [],
-      person: waiting ?? person(pr.author, s.lastCommitAt),
-      actions: waiting ? [...replyActions(waiting), "review"] : ["review"],
-      children: [],
-      target: target(pr, [pr]),
-      othersActivityAt: latest(s.othersActivityAt, s.lastCommitAt, waiting?.since),
     });
   }
 

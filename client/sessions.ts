@@ -1,5 +1,5 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
-import type { AgentSummary, Target } from "../shared/attention";
+import { type AgentSummary, checkoutPr, type Target } from "../shared/attention";
 import { linkedSessions } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
@@ -176,7 +176,7 @@ export async function startSession(paseo: Paseo, input: StartSession): Promise<s
                 cwd: project.rootPath,
                 projectId: project.projectId,
                 action: "checkout",
-                checkoutSource: { kind: "change_request", forge: "github", number: target.number },
+                checkoutSource: { kind: "change_request", forge: "github", number: checkoutPr(input.kind, target).number },
               }
             : {
                 kind: "worktree",

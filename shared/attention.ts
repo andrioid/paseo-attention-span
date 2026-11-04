@@ -144,8 +144,27 @@ export interface Target {
   headRefOid?: string;
   defaultBranch?: string;
   mergeMethod?: MergeMethod;
-  // Every PR in the stack, bottom first.
-  stack?: { number: number; head: string; base: string }[];
+  // Every PR in the stack, bottom first: mine, and others' that ask for my review [ATT-04].
+  stack?: StackPr[];
+}
+
+export interface StackPr {
+  number: number;
+  head: string;
+  base: string;
+  // Someone else's, asking for my review; the rest are mine.
+  review?: true;
+}
+
+// The PRs of mine in a target's stack: what Rebase, Refresh and Rerun act on. Others' branches are never pushed [ATT-04].
+export function ownStack(target: Pick<Target, "stack">): StackPr[] {
+  return (target.stack ?? []).filter((pr) => !pr.review);
+}
+
+// The PR a session checks out: for Review of a stack, its top, which has every PR's changes; otherwise the target [ATT-04].
+export function checkoutPr(kind: SessionKind, target: Pick<Target, "number" | "headRefName" | "stack">): { number: number; head?: string } {
+  const top = target.stack?.at(-1);
+  return kind === "review" && top && target.stack!.length > 1 ? { number: top.number, head: top.head } : { number: target.number, head: target.headRefName };
 }
 
 export interface SubRow {

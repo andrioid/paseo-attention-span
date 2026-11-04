@@ -1,4 +1,4 @@
-import type { Target } from "../shared/attention";
+import { ownStack, type StackPr, type Target } from "../shared/attention";
 import type { SessionKind } from "../shared/config";
 import { graphql, runGh } from "./gh";
 
@@ -21,16 +21,29 @@ async function ghJson<T>(args: string[]): Promise<T> {
 
 export async function sessionContext(kind: SessionKind, target: Target): Promise<string> {
   const ref = [String(target.number), "--repo", target.repo];
-  if (kind === "rebase" || kind === "refresh") {
-    const stack = target.stack ?? [];
-    return `Branches, bottom first:\n${stack.map((pr) => `- #${pr.number}: ${pr.head} (on ${pr.base})`).join("\n")}`;
-  }
+  // Only my branches are rebased and pushed, never others' in the same stack [ATT-04].
+  if (kind === "rebase" || kind === "refresh") return `Branches, bottom first:\n${ownStack(target).map(branchLine).join("\n")}`;
   if (kind === "fix") return failingChecks(ref, target.repo);
   if (kind === "address") return reviewFeedback(target);
 
+  // Review of a stack: every branch, and the description and latest comments of each PR asking for my review [ATT-04].
+  const stack = target.stack ?? [];
+  if (kind === "review" && stack.length > 1) {
+    const asking = stack.filter((pr) => pr.review);
+    const lines = stack.map((pr) => `${branchLine(pr)}${pr.review ? ", review requested" : ", mine"}`);
+    const prs = await Promise.all(asking.map(async (pr) => `#${pr.number}\n${await conversation([String(pr.number), "--repo", target.repo], "pr")}`));
+    return [`Stack, bottom first:\n${lines.join("\n")}`, ...prs].join("\n\n");
+  }
+
   // review, start: the description and the latest comments.
+  return conversation(ref, target.kind);
+}
+
+const branchLine = (pr: StackPr) => `- #${pr.number}: ${pr.head} (on ${pr.base})`;
+
+async function conversation(ref: string[], kind: Target["kind"]): Promise<string> {
   type View = { body: string; comments: { author: { login: string }; body: string }[] };
-  const view = await ghJson<View>([target.kind === "pr" ? "pr" : "issue", "view", ...ref, "--json", "body,comments"]);
+  const view = await ghJson<View>([kind === "pr" ? "pr" : "issue", "view", ...ref, "--json", "body,comments"]);
   const comments = view.comments.slice(-5).map((c) => `@${c.author.login}: ${clip(c.body, 800)}`);
   return [`Description:\n${clip(view.body) || "(empty)"}`, comments.length ? `Recent comments:\n${comments.join("\n\n")}` : ""].filter(Boolean).join("\n\n");
 }

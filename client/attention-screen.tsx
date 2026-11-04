@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -42,11 +42,12 @@ const ACTION_ICONS: Record<ActionId, IconName> = {
 };
 
 function actionLabel(action: ActionId, item: Item): string {
-  const stacked = (item.target.stack?.length ?? 0) > 1;
+  // Review takes the whole stack; Rebase, my PRs in it [ATT-04].
+  const stacked = ownStack(item.target).length > 1;
   return {
     reply: "Reply ↗",
     acknowledge: "Acknowledge",
-    review: "Review",
+    review: (item.target.stack?.length ?? 0) > 1 ? "Review stack" : "Review",
     fix: "Fix CI",
     rerun: "Rerun failed jobs",
     address: "Address comments",
@@ -67,13 +68,17 @@ function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): string {
   const { target } = item;
   const pr = `#${target.number}`;
   const base = target.baseRefName ?? target.defaultBranch ?? "its base";
-  const stacked = (target.stack?.length ?? 0) > 1;
+  const stacked = ownStack(target).length > 1;
+  const asking = (target.stack ?? []).filter((p) => p.review);
   const comments = item.person?.comments ?? [];
   return {
     reply: item.person ? `Opens ${item.person.login}'s comment on GitHub` : "Opens it on GitHub",
     acknowledge:
       comments.length === 1 ? `Reacts to ${comments[0].author}'s comment, which clears it` : `Pick which of the ${comments.length} waiting comments to react to`,
-    review: "An agent reviews the PR in a checkout and reports back. Nothing is posted",
+    review:
+      (target.stack?.length ?? 0) > 1
+        ? `An agent reviews ${asking.map((p) => `#${p.number}`).join(", ") || "the stack"} in a checkout of the stack's top and reports back. Nothing is posted`
+        : "An agent reviews the PR in a checkout and reports back. Nothing is posted",
     fix: "An agent reads the failing logs and commits a fix, without pushing",
     address: "An agent works through the unresolved comments and applies the trivial ones, without pushing",
     update: `GitHub rebases ${pr} onto ${base}`,
@@ -1137,7 +1142,7 @@ function SessionOptions({ spec, actions, onClose }: { spec: OptionsSpec; actions
         // Without a ready provider, still show the options; starting reports the error.
         resolveAgentConfig(paseo, actions.fetchProviders, kind, actions.config).catch(() => ({ label: "No agent provider is ready" })),
       ]);
-      const workspaces = checkout.project ? await branchWorkspaces(paseo, checkout.project.projectId, target.headRefName) : [];
+      const workspaces = checkout.project ? await branchWorkspaces(paseo, checkout.project.projectId, checkoutPr(kind, target).head) : [];
       return { prompt: renderPrompt(kind, target, context, actions.config), profiles, checkout, workspaces, defaultLabel: defaults.label };
     },
     staleTime: 60_000,
