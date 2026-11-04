@@ -57,13 +57,20 @@ describe("markdown", () => {
     expect(taggedIn(undefined)).toEqual([]);
   });
 
-  it("WAI-01: a question is a ? in my own words, not in quotes, code or links", () => {
-    expect(asksQuestion("@bob which shops?")).toBe(true);
-    expect(asksQuestion("Can you check？")).toBe(true);
-    expect(asksQuestion("@bob deployed to staging")).toBe(false);
-    expect(asksQuestion("> did it work?\n\nIt did.")).toBe(false);
-    expect(asksQuestion("Use `a ? b : c` here.\n\n```ts\nconst x = y ?? z;\n```")).toBe(false);
-    expect(asksQuestion("See https://example.com/list?page=2 and [this](https://x.dev/?q=1)")).toBe(false);
+  it("WAI-01: a question is a ? in my own words, as GitHub rendered them: not in quotes, code or links", () => {
+    const tag = '<a class="user-mention notranslate" href="https://github.com/bob">@bob</a>';
+    expect(asksQuestion(`<p>${tag} which shops?</p>`)).toBe(true);
+    expect(asksQuestion("<p>Can you check？</p>")).toBe(true);
+    expect(asksQuestion("<details><summary>Logs</summary><p>Is this the one?</p></details>")).toBe(true);
+    expect(asksQuestion(`<p>${tag} deployed to staging</p>`)).toBe(false);
+    // Quotes however written: "> Can you check\nthe logs?" continues lazily, nested, or as HTML.
+    expect(asksQuestion("<blockquote><p>Can you check<br>the logs?</p><blockquote><p>why?</p></blockquote></blockquote><p>Done.</p>")).toBe(false);
+    // Code however written: inline, over lines, fenced and never closed, indented.
+    expect(asksQuestion("<p>Use <code>a ? b\n: c</code> here.</p>")).toBe(false);
+    expect(asksQuestion('<div class="highlight"><pre><code>const x = y ?? z;\n</code></pre></div>')).toBe(false);
+    expect(asksQuestion("<pre><code>const x = y ?? z;\n</code></pre>")).toBe(false);
+    // Links: bare URLs, with or without a scheme, and link text.
+    expect(asksQuestion('<p>See <a href="http://www.example.com/path?page=2">www.example.com/path?page=2</a> and <a href="https://x.dev">this?</a></p>')).toBe(false);
     expect(asksQuestion(undefined)).toBe(false);
   });
 });

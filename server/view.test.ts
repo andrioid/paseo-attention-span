@@ -74,6 +74,13 @@ describe("waiting", () => {
     ]);
   });
 
+  it("WAI-03: a login that's a requested bot anywhere is a bot, even where it was only tagged first", () => {
+    const tagged = waiting("a", "wait_answer", "2026-10-01", [who("copilot")]);
+    const requested = waiting("b", "wait_review", "2026-10-02", [{ ...who("copilot"), bot: true }]);
+    expect(waitingGroups([tagged, requested])[0].who).toMatchObject({ login: "copilot", bot: true });
+    expect(tagged.waitingOn![0].bot).toBeUndefined();
+  });
+
   it("WAI-01: bots come after people and teams, however much they block, as they can't be nudged", () => {
     const copilot = { ...who("copilot"), bot: true };
     const items = [waiting("a", "wait_review", "2026-10-01", [copilot]), waiting("b", "wait_review", "2026-10-02", [copilot]), waiting("c", "wait_review", "2026-10-03", [who("bob")])];

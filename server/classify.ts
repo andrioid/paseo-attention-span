@@ -432,7 +432,7 @@ export function threadState(
     follow: config.followThreads,
     // Opening a thread isn't asking a question; a comment is.
     mineLast: index >= 0 && after.length === 0,
-    question: run.some((comment) => asksQuestion(comment.body)),
+    question: run.some((comment) => asksQuestion(comment.bodyHTML)),
     answered: unread.length > 0,
     fresh: recent(mine),
     tooLong: daysSince(mine, now) >= config.waitingTooLongDays,

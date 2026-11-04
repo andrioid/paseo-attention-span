@@ -58,7 +58,9 @@ export function builders(now: Date) {
 
   function comment(author: Actor, body: string, days: number, extra: Partial<Comment> = {}): Comment {
     comments += 1;
-    return { id: `IC_${comments}`, author, body, createdAt: daysAgo(days), url: `https://github.com/${REPO}/issues/1#c${comments}`, reactionGroups: [], ...extra };
+    // GitHub renders it too; plain text is enough for made-up comments, which pass their own rendering where it matters.
+    const bodyHTML = `<p>${body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+    return { id: `IC_${comments}`, author, body, bodyHTML, createdAt: daysAgo(days), url: `https://github.com/${REPO}/issues/1#c${comments}`, reactionGroups: [], ...extra };
   }
 
   function mention(number: number, comments: Comment[], overrides: Partial<MentionNode> = {}): MentionNode {

@@ -96,7 +96,9 @@ export function waitingGroups(items: Item[]): WaitingGroup[] {
     if (!item.waitingOn?.length) nobody.push(item);
     for (const who of item.waitingOn ?? []) {
       const key = `${who.team ? "team" : "user"}:${who.login.toLowerCase()}`;
-      const group = people.get(key) ?? { who, items: [] };
+      const group = people.get(key) ?? { who: { ...who }, items: [] };
+      // A requested bot is a bot wherever else its name turns up, like a tag [WAI-03].
+      if (who.bot) group.who!.bot = true;
       group.items.push(item);
       people.set(key, group);
     }
