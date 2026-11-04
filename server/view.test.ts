@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Attention, Item, NextUpIssue, WaitingOn } from "../shared/attention";
+import { type AgentSummary, type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { renderPrompt } from "../shared/prompts";
 import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS, waitingGroups } from "./view";
@@ -59,7 +59,7 @@ describe("waiting", () => {
   });
   const groups = (items: Item[]) => waitingGroups(items).map((group) => [group.who?.login ?? null, group.items.map((i) => i.key)]);
 
-  it("WAI-01: groups by who it waits on, longest wait first, each one's work oldest first, and the rest last", () => {
+  it("WAI-01: groups by who it waits on, whoever blocks the most first, ties by longest wait, each one's work oldest first, and the rest last", () => {
     const items = [
       waiting("a", "wait_review", "2026-10-03", [who("bob")]),
       waiting("b", "wait_answer", "2026-10-02", [who("alice"), who("bob")]),
@@ -67,11 +67,33 @@ describe("waiting", () => {
       waiting("d", "wait_review", "2026-10-04", [who("acme/frontend", true)]),
     ];
     expect(groups(items)).toEqual([
-      ["alice", ["b"]],
       ["bob", ["b", "a"]],
+      ["alice", ["b"]],
       ["acme/frontend", ["d"]],
       [null, ["c"]],
     ]);
+  });
+
+  it("WAI-01: bots come after people and teams, however much they block, as they can't be nudged", () => {
+    const copilot = { ...who("copilot"), bot: true };
+    const items = [waiting("a", "wait_review", "2026-10-01", [copilot]), waiting("b", "wait_review", "2026-10-02", [copilot]), waiting("c", "wait_review", "2026-10-03", [who("bob")])];
+    expect(groups(items)).toEqual([
+      ["bob", ["c"]],
+      ["copilot", ["a", "b"]],
+    ]);
+  });
+
+  it("WAI-01: work with a session that needs me leads, then one that's working; a seen, finished one stays put", () => {
+    const agent = (itemKey: string, status: string, requiresAttention: boolean): AgentSummary => ({ id: itemKey, itemKey, status, requiresAttention, title: null, workspaceId: null, lastActivityAt: null });
+    const items = ["a", "b", "c", "d"].map((key) => waiting(key, "wait_review", "2026-10-01"));
+    const agents = [agent("b", "idle", false), agent("c", "running", false), agent("d", "idle", true)];
+    expect(liftActive(items, agents).map((i) => i.key)).toEqual(["d", "c", "a", "b"]);
+  });
+
+  it("WAI-01, ATT-08: dismissing work that waited too long in Doing hides it from Waiting too", () => {
+    const overdue = { ...waiting("a", "too_long", "2026-10-01", [who("bob")]), othersActivityAt: "2026-10-01T00:00:00Z" };
+    const view = buildView(attention([overdue]), [], { a: { at: "2026-10-02T00:00:00Z", section: "too_long" } }, meta);
+    expect(view.waiting).toEqual([]);
   });
 
   it("WAI-01: someone tagged by another spelling of their name is one person; a team is apart from a person of its name", () => {

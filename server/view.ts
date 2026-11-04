@@ -85,8 +85,9 @@ export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean 
   return !!entry && entry.section === item.section && item.othersActivityAt <= entry.at;
 }
 
-// Waiting by who it waits on, so I know whom to nudge: whoever has waited longest first, each one's work oldest first, and
-// last the work no person holds up. Waiting too long shows here too [WAI-01, WAI-03].
+// Waiting by who it waits on, so I know whom to nudge: whoever blocks the most first, ties by the longest wait, then bots, who
+// can't be nudged, and last the work no person holds up. Each one's work oldest first; the screen lifts work with an active
+// session. Waiting too long shows here too [WAI-01, WAI-03].
 export function waitingGroups(items: Item[]): WaitingGroup[] {
   const oldest = (list: Item[]) => list.map((item) => item.wait?.since ?? "").sort()[0] ?? "";
   const people = new Map<string, WaitingGroup>();
@@ -102,7 +103,13 @@ export function waitingGroups(items: Item[]): WaitingGroup[] {
   }
   const byWait = (a: Item, b: Item) => (a.wait?.since ?? "").localeCompare(b.wait?.since ?? "");
   const groups = [...people.values()].map((group) => ({ ...group, items: group.items.sort(byWait) }));
-  groups.sort((a, b) => oldest(a.items).localeCompare(oldest(b.items)) || a.who!.login.localeCompare(b.who!.login));
+  groups.sort(
+    (a, b) =>
+      Number(!!a.who!.bot) - Number(!!b.who!.bot) ||
+      b.items.length - a.items.length ||
+      oldest(a.items).localeCompare(oldest(b.items)) ||
+      a.who!.login.localeCompare(b.who!.login),
+  );
   return nobody.length ? [...groups, { items: nobody.sort(byWait) }] : groups;
 }
 

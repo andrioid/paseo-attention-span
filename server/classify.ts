@@ -185,9 +185,18 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const changers = replied && !flags.ciPending ? bottom.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.author) : [];
     const asked = bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer));
     const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : [];
-    // Why it waits, where the chips don't already say: approved ones say so, and so do the rules that block them [WAI-01].
+    // Why it waits, where the chips don't already say: approved ones say so, so do the rules that block them, and so does CI
+    // running when nobody's on it [WAI-01].
     const reason =
-      waitingOn.length > 0 ? (replied ? "re-review" : "review") : rulesBlocked || s.approved ? undefined : bottom.reviewRequests.nodes.length > 0 ? "review" : "nobody asked again";
+      waitingOn.length > 0
+        ? replied
+          ? "re-review"
+          : "review"
+        : rulesBlocked || s.approved || s.ciPending
+          ? undefined
+          : bottom.reviewRequests.nodes.length > 0
+            ? "review"
+            : "nobody asked again";
 
     const chips: Chip[] = [];
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));

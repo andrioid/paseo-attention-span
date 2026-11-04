@@ -322,7 +322,15 @@ describe("waiting", () => {
     expect(unseen.wait?.reason).toBe("review");
   });
 
-  it("WAI-03: a requested bot is marked, so there's no list to send it", () => {
+  it("WAI-01: while CI runs and nobody is asked, CI running says why, not a missing request", () => {
+    const commented = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    const [item] = run({ mine: [pr(1, { latestReviews: commented }, "PENDING")] }).items;
+    expect(item).toMatchObject({ section: "wait_ci", wait: { reason: undefined } });
+    expect(chips(item)).toContain("CI running");
+  });
+
+  it("WAI-03: a requested bot is fetched and marked, so there's no list to send it", () => {
+    expect(searchQuery(LIVE_SEARCHES)).toContain("... on Bot { ...author }");
     const copilot = { __typename: "Bot", login: "copilot", avatarUrl: "https://avatars/c" };
     const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: copilot }] } })] }).items;
     expect(item.waitingOn).toEqual([{ login: "copilot", avatarUrl: "https://avatars/c", team: false, bot: true, since: daysAgo(1) }]);

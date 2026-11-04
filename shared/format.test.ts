@@ -15,8 +15,8 @@ describe("linkList", () => {
     expect(linkList([{ title: "[WIP] Fix a\\b", url: "https://github.com/acme/app/pull/1" }])).toBe("- [\\[WIP\\] Fix a\\\\b](https://github.com/acme/app/pull/1)");
   });
 
-  it("WAI-03: notes why and how long each has waited, for a nudge", () => {
-    expect(linkList([{ title: "Retire v1", url: "https://github.com/acme/app/issues/2", note: "question, 3d" }])).toBe("- [Retire v1](https://github.com/acme/app/issues/2) — question, 3d");
+  it("WAI-03: leads with why and how long each has waited, for a nudge", () => {
+    expect(linkList([{ title: "Retire v1", url: "https://github.com/acme/app/issues/2", lead: "Question 3d" }])).toBe("- Question 3d: [Retire v1](https://github.com/acme/app/issues/2)");
   });
 });
 

@@ -268,6 +268,17 @@ export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSumm
     .sort((a, b) => Number(b.requiresAttention) - Number(a.requiresAttention) || (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));
 }
 
+// Work in Waiting with an active session first: one that needs me, then one that's working. A finished session I've seen
+// doesn't lift it. Otherwise the order stays as it was [WAI-01].
+export function liftActive(items: Item[], agents: AgentSummary[]): Item[] {
+  const rank = (item: Item) => {
+    const agent = itemSessions(agents, item)[0];
+    if (agent?.requiresAttention) return 0;
+    return agent?.status === "running" || agent?.status === "initializing" ? 1 : 2;
+  };
+  return items.map((item) => ({ item, rank: rank(item) })).sort((a, b) => a.rank - b.rank).map(({ item }) => item);
+}
+
 // Sessions none of the item's actions would have started: no kind saved, or the action's gone, like Fix CI once checks pass.
 // They lead the sheet; the rest sit in their action's line [SES-03].
 export function looseSessions(sessions: AgentSummary[], kinds: SessionKind[]): AgentSummary[] {

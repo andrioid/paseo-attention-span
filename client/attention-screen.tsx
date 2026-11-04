@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -552,6 +552,13 @@ function waitChips(item: Item, inWaiting: boolean): Chip[] {
   ];
 }
 
+// "Review 2h", "Question 3d": why and how long, to lead a line in a nudge [WAI-03].
+function nudgeLead(item: Item): string | undefined {
+  if (!item.wait) return undefined;
+  const { reason, since } = item.wait;
+  return reason ? `${reason[0].toUpperCase()}${reason.slice(1)} ${ago(since)}` : ago(since);
+}
+
 const samePerson = (a: WaitingOn, b: WaitingOn) => a.team === b.team && a.login.toLowerCase() === b.login.toLowerCase();
 
 // In Waiting, a card sits under one of whom it waits on: its group.
@@ -973,8 +980,8 @@ function Card({ items, actions, group }: { items: Item[]; actions: Actions; grou
   );
 }
 
-// Waiting by who it waits on, each with a list to copy for a nudge; a bot gets none, as there's nobody to send it to.
-// Last, the work no person holds up [WAI-01, WAI-03].
+// Waiting by who it waits on, each with a list to copy for a nudge, oldest first; a bot gets none, as there's nobody to send
+// it to. Last, the work no person holds up. Cards with an active session lead their group [WAI-01, WAI-03].
 function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions }) {
   const styles = useStyles();
   const copy = useCopy();
@@ -983,7 +990,7 @@ function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions
     const { who, items } = group;
     const links = `${items.length} link${items.length === 1 ? "" : "s"}`;
     const nudge = (login: string) =>
-      copy(linkList(items.map((item) => ({ ...item, note: [item.wait?.reason, item.wait && ago(item.wait.since)].filter(Boolean).join(", ") }))), `Copied ${links} for ${login}`);
+      copy(linkList(items.map((item) => ({ ...item, lead: nudgeLead(item) }))), `Copied ${links} for ${login}`);
     return (
       <View key={who ? `${who.team ? "team" : "user"}:${who.login.toLowerCase()}` : "nobody"}>
         <SectionHeader
@@ -996,7 +1003,7 @@ function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions
             ) : null
           }
         />
-        <Card items={items} actions={actions} group={group} />
+        <Card items={liftActive(items, actions.agents)} actions={actions} group={group} />
       </View>
     );
   });
