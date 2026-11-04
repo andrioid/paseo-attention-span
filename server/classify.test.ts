@@ -102,8 +102,8 @@ describe("ready to merge and behind base", () => {
 
   it("PRS-13: approved and green but blocked by a repo rule, it waits for review without Merge or a person", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" })] }).items;
-    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined, waitingOn: undefined });
-    expect(chips(item)).toEqual(["approved", "blocked by repo rules", "1d"]);
+    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined, waitingOn: undefined, wait: { reason: undefined, since: daysAgo(1) } });
+    expect(chips(item)).toEqual(["approved", "blocked by repo rules"]);
   });
 
   it("PRS-13: blocked by a rule never counts as waiting too long, even after I replied", () => {
@@ -308,7 +308,24 @@ describe("waiting", () => {
       involved: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
-    expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [{ text: "1d" }] });
+    expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [], wait: { reason: "review", since: daysAgo(1) } });
+    expect(attention.items[2].wait).toEqual({ reason: "question", since: daysAgo(1), overdue: undefined });
+  });
+
+  it("WAI-01: says why each waits: a review, a re-review after my reply, a question, or a review nobody was asked for again", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] };
+    const replied = run({ mine: [pr(1, { reviewDecision: "CHANGES_REQUESTED", latestReviews })] }).items[0];
+    expect(replied).toMatchObject({ section: "wait_reviewer", wait: { reason: "re-review" } });
+    const commented = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(2, { latestReviews: commented })] }).items[0].wait?.reason).toBe("nobody asked again");
+    const unseen = run({ mine: [pr(3, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0];
+    expect(unseen.wait?.reason).toBe("review");
+  });
+
+  it("WAI-03: a requested bot is marked, so there's no list to send it", () => {
+    const copilot = { __typename: "Bot", login: "copilot", avatarUrl: "https://avatars/c" };
+    const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: copilot }] } })] }).items;
+    expect(item.waitingOn).toEqual([{ login: "copilot", avatarUrl: "https://avatars/c", team: false, bot: true, since: daysAgo(1) }]);
   });
 
   it("WAI-02: a PR waits on everyone I asked, while CI runs too, and after my reply on whoever asked for changes", () => {
@@ -354,7 +371,7 @@ describe("waiting", () => {
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
     const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
-    expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
+    expect(attention.items[0].wait).toEqual({ reason: "review", since: daysAgo(4), overdue: "waiting for review" });
     expect(attention.items[0].waitingOn?.map((who) => who.login)).toEqual(["bob"]);
   });
 });
@@ -411,7 +428,7 @@ describe("answered", () => {
   it("ATT-11: a question on my own issue stays however old; on someone else's, only while fresh", () => {
     const [item] = run({ asked: [issue(70, [comment(me, "still needed?", 45)], "Mine", { author: me })] }).items;
     expect(item).toMatchObject({ section: "too_long" });
-    expect(chips(item)).toEqual(["waiting for an answer · 45d"]);
+    expect(item.wait).toEqual({ reason: "question", since: daysAgo(45), overdue: "waiting for an answer" });
     expect(run({ involved: [issue(71, [comment(me, "still needed?", 45)])] }).items).toEqual([]);
     expect(searchVariables(config, NOW).asked).not.toContain("updated:");
     expect(searchVariables(config, NOW).involved).toContain("involves:@me updated:>=");

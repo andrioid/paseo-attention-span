@@ -185,9 +185,11 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const changers = replied && !flags.ciPending ? bottom.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.author) : [];
     const asked = bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer));
     const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : [];
+    // Why it waits, where the chips don't already say: approved ones say so, and so do the rules that block them [WAI-01].
+    const reason =
+      waitingOn.length > 0 ? (replied ? "re-review" : "review") : rulesBlocked || s.approved ? undefined : bottom.reviewRequests.nodes.length > 0 ? "review" : "nobody asked again";
 
     const chips: Chip[] = [];
-    if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
     if (rulesBlocked) chips.push(chip("blocked by repo rules", "warn"));
@@ -207,8 +209,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       section,
       actions,
       chips,
-      // How long it has waited, shown only while it sits in a Waiting section.
-      waited: SECTIONS[section].tab === "waiting" ? chip(ago(waitingSince, now)) : undefined,
+      // Waiting too long shows in Waiting too, under whoever it waits on [WAI-01].
+      wait: section === "too_long" || SECTIONS[section].tab === "waiting" ? { reason, since: waitingSince, overdue: section === "too_long" ? rule?.label?.(flags) : undefined } : undefined,
       person:
         waiting ??
         (section === "answered" ? answer : undefined) ??
@@ -276,9 +278,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       number: lead?.number ?? bottom.number,
       title: lead?.title ?? bottom.title,
       url: lead?.url ?? bottom.url,
-      chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips, ...(unit.section === section && unit.waited ? [unit.waited] : [])],
+      chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips],
       person: issueWaiting ?? unit.person,
       waitingOn: issueWaiting ? undefined : unit.waitingOn,
+      wait: issueWaiting ? undefined : unit.wait,
       actions: issueWaiting ? replyActions(issueWaiting) : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
       target: target(bottom, unit.stack),
@@ -351,9 +354,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const since = person?.since ?? mine;
     items.push({
       ...plain(issue, kind, section),
-      chips: section === "answered" ? [] : [label ? chip(`${label} · ${ago(since, now)}`, "warn") : chip(ago(since, now))],
       person,
       waitingOn: section !== "answered" && tagged.length > 0 ? tagged : undefined,
+      wait: section === "answered" ? undefined : { reason: "question", since, overdue: label },
       actions: section === "answered" ? replyActions(person) : [],
       // A new answer brings back a dismissed one [ATT-08].
       othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
@@ -461,7 +464,7 @@ function reviewers(actors: (Actor | null | undefined)[], since: string): Waiting
   const list: WaitingOn[] = [];
   for (const actor of actors) {
     if (!actor || list.some((other) => other.login.toLowerCase() === actor.login.toLowerCase())) continue;
-    list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", since });
+    list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", ...(actor.__typename === "Bot" ? { bot: true } : {}), since });
   }
   return list;
 }

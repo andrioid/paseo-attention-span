@@ -177,11 +177,12 @@ export function Button({
 }
 
 // Sentence case, with the count as quiet text.
-export function SectionHeader({ icon, title, count, action }: { icon: IconName; title: string; count: number; action?: ReactNode }) {
+// The icon may be a picture instead, like the avatar of whom Waiting's work waits on.
+export function SectionHeader({ icon, title, count, action }: { icon: IconName | ReactNode; title: string; count: number; action?: ReactNode }) {
   const styles = useStyles();
   return (
     <View style={[styles.row, { marginBottom: 10 }]}>
-      <TablerIcon name={icon} size={15} />
+      {typeof icon === "string" ? <TablerIcon name={icon as IconName} size={15} /> : icon}
       <Text style={{ color: styles.c.foreground, fontSize: 13, fontWeight: "600", flex: 1 }}>
         {title}
         <Text style={{ color: styles.c.foregroundMuted, fontWeight: "400" }}> · {count}</Text>

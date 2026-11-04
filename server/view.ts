@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId } from "../shared/attention";
+import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { State } from "./store";
 
@@ -85,6 +85,27 @@ export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean 
   return !!entry && entry.section === item.section && item.othersActivityAt <= entry.at;
 }
 
+// Waiting by who it waits on, so I know whom to nudge: whoever has waited longest first, each one's work oldest first, and
+// last the work no person holds up. Waiting too long shows here too [WAI-01, WAI-03].
+export function waitingGroups(items: Item[]): WaitingGroup[] {
+  const oldest = (list: Item[]) => list.map((item) => item.wait?.since ?? "").sort()[0] ?? "";
+  const people = new Map<string, WaitingGroup>();
+  const nobody: Item[] = [];
+  for (const item of items) {
+    if (!item.waitingOn?.length) nobody.push(item);
+    for (const who of item.waitingOn ?? []) {
+      const key = `${who.team ? "team" : "user"}:${who.login.toLowerCase()}`;
+      const group = people.get(key) ?? { who, items: [] };
+      group.items.push(item);
+      people.set(key, group);
+    }
+  }
+  const byWait = (a: Item, b: Item) => (a.wait?.since ?? "").localeCompare(b.wait?.since ?? "");
+  const groups = [...people.values()].map((group) => ({ ...group, items: group.items.sort(byWait) }));
+  groups.sort((a, b) => oldest(a.items).localeCompare(oldest(b.items)) || a.who!.login.localeCompare(b.who!.login));
+  return nobody.length ? [...groups, { items: nobody.sort(byWait) }] : groups;
+}
+
 export function buildView(attention: Attention | null, history: Item[], dismissed: State["dismissed"], meta: ViewMeta): AttentionView {
   const items = [...(attention?.items ?? []), ...history];
   const visible = items.filter((item) => !isDismissed(item, dismissed));
@@ -98,7 +119,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     login: attention?.login ?? null,
     count: doing.reduce((sum, section) => sum + section.items.length, 0),
     doing,
-    waiting: sections("waiting"),
+    waiting: waitingGroups(visible.filter((item) => item.section === "too_long" || SECTIONS[item.section].tab === "waiting")),
     history: visible.filter((item) => SECTIONS[item.section].tab === "history"),
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],

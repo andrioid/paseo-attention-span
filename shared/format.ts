@@ -15,9 +15,9 @@ export function daysSince(iso: string, now: Date): number {
   return (now.getTime() - new Date(iso).getTime()) / 86_400_000;
 }
 
-// A Markdown bullet list of links, for pasting a week's work into a report [HIS-03].
-export function linkList(items: { title: string; url: string }[]): string {
-  return items.map(({ title, url }) => `- [${title.replace(/[[\]\\]/g, "\\$&")}](${url})`).join("\n");
+// A Markdown bullet list of links, for pasting a week's work into a report [HIS-03], or a nudge, each with a note [WAI-03].
+export function linkList(items: { title: string; url: string; note?: string }[]): string {
+  return items.map(({ title, url, note }) => `- [${title.replace(/[[\]\\]/g, "\\$&")}](${url})${note ? ` — ${note}` : ""}`).join("\n");
 }
 
 // Where a card's item lives: "app" for my own repos, "acme/app" for anyone else's, so same-named repos don't blur [ATT-05, NXT-10].
