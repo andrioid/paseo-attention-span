@@ -102,8 +102,8 @@ describe("ready to merge and behind base", () => {
 
   it("PRS-13: approved and green but blocked by a repo rule, it waits for review without Merge or a person", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" })] }).items;
-    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined, waitingOn: undefined });
-    expect(chips(item)).toEqual(["approved", "blocked by repo rules", "1d"]);
+    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined, waitingOn: undefined, wait: { reason: undefined, since: daysAgo(1) } });
+    expect(chips(item)).toEqual(["approved", "blocked by repo rules"]);
   });
 
   it("PRS-13: blocked by a rule never counts as waiting too long, even after I replied", () => {
@@ -305,10 +305,35 @@ describe("waiting", () => {
   it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
     const attention = run({
       mine: [pr(1, { reviewRequests: asked }), pr(2, { reviewRequests: asked }, "PENDING")],
-      involved: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
+      involved: [issue(70, [comment(me, "which shops?", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
-    expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [{ text: "1d" }] });
+    expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [], wait: { reason: "review", since: daysAgo(1) } });
+    expect(attention.items[2].wait).toEqual({ reason: "question", since: daysAgo(1), overdue: undefined });
+  });
+
+  it("WAI-01: says why each waits: a review, a re-review after my reply, a question, or a review nobody was asked for again", () => {
+    const latestReviews = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] };
+    const replied = run({ mine: [pr(1, { reviewDecision: "CHANGES_REQUESTED", latestReviews })] }).items[0];
+    expect(replied).toMatchObject({ section: "wait_reviewer", wait: { reason: "re-review" } });
+    const commented = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(2, { latestReviews: commented })] }).items[0].wait?.reason).toBe("nobody asked again");
+    const unseen = run({ mine: [pr(3, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0];
+    expect(unseen.wait?.reason).toBe("review");
+  });
+
+  it("WAI-01: while CI runs and nobody is asked, CI running says why, not a missing request", () => {
+    const commented = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+    const [item] = run({ mine: [pr(1, { latestReviews: commented }, "PENDING")] }).items;
+    expect(item).toMatchObject({ section: "wait_ci", wait: { reason: undefined } });
+    expect(chips(item)).toContain("CI running");
+  });
+
+  it("WAI-03: a requested bot is fetched and marked, so there's no list to send it", () => {
+    expect(searchQuery(LIVE_SEARCHES)).toContain("... on Bot { ...author }");
+    const copilot = { __typename: "Bot", login: "copilot", avatarUrl: "https://avatars/c" };
+    const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: copilot }] } })] }).items;
+    expect(item.waitingOn).toEqual([{ login: "copilot", avatarUrl: "https://avatars/c", team: false, bot: true, since: daysAgo(1) }]);
   });
 
   it("WAI-02: a PR waits on everyone I asked, while CI runs too, and after my reply on whoever asked for changes", () => {
@@ -332,7 +357,7 @@ describe("waiting", () => {
     const thread = issue(70, [
       comment(me, "", 5, html(`<p>${tag("carol")} first round</p>`)),
       comment(alice, "", 4),
-      comment(me, "", 3, html(`<blockquote><p>${tag("alice")} said so</p></blockquote><p>${tag("bob")} ${team} which shops?</p>`)),
+      comment(me, "> @alice said so\n\n@bob @acme/frontend which shops?", 3, html(`<blockquote><p>${tag("alice")} said so</p></blockquote><p>${tag("bob")} ${team} which shops?</p>`)),
       comment(bot, "labelled", 2.5),
       comment(me, "", 2, html(`<p>${tag("Bob")} ${tag("me")} also ${tag("dave")}?</p>`)),
     ]);
@@ -346,15 +371,23 @@ describe("waiting", () => {
     expect(item.person).toBeUndefined();
   });
 
+  it("WAI-01: a statement waits on nobody, even one that tags someone; a question in an earlier comment of mine still counts", () => {
+    const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
+    const stated = issue(70, [comment(me, "@bob deployed to staging", 1, { bodyHTML: `<p>${tag("bob")} deployed to staging</p>` })]);
+    expect(run({ involved: [stated] }).items).toEqual([]);
+    const both = issue(71, [comment(me, "@bob which shops?", 2, { bodyHTML: `<p>${tag("bob")} which shops?</p>` }), comment(me, "found the logs", 1)]);
+    expect(run({ involved: [both] }).items[0]).toMatchObject({ section: "wait_answer", waitingOn: [{ login: "bob" }] });
+  });
+
   it("WAI-02: a question that tags nobody waits on nobody", () => {
     const [item] = run({ involved: [issue(70, [comment(me, "@bob which shops?", 1, { bodyHTML: "<p>@bob which shops?</p>" })])] }).items;
     expect(item).toMatchObject({ section: "wait_answer", waitingOn: undefined });
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
-    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "", 5)])] });
+    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "any news?", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
-    expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
+    expect(attention.items[0].wait).toEqual({ reason: "review", since: daysAgo(4), overdue: "waiting for review" });
     expect(attention.items[0].waitingOn?.map((who) => who.login)).toEqual(["bob"]);
   });
 });
@@ -367,9 +400,11 @@ describe("answered", () => {
     expect(item.othersActivityAt).toBe(daysAgo(0.5));
   });
 
-  it("ATT-16, MEN-02: replying makes it wait again; a 👍 on the answer clears it", () => {
-    const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
+  it("ATT-16, MEN-02, WAI-01: replying with a question makes it wait again, a statement doesn't; a 👍 on the answer clears it", () => {
+    const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, which version?", 0.5)]);
     expect(sections(run({ involved: [replied] }).items)).toEqual([[70, "wait_answer"]]);
+    const stated = issue(72, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
+    expect(run({ involved: [stated] }).items).toEqual([]);
     const reacted = issue(71, [comment(me, "which shops?", 2), comment(alice, "Danish", 1, { reactionGroups: [{ viewerHasReacted: true }] })]);
     expect(run({ involved: [reacted] }).items).toEqual([]);
   });
@@ -411,7 +446,7 @@ describe("answered", () => {
   it("ATT-11: a question on my own issue stays however old; on someone else's, only while fresh", () => {
     const [item] = run({ asked: [issue(70, [comment(me, "still needed?", 45)], "Mine", { author: me })] }).items;
     expect(item).toMatchObject({ section: "too_long" });
-    expect(chips(item)).toEqual(["waiting for an answer · 45d"]);
+    expect(item.wait).toEqual({ reason: "question", since: daysAgo(45), overdue: "waiting for an answer" });
     expect(run({ involved: [issue(71, [comment(me, "still needed?", 45)])] }).items).toEqual([]);
     expect(searchVariables(config, NOW).asked).not.toContain("updated:");
     expect(searchVariables(config, NOW).involved).toContain("involves:@me updated:>=");

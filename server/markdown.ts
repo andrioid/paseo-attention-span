@@ -72,16 +72,30 @@ export function plainText(markdown: string): string {
     .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/gm, "");
 }
 
-// People and teams tagged in a comment, from GitHub's rendering of it: GitHub links a tag only to an account that exists and
-// a team I can see, and never in code. Tags in quoted replies are someone else's words, so they don't count [WAI-02].
-export function taggedIn(html: string | undefined): { login: string; team: boolean }[] {
+// A comment as GitHub rendered it, without quoted replies: someone else's words. Innermost quotes first, so nested ones go whole.
+function ownWords(html: string | undefined): string {
   let text = html ?? "";
-  // Innermost quotes first, so nested ones go whole.
   let previous: string;
   do {
     previous = text;
     text = text.replace(/<blockquote\b[^>]*>(?:(?!<blockquote\b)[\s\S])*?<\/blockquote>/g, "");
   } while (text !== previous);
+  return text;
+}
+
+// Whether a comment asks something: a question mark in my own words. GitHub's rendering says what's code or a link, however
+// it was written (unclosed or indented code, bare URLs), so neither counts, and HTML comments aren't rendered at all [WAI-01].
+export function asksQuestion(html: string | undefined): boolean {
+  const prose = ownWords(html)
+    .replace(/<(pre|code|a)\b[^>]*>[\s\S]*?<\/\1>/g, "")
+    .replace(/<[^>]*>/g, "");
+  return /[?？]/.test(prose);
+}
+
+// People and teams tagged in a comment, from GitHub's rendering of it: GitHub links a tag only to an account that exists and
+// a team I can see, and never in code. Tags in quoted replies are someone else's words, so they don't count [WAI-02].
+export function taggedIn(html: string | undefined): { login: string; team: boolean }[] {
+  const text = ownWords(html);
   const tags: { login: string; team: boolean }[] = [];
   for (const [, attributes] of text.matchAll(/<a\b([^>]*)>/g)) {
     const kind = /\bclass="[^"]*\b(user|team)-mention\b/.exec(attributes)?.[1];

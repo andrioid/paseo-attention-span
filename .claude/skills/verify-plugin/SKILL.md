@@ -45,7 +45,9 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
    | `<layout>-history.png` | History by week, with Reviewed toggles |
    | `<layout>-history-reviewed.png` | History with the newest Reviewed list open |
-   | `<layout>-waiting.png` | Waiting sections and the "moved to Doing" hint. Each card shows the GitHub button instead of ›, its sheet's only action besides the muted start line, except "Upgrade the payment SDK": its agent is working, so it shows Open session and › |
+   | `<layout>-waiting.png` | Waiting by who it waits on, whoever blocks the most first: alice and bob (three each), acme/frontend (its too-long PR, flagged "waited too long"), then "Not on a person" last. In each group "Upgrade the payment SDK" (agent working) leads. Each heading has Copy list (icon-only on phones). Cards say why and how long ("re-review · 1d"); work on several people is under each with "also waiting on …". Each card shows the GitHub button instead of ›, its sheet's only action besides the muted start line, except "Upgrade the payment SDK" (its agent is working, so Open session and ›) and the too-long ones (their sheet also has Dismiss) |
+   | `<layout>-waiting-copied.png` | After Copy list on alice: the "Copied 3 links for alice" toast. `<layout>-waiting-clipboard.txt` holds what was copied |
+   | `<layout>-waiting-sheet.png` | The sheet of "Invoice totals round wrong": alice and bob by name |
    | `<layout>-next-up.png` | Assigned, then all of Unclaimed. Cards: a tinted type badge, "acme/shop #160 · 40d old" (my own `me/tool` shows as "tool #165"), tags (P0 Urgent warm, P1 High accent), "PR by alice" on #161 |
    | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": "Continue session" with an "idle" badge, Unclaim, Open issue on GitHub, a muted "Start another session…", Close issue |
    | `<layout>-next-up-close.png` | Close issue on "Merge the two import commands": the confirm bar with a comment field, Completed, Not planned, Cancel |

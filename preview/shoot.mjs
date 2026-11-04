@@ -84,9 +84,8 @@ for (const layout of layouts) {
         await page.waitForTimeout(800);
         await shot(tab.toLowerCase().replace(" ", "-"));
       }
-      // Work that waited too long leaves Waiting for Doing; follow the link and clip to that section [ATT-11].
-      await page.getByRole("tab", { name: /Waiting/ }).first().click();
-      await page.getByText(/waited too long and moved to Doing/).click();
+      // Work that waited too long shows in Doing too; clip to that section [ATT-11].
+      await page.getByRole("tab", { name: /Doing/ }).first().click();
       await page.waitForTimeout(800);
       const band = async (from, to) => {
         const header = (title) => page.locator(`text=/^${title}/ >> visible=true`).first();
@@ -116,16 +115,15 @@ for (const layout of layouts) {
         if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
-      // Who a question waits on: several by picture, named on hover, and each by name in its sheet [WAI-02].
+      // Copy what waits on alice for a nudge, and keep what landed on the clipboard [WAI-03].
+      // Then who a question waits on, each by name in its sheet [WAI-02].
       await page.getByRole("tab", { name: /Waiting/ }).first().click();
       await page.waitForTimeout(800);
-      if (!layout.isMobile) {
-        const faces = await page.getByLabel("Waiting on alice, bob").first().boundingBox();
-        await page.mouse.move(faces.x + 9, faces.y + faces.height / 2);
-        await page.waitForTimeout(300);
-        await shot("waiting-hover");
-        await page.mouse.move(0, 0);
-      }
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:6767" });
+      await page.getByRole("button", { name: "Copy what waits on alice" }).click();
+      await page.getByText(/^Copied \d+ links? for alice$/).waitFor({ timeout: 5000 });
+      await shot("waiting-copied");
+      await writeFile(`/out/${prefix}-waiting-clipboard.txt`, `${await page.evaluate(() => navigator.clipboard.readText())}\n`);
       await openSheet("Invoice totals round wrong");
       await modalShot("waiting-sheet");
       await closeSheet();

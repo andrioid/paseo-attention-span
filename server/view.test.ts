@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Attention, Item, NextUpIssue } from "../shared/attention";
+import { type AgentSummary, type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { renderPrompt } from "../shared/prompts";
-import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
+import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS, waitingGroups } from "./view";
 
 const config = AttentionConfig.parse({});
 const feed = { fetchedAt: null, refreshing: false, error: null };
@@ -45,8 +45,76 @@ describe("dismiss", () => {
     const view = buildView(attention([item("a", "reply", "x"), item("b", "drafts", "x"), item("c", "wait_ci", "x")]), [item("d", "done", "x")], {}, meta);
     expect(view.count).toBe(2);
     expect(view.doing.map((section) => section.title)).toEqual(["Waiting for your reply", "My drafts"]);
-    expect(view.waiting.map((section) => section.id)).toEqual(["wait_ci"]);
+    expect(view.waiting.map((group) => group.items.map((i) => i.key))).toEqual([["c"]]);
     expect(view.history.map((h) => h.key)).toEqual(["d"]);
+  });
+});
+
+describe("waiting", () => {
+  const who = (login: string, team = false): WaitingOn => ({ login, team, since: "x" });
+  const waiting = (key: string, section: Item["section"], since: string, people: WaitingOn[] = []): Item => ({
+    ...item(key, section, "x"),
+    waitingOn: people.length ? people : undefined,
+    wait: { reason: "review", since },
+  });
+  const groups = (items: Item[]) => waitingGroups(items).map((group) => [group.who?.login ?? null, group.items.map((i) => i.key)]);
+
+  it("WAI-01: groups by who it waits on, whoever blocks the most first, ties by longest wait, each one's work oldest first, and the rest last", () => {
+    const items = [
+      waiting("a", "wait_review", "2026-10-03", [who("bob")]),
+      waiting("b", "wait_answer", "2026-10-02", [who("alice"), who("bob")]),
+      waiting("c", "wait_ci", "2026-10-01"),
+      waiting("d", "wait_review", "2026-10-04", [who("acme/frontend", true)]),
+    ];
+    expect(groups(items)).toEqual([
+      ["bob", ["b", "a"]],
+      ["alice", ["b"]],
+      ["acme/frontend", ["d"]],
+      [null, ["c"]],
+    ]);
+  });
+
+  it("WAI-03: a login that's a requested bot anywhere is a bot, even where it was only tagged first", () => {
+    const tagged = waiting("a", "wait_answer", "2026-10-01", [who("copilot")]);
+    const requested = waiting("b", "wait_review", "2026-10-02", [{ ...who("copilot"), bot: true }]);
+    expect(waitingGroups([tagged, requested])[0].who).toMatchObject({ login: "copilot", bot: true });
+    expect(tagged.waitingOn![0].bot).toBeUndefined();
+  });
+
+  it("WAI-01: bots come after people and teams, however much they block, as they can't be nudged", () => {
+    const copilot = { ...who("copilot"), bot: true };
+    const items = [waiting("a", "wait_review", "2026-10-01", [copilot]), waiting("b", "wait_review", "2026-10-02", [copilot]), waiting("c", "wait_review", "2026-10-03", [who("bob")])];
+    expect(groups(items)).toEqual([
+      ["bob", ["c"]],
+      ["copilot", ["a", "b"]],
+    ]);
+  });
+
+  it("WAI-01: work with a session that needs me leads, then one that's working; a seen, finished one stays put", () => {
+    const agent = (itemKey: string, status: string, requiresAttention: boolean): AgentSummary => ({ id: itemKey, itemKey, status, requiresAttention, title: null, workspaceId: null, lastActivityAt: null });
+    const items = ["a", "b", "c", "d"].map((key) => waiting(key, "wait_review", "2026-10-01"));
+    const agents = [agent("b", "idle", false), agent("c", "running", false), agent("d", "idle", true)];
+    expect(liftActive(items, agents).map((i) => i.key)).toEqual(["d", "c", "a", "b"]);
+  });
+
+  it("WAI-01, ATT-08: dismissing work that waited too long in Doing hides it from Waiting too", () => {
+    const overdue = { ...waiting("a", "too_long", "2026-10-01", [who("bob")]), othersActivityAt: "2026-10-01T00:00:00Z" };
+    const view = buildView(attention([overdue]), [], { a: { at: "2026-10-02T00:00:00Z", section: "too_long" } }, meta);
+    expect(view.waiting).toEqual([]);
+  });
+
+  it("WAI-01: someone tagged by another spelling of their name is one person; a team is apart from a person of its name", () => {
+    const items = [waiting("a", "wait_answer", "2026-10-01", [who("Alice")]), waiting("b", "wait_review", "2026-10-02", [who("alice")]), waiting("c", "wait_review", "2026-10-03", [who("alice", true)])];
+    expect(groups(items)).toEqual([
+      ["Alice", ["a", "b"]],
+      ["alice", ["c"]],
+    ]);
+  });
+
+  it("WAI-01: work that waited too long shows in Waiting too, and counts once in Doing", () => {
+    const view = buildView(attention([waiting("a", "too_long", "2026-10-01", [who("bob")]), waiting("b", "wait_review", "2026-10-05", [who("bob")])]), [], {}, meta);
+    expect(view.count).toBe(1);
+    expect(view.waiting.map((group) => group.items.map((i) => i.key))).toEqual([["a", "b"]]);
   });
 });
 

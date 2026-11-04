@@ -15,7 +15,7 @@ import {
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
-import { excerpt, plainText, taggedIn } from "./markdown";
+import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
 import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
@@ -185,9 +185,20 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const changers = replied && !flags.ciPending ? bottom.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.author) : [];
     const asked = bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer));
     const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : [];
+    // Why it waits, where the chips don't already say: approved ones say so, so do the rules that block them, and so does CI
+    // running when nobody's on it [WAI-01].
+    const reason =
+      waitingOn.length > 0
+        ? replied
+          ? "re-review"
+          : "review"
+        : rulesBlocked || s.approved || s.ciPending
+          ? undefined
+          : bottom.reviewRequests.nodes.length > 0
+            ? "review"
+            : "nobody asked again";
 
     const chips: Chip[] = [];
-    if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
     if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
     if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
     if (rulesBlocked) chips.push(chip("blocked by repo rules", "warn"));
@@ -207,8 +218,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       section,
       actions,
       chips,
-      // How long it has waited, shown only while it sits in a Waiting section.
-      waited: SECTIONS[section].tab === "waiting" ? chip(ago(waitingSince, now)) : undefined,
+      // Waiting too long shows in Waiting too, under whoever it waits on [WAI-01].
+      wait: section === "too_long" || SECTIONS[section].tab === "waiting" ? { reason, since: waitingSince, overdue: section === "too_long" ? rule?.label?.(flags) : undefined } : undefined,
       person:
         waiting ??
         (section === "answered" ? answer : undefined) ??
@@ -276,9 +287,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       number: lead?.number ?? bottom.number,
       title: lead?.title ?? bottom.title,
       url: lead?.url ?? bottom.url,
-      chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips, ...(unit.section === section && unit.waited ? [unit.waited] : [])],
+      chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips],
       person: issueWaiting ?? unit.person,
       waitingOn: issueWaiting ? undefined : unit.waitingOn,
+      wait: issueWaiting ? undefined : unit.wait,
       actions: issueWaiting ? replyActions(issueWaiting) : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
       target: target(bottom, unit.stack),
@@ -351,9 +363,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const since = person?.since ?? mine;
     items.push({
       ...plain(issue, kind, section),
-      chips: section === "answered" ? [] : [label ? chip(`${label} · ${ago(since, now)}`, "warn") : chip(ago(since, now))],
       person,
       waitingOn: section !== "answered" && tagged.length > 0 ? tagged : undefined,
+      wait: section === "answered" ? undefined : { reason: "question", since, overdue: label },
       actions: section === "answered" ? replyActions(person) : [],
       // A new answer brings back a dismissed one [ATT-08].
       othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
@@ -411,16 +423,21 @@ export function threadState(
   const after = people.slice(index + 1);
   const recent = (at: string) => daysSince(at, now) < config.mentionDays;
   const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
+  // My comments since someone else last spoke; bots don't end the run.
+  let first = index;
+  while (first > 0 && people[first - 1].author?.login.toLowerCase() === me) first -= 1;
+  const run = index >= 0 ? people.slice(first, index + 1) : [];
   const flags: IssueState = {
     authored,
     follow: config.followThreads,
     // Opening a thread isn't asking a question; a comment is.
     mineLast: index >= 0 && after.length === 0,
+    question: run.some((comment) => asksQuestion(comment.bodyHTML)),
     answered: unread.length > 0,
     fresh: recent(mine),
     tooLong: daysSince(mine, now) >= config.waitingTooLongDays,
   };
-  const tagged = flags.mineLast ? taggedSince(people, index, me, thread.url) : [];
+  const tagged = flags.mineLast ? taggedSince(run, me, thread.url) : [];
   const last = unread.at(-1);
   if (!last?.author) return { flags, mine, tagged };
   return {
@@ -439,14 +456,12 @@ export function threadState(
   };
 }
 
-// Who my comments tag since someone else last spoke, each from the first comment that tags them; bots don't end the run, and
-// only the fetched comments count. A tag gives just a name, so a person's picture is GitHub's for that name [WAI-02].
-function taggedSince(people: Comment[], last: number, me: string, url: string): WaitingOn[] {
-  let first = last;
-  while (first > 0 && people[first - 1].author?.login.toLowerCase() === me) first -= 1;
+// Who my comments since someone else last spoke tag, each from the first comment that tags them; only the fetched comments
+// count. A tag gives just a name, so a person's picture is GitHub's for that name [WAI-02].
+function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
   const origin = new URL(url).origin;
   const tagged: WaitingOn[] = [];
-  for (const comment of people.slice(first, last + 1)) {
+  for (const comment of run) {
     for (const { login, team } of taggedIn(comment.bodyHTML)) {
       const seen = (other: { login: string }) => other.login.toLowerCase() === login.toLowerCase();
       if (login.toLowerCase() === me || tagged.some(seen)) continue;
@@ -461,7 +476,7 @@ function reviewers(actors: (Actor | null | undefined)[], since: string): Waiting
   const list: WaitingOn[] = [];
   for (const actor of actors) {
     if (!actor || list.some((other) => other.login.toLowerCase() === actor.login.toLowerCase())) continue;
-    list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", since });
+    list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", ...(actor.__typename === "Bot" ? { bot: true } : {}), since });
   }
   return list;
 }

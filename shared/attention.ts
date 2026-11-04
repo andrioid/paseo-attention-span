@@ -22,7 +22,7 @@ export const SECTIONS = {
   // Nobody has the next move until I ask someone [PRS-12].
   needs_reviewer: { tab: "doing", title: "Needs a reviewer" },
   drafts: { tab: "doing", title: "My drafts" },
-  // [WAI-01]
+  // Waiting groups these by who they wait on, not by section [WAI-01].
   wait_review: { tab: "waiting", title: "Waiting for review" },
   wait_reviewer: { tab: "waiting", title: "Waiting for the reviewer" },
   wait_ci: { tab: "waiting", title: "CI running" },
@@ -77,8 +77,27 @@ export interface WaitingOn {
   login: string;
   avatarUrl?: string;
   team: boolean;
+  // A requested bot reviewer: nobody to send a list to [WAI-03].
+  bot?: boolean;
   // Since I asked or tagged them, or last pushed or replied.
   since: string;
+}
+
+// What my waiting work waits for: on items in Waiting, and in Waiting too long, which Waiting shows too [WAI-01].
+export interface Wait {
+  // In a word or two: "review", "re-review", "question". None where the chips already say, like blocked by repo rules.
+  reason?: string;
+  // Since I asked, tagged, pushed or replied.
+  since: string;
+  // Waiting too long only: what it waited for, for its chip in Doing [ATT-11].
+  overdue?: string;
+}
+
+// Waiting's work under someone it waits on, longest wait first; the last group, without anyone, is work no person holds up.
+// Work waiting on several people is under each [WAI-01, WAI-03].
+export interface WaitingGroup {
+  who?: WaitingOn;
+  items: Item[];
 }
 
 export interface WaitingComment {
@@ -153,6 +172,7 @@ export interface Item {
   person?: Person;
   // Waiting and Waiting too long only [WAI-02].
   waitingOn?: WaitingOn[];
+  wait?: Wait;
   actions: ActionId[];
   // Linked PRs under an issue, or the PRs above the bottom of a stack.
   children: SubRow[];
@@ -248,6 +268,17 @@ export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSumm
     .sort((a, b) => Number(b.requiresAttention) - Number(a.requiresAttention) || (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));
 }
 
+// Work in Waiting with an active session first: one that needs me, then one that's working. A finished session I've seen
+// doesn't lift it. Otherwise the order stays as it was [WAI-01].
+export function liftActive(items: Item[], agents: AgentSummary[]): Item[] {
+  const rank = (item: Item) => {
+    const agent = itemSessions(agents, item)[0];
+    if (agent?.requiresAttention) return 0;
+    return agent?.status === "running" || agent?.status === "initializing" ? 1 : 2;
+  };
+  return items.map((item) => ({ item, rank: rank(item) })).sort((a, b) => a.rank - b.rank).map(({ item }) => item);
+}
+
 // Sessions none of the item's actions would have started: no kind saved, or the action's gone, like Fix CI once checks pass.
 // They lead the sheet; the rest sit in their action's line [SES-03].
 export function looseSessions(sessions: AgentSummary[], kinds: SessionKind[]): AgentSummary[] {
@@ -267,7 +298,7 @@ export interface AttentionView {
   // Items in Doing; the sidebar shows it [ATT-09].
   count: number;
   doing: Section[];
-  waiting: Section[];
+  waiting: WaitingGroup[];
   history: Item[];
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];

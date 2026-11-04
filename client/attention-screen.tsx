@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingOn } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -304,11 +304,11 @@ function AttentionList({
   // Each tab shows how fresh its own feed is.
   const feed = view.feeds[TAB_FEED[tab]];
   const refreshing = feed.refreshing || attention.isFetching;
-  const tooLong = view.doing.find((section) => section.id === "too_long")?.items.length ?? 0;
   const counts: Record<TabId, number> = {
     history: view.history.filter((item) => item.section === "done").length,
     doing: view.count,
-    waiting: view.waiting.reduce((sum, section) => sum + section.items.length, 0),
+    // Work waiting on several people counts once.
+    waiting: new Set(view.waiting.flatMap((group) => group.items.map((item) => item.key))).size,
     next: view.assigned.length + view.unclaimed.length,
   };
 
@@ -421,16 +421,7 @@ function AttentionList({
           ) : null}
         </>
       ) : null}
-      {tab === "waiting" ? (
-        <>
-          <Sections sections={view.waiting} actions={actions} empty="Nothing is waiting on others." />
-          {tooLong > 0 ? (
-            <Pressable accessibilityRole="button" onPress={() => switchTab("doing")}>
-              <Text style={styles.muted}>{tooLong} more waited too long and moved to Doing →</Text>
-            </Pressable>
-          ) : null}
-        </>
-      ) : null}
+      {tab === "waiting" ? <Waiting groups={view.waiting} actions={actions} /> : null}
       {tab === "next" ? (
         <NextUpList
           assigned={view.assigned}
@@ -548,10 +539,39 @@ type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | nu
 // A session on an item that has no session action of its own starts with this prompt; it's editable first.
 const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
 
-function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions: Actions }) {
+// How long it has waited, and why: in Waiting with a flag once it's too long, in Doing's Waiting too long as its own warning [WAI-01, ATT-11].
+function waitChips(item: Item, inWaiting: boolean): Chip[] {
+  const { wait } = item;
+  if (!wait) return [];
+  const age = ago(wait.since);
+  if (!inWaiting) return wait.overdue ? [{ text: `${wait.overdue} · ${age}`, tone: "warn" }] : [];
+  return [
+    ...(wait.overdue ? [{ text: "waited too long", tone: "warn" as const }] : []),
+    ...(wait.reason ? [{ text: wait.reason, tone: "neutral" as const }] : []),
+    { text: age, tone: "neutral" },
+  ];
+}
+
+// "Review 2h", "Question 3d": why and how long, to lead a line in a nudge [WAI-03].
+function nudgeLead(item: Item): string | undefined {
+  if (!item.wait) return undefined;
+  const { reason, since } = item.wait;
+  return reason ? `${reason[0].toUpperCase()}${reason.slice(1)} ${ago(since)}` : ago(since);
+}
+
+const samePerson = (a: WaitingOn, b: WaitingOn) => a.team === b.team && a.login.toLowerCase() === b.login.toLowerCase();
+
+// In Waiting, a card sits under one of whom it waits on: its group.
+function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; actions: Actions; group?: WaitingGroup }) {
+  const styles = useStyles();
   // An open session leads; without one, the item's own action does [SES-03].
   const sessions = itemSessions(actions.agents, item);
-  const chips = sessions[0] ? [...item.chips, agentSignal(sessions[0])] : item.chips;
+  const own = [...waitChips(item, !!group), ...item.chips];
+  const chips = sessions[0] ? [...own, agentSignal(sessions[0])] : own;
+  // The group names one; the card names the rest [WAI-01].
+  const others = group?.who ? (item.waitingOn ?? []).filter((who) => !samePerson(who, group.who!)) : [];
+  const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded={false} /> : null;
+  const alsoOn = others.length ? <Text style={styles.muted}>also waiting on {others.map((who) => who.login).join(", ")}</Text> : null;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
   const main = item.actions[0];
@@ -587,10 +607,11 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
         signals: chips,
       }}
       extra={
-        item.person || item.waitingOn || children.length > 0 ? (
+        item.person || waitingOn || alsoOn || children.length > 0 ? (
           <>
             {item.person ? <PersonQuote person={item.person} expanded={false} /> : null}
-            {item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded={false} /> : null}
+            {waitingOn}
+            {alsoOn}
             {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} /> : null}
           </>
         ) : null
@@ -627,7 +648,7 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
       }
       overlay={
         <>
-          {sheet === "item" ? <ItemSheet item={item} sessions={sessions} actions={actions} {...handlers} /> : null}
+          {sheet === "item" ? <ItemSheet item={item} chips={own} sessions={sessions} actions={actions} {...handlers} /> : null}
           {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
           {sheet === "reviewers" || sheet === "reviewers-after-ready" ? (
             <ReviewerSheet
@@ -650,7 +671,7 @@ interface SheetHandlers {
 }
 
 // What the card already knows on top, then every action, then what's fetched when it opens, so nothing jumps as it loads [ATT-06, GH-01].
-function ItemSheet({ item, sessions, actions, ...handlers }: { item: Item; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
+function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
   const checks = item.actions.includes("rerun");
   const details = useQuery({
     queryKey: ["attention-span", "details", item.key, checks],
@@ -667,7 +688,7 @@ function ItemSheet({ item, sessions, actions, ...handlers }: { item: Item; sessi
       onClose={handlers.onClose}
       top={
         <>
-          <Meta facts={meta} chips={item.chips} />
+          <Meta facts={meta} chips={chips} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
           {item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
@@ -949,14 +970,43 @@ function Sections({ sections, actions, empty }: { sections: Section[]; actions: 
   ));
 }
 
-function Card({ items, actions }: { items: Item[]; actions: Actions }) {
+function Card({ items, actions, group }: { items: Item[]; actions: Actions; group?: WaitingGroup }) {
   return (
     <CardList>
       {items.map((item, index) => (
-        <ItemRow key={item.key} item={item} first={index === 0} actions={actions} />
+        <ItemRow key={item.key} item={item} first={index === 0} actions={actions} group={group} />
       ))}
     </CardList>
   );
+}
+
+// Waiting by who it waits on, each with a list to copy for a nudge, oldest first; a bot gets none, as there's nobody to send
+// it to. Last, the work no person holds up. Cards with an active session lead their group [WAI-01, WAI-03].
+function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions }) {
+  const styles = useStyles();
+  const copy = useCopy();
+  if (groups.length === 0) return <Text style={styles.text}>Nothing is waiting on others.</Text>;
+  return groups.map((group) => {
+    const { who, items } = group;
+    const links = `${items.length} link${items.length === 1 ? "" : "s"}`;
+    const nudge = (login: string) =>
+      copy(linkList(items.map((item) => ({ ...item, lead: nudgeLead(item) }))), `Copied ${links} for ${login}`);
+    return (
+      <View key={who ? `${who.team ? "team" : "user"}:${who.login.toLowerCase()}` : "nobody"}>
+        <SectionHeader
+          icon={who ? <Avatar url={who.avatarUrl} team={who.team} bot={who.bot} /> : "clock"}
+          title={who?.login ?? "Not on a person"}
+          count={items.length}
+          action={
+            who && !who.bot ? (
+              <Button icon="copy" label={styles.compact ? undefined : "Copy list"} variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
+            ) : null
+          }
+        />
+        <Card items={liftActive(items, actions.agents)} actions={actions} group={group} />
+      </View>
+    );
+  });
 }
 
 // Monday-start weeks in the device's time zone.

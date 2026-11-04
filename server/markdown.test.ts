@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { excerpt, plainText, taggedIn } from "./markdown";
+import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 
 describe("markdown", () => {
   it("MEN-07: drops template comments and images", () => {
@@ -55,5 +55,22 @@ describe("markdown", () => {
       { login: "erin", team: false },
     ]);
     expect(taggedIn(undefined)).toEqual([]);
+  });
+
+  it("WAI-01: a question is a ? in my own words, as GitHub rendered them: not in quotes, code or links", () => {
+    const tag = '<a class="user-mention notranslate" href="https://github.com/bob">@bob</a>';
+    expect(asksQuestion(`<p>${tag} which shops?</p>`)).toBe(true);
+    expect(asksQuestion("<p>Can you check？</p>")).toBe(true);
+    expect(asksQuestion("<details><summary>Logs</summary><p>Is this the one?</p></details>")).toBe(true);
+    expect(asksQuestion(`<p>${tag} deployed to staging</p>`)).toBe(false);
+    // Quotes however written: "> Can you check\nthe logs?" continues lazily, nested, or as HTML.
+    expect(asksQuestion("<blockquote><p>Can you check<br>the logs?</p><blockquote><p>why?</p></blockquote></blockquote><p>Done.</p>")).toBe(false);
+    // Code however written: inline, over lines, fenced and never closed, indented.
+    expect(asksQuestion("<p>Use <code>a ? b\n: c</code> here.</p>")).toBe(false);
+    expect(asksQuestion('<div class="highlight"><pre><code>const x = y ?? z;\n</code></pre></div>')).toBe(false);
+    expect(asksQuestion("<pre><code>const x = y ?? z;\n</code></pre>")).toBe(false);
+    // Links: bare URLs, with or without a scheme, and link text.
+    expect(asksQuestion('<p>See <a href="http://www.example.com/path?page=2">www.example.com/path?page=2</a> and <a href="https://x.dev">this?</a></p>')).toBe(false);
+    expect(asksQuestion(undefined)).toBe(false);
   });
 });
