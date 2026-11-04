@@ -1,8 +1,21 @@
-import { type Attention, type Chip, type Item, type NextUpIssue, type Person, type Reviewer, SECTION_ORDER, SECTIONS, type SectionId, type SubRow, type Target } from "../shared/attention";
+import {
+  type Attention,
+  type Chip,
+  type Item,
+  type NextUpIssue,
+  type Person,
+  type Reviewer,
+  SECTION_ORDER,
+  SECTIONS,
+  type SectionId,
+  type SubRow,
+  type Target,
+  type WaitingOn,
+} from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
-import { excerpt, plainText } from "./markdown";
+import { excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
 import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
@@ -44,7 +57,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   // What each thread I'm in is waiting for: an answer, or me [ATT-16]. Both searches can find one; it's the same thread.
   const threads = new Map<string, IssueNode>();
   for (const node of [...compact(data.involved.nodes), ...compact(data.asked.nodes)]) threads.set(prKey(node), node);
-  const answers = new Map<string, { flags: IssueState; person?: Person; mine: string }>();
+  const answers = new Map<string, NonNullable<ReturnType<typeof threadState>>>();
   for (const [key, node] of threads) {
     const found = threadState(node, me, now, config);
     if (found) answers.set(key, found);
@@ -165,11 +178,13 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const rule = PR_RULES[section];
     const actions = rule?.actions?.(flags) ?? [];
     const rulesBlocked = rulesBlock(flags);
-    // Who it waits on: the reviewer who asked for changes, else who's requested, else who reviewed.
-    const reviewer = replied
-      ? bottom.latestReviews.nodes.find((review) => review.state === "CHANGES_REQUESTED")?.author
-      : (bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer)).find(Boolean) ??
-        bottom.latestReviews.nodes.find((review) => isOther(review.author))?.author);
+    // Who it waits on, only from what GitHub records: who I asked, and while it waits for the reviewer after my reply, who
+    // asked for changes; while CI runs, only who I asked. Someone who reviewed and wasn't asked again owes nothing. A rule,
+    // not a person, holds up a PR the rules block [WAI-02, PRS-13].
+    const waits = !rulesBlocked && (section === "too_long" || SECTIONS[section].tab === "waiting");
+    const changers = replied && !flags.ciPending ? bottom.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.author) : [];
+    const asked = bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer));
+    const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : [];
 
     const chips: Chip[] = [];
     if (section === "too_long") chips.push(chip(`${rule?.label?.(flags)} · ${ago(waitingSince, now)}`, "warn"));
@@ -197,9 +212,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       person:
         waiting ??
         (section === "answered" ? answer : undefined) ??
-        (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined) ??
-        // A rule, not a person, holds it up [PRS-13].
-        (!rulesBlocked && (section === "too_long" || SECTIONS[section].tab === "waiting") ? person(reviewer, waitingSince) : undefined),
+        (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined),
+      waitingOn: waitingOn.length > 0 ? waitingOn : undefined,
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
     };
   });
@@ -264,6 +278,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       url: lead?.url ?? bottom.url,
       chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips, ...(unit.section === section && unit.waited ? [unit.waited] : [])],
       person: issueWaiting ?? unit.person,
+      waitingOn: issueWaiting ? undefined : unit.waitingOn,
       actions: issueWaiting ? replyActions(issueWaiting) : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
       target: target(bottom, unit.stack),
@@ -328,7 +343,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const found = answers.get(key);
     const kind = issue.__typename === "PullRequest" ? "pr" : "issue";
     if (listed.has(key) || !found || (kind === "pr" && found.flags.authored)) continue;
-    const { flags, person, mine } = found;
+    const { flags, person, mine, tagged } = found;
     const section = pick(ISSUE_RULES, flags);
     if (!section) continue;
     listed.add(key);
@@ -338,6 +353,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       ...plain(issue, kind, section),
       chips: section === "answered" ? [] : [label ? chip(`${label} · ${ago(since, now)}`, "warn") : chip(ago(since, now))],
       person,
+      waitingOn: section !== "answered" && tagged.length > 0 ? tagged : undefined,
       actions: section === "answered" ? replyActions(person) : [],
       // A new answer brings back a dismissed one [ATT-08].
       othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
@@ -386,7 +402,7 @@ export function threadState(
   me: string,
   now: Date,
   config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays" | "followThreads">,
-): { flags: IssueState; person?: Person; mine: string } | null {
+): { flags: IssueState; person?: Person; mine: string; tagged: WaitingOn[] } | null {
   const authored = thread.author?.login.toLowerCase() === me;
   const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
   const index = people.findLastIndex((c) => c.author?.login.toLowerCase() === me);
@@ -404,11 +420,13 @@ export function threadState(
     fresh: recent(mine),
     tooLong: daysSince(mine, now) >= config.waitingTooLongDays,
   };
+  const tagged = flags.mineLast ? taggedSince(people, index, me, thread.url) : [];
   const last = unread.at(-1);
-  if (!last?.author) return { flags, mine };
+  if (!last?.author) return { flags, mine, tagged };
   return {
     flags,
     mine,
+    tagged,
     person: {
       login: last.author.login,
       avatarUrl: last.author.avatarUrl,
@@ -419,6 +437,33 @@ export function threadState(
       comments: unread.filter((c) => c.id).map((c) => ({ id: c.id!, author: c.author!.login, body: excerpt(c.body, 4000) ?? "", createdAt: c.createdAt, url: c.url })),
     },
   };
+}
+
+// Who my comments tag since someone else last spoke, each from the first comment that tags them; bots don't end the run, and
+// only the fetched comments count. A tag gives just a name, so a person's picture is GitHub's for that name [WAI-02].
+function taggedSince(people: Comment[], last: number, me: string, url: string): WaitingOn[] {
+  let first = last;
+  while (first > 0 && people[first - 1].author?.login.toLowerCase() === me) first -= 1;
+  const origin = new URL(url).origin;
+  const tagged: WaitingOn[] = [];
+  for (const comment of people.slice(first, last + 1)) {
+    for (const { login, team } of taggedIn(comment.bodyHTML)) {
+      const seen = (other: { login: string }) => other.login.toLowerCase() === login.toLowerCase();
+      if (login.toLowerCase() === me || tagged.some(seen)) continue;
+      tagged.push({ login, team, avatarUrl: team ? undefined : `${origin}/${login}.png?size=64`, since: comment.createdAt });
+    }
+  }
+  return tagged;
+}
+
+// Reviewers once each, in order: people and teams by their own picture.
+function reviewers(actors: (Actor | null | undefined)[], since: string): WaitingOn[] {
+  const list: WaitingOn[] = [];
+  for (const actor of actors) {
+    if (!actor || list.some((other) => other.login.toLowerCase() === actor.login.toLowerCase())) continue;
+    list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", since });
+  }
+  return list;
 }
 
 // A requested person, or a team by its "org/slug".

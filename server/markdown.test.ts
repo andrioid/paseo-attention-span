@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { excerpt, plainText } from "./markdown";
+import { excerpt, plainText, taggedIn } from "./markdown";
 
 describe("markdown", () => {
   it("MEN-07: drops template comments and images", () => {
@@ -39,5 +39,21 @@ describe("markdown", () => {
 
   it("ATT-05: drops quoted replies, headings, list markers and code fences, but keeps snake_case", () => {
     expect(plainText("> @me earlier\n## Plan\n- [x] done_thing\n1. next\n```ts\nconst a = 1;\n```")).toBe("\nPlan\ndone_thing\nnext\n\nconst a = 1;\n");
+  });
+
+  it("WAI-02: reads tags from GitHub's links to people and teams, skipping nested quotes, other links and repeats", () => {
+    const user = (login: string, host = "https://github.com") => `<a class="user-mention notranslate" data-hovercard-type="user" href="${host}/${login}">@${login}</a>`;
+    const team = '<a class="team-mention js-team-mention notranslate" href="https://github.com/orgs/acme/teams/frontend">@acme/frontend</a>';
+    const html = [
+      `<blockquote><blockquote><p>${user("carol")}</p></blockquote><p>${user("dave")}</p></blockquote>`,
+      `<p>${user("alice")} see <a href="https://github.com/bob">bob's profile</a>, ${team} and ${user("Alice")}</p>`,
+      `<p>${user("erin", "https://ghe.example.com")} <code>@frank</code> @kubernetes/sig-node</p>`,
+    ].join("");
+    expect(taggedIn(html)).toEqual([
+      { login: "alice", team: false },
+      { login: "acme/frontend", team: true },
+      { login: "erin", team: false },
+    ]);
+    expect(taggedIn(undefined)).toEqual([]);
   });
 });

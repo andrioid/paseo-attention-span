@@ -116,6 +116,19 @@ for (const layout of layouts) {
         if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
+      // Who a question waits on: several by picture, named on hover, and each by name in its sheet [WAI-02].
+      await page.getByRole("tab", { name: /Waiting/ }).first().click();
+      await page.waitForTimeout(800);
+      if (!layout.isMobile) {
+        const faces = await page.getByLabel("Waiting on alice, bob").first().boundingBox();
+        await page.mouse.move(faces.x + 9, faces.y + faces.height / 2);
+        await page.waitForTimeout(300);
+        await shot("waiting-hover");
+        await page.mouse.move(0, 0);
+      }
+      await openSheet("Invoice totals round wrong");
+      await modalShot("waiting-sheet");
+      await closeSheet();
       await doing();
       await openSheet("Show delivery dates on the order page");
       await modalShot("doing-sheet");
