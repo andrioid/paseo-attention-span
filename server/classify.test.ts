@@ -56,7 +56,7 @@ describe("doing", () => {
   it("PRS-02: requested changes followed by a new push wait on that reviewer", () => {
     const latestReviews = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(1.5) }] };
     const [item] = run({ mine: [pr(3, { reviewDecision: "CHANGES_REQUESTED", latestReviews })] }).items;
-    expect(item).toMatchObject({ section: "wait_reviewer", person: { login: "alice" } });
+    expect(item).toMatchObject({ section: "wait_reviewer", person: undefined, waitingOn: [{ login: "alice", team: false }] });
   });
 });
 
@@ -102,7 +102,7 @@ describe("ready to merge and behind base", () => {
 
   it("PRS-13: approved and green but blocked by a repo rule, it waits for review without Merge or a person", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" })] }).items;
-    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined });
+    expect(item).toMatchObject({ section: "wait_review", actions: [], person: undefined, waitingOn: undefined });
     expect(chips(item)).toEqual(["approved", "blocked by repo rules", "1d"]);
   });
 
@@ -308,13 +308,54 @@ describe("waiting", () => {
       involved: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
-    expect(attention.items[0]).toMatchObject({ person: { login: "bob", avatarUrl: bob.avatarUrl }, chips: [{ text: "1d" }] });
+    expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [{ text: "1d" }] });
+  });
+
+  it("WAI-02: a PR waits on everyone I asked, while CI runs too, and after my reply on whoever asked for changes", () => {
+    const both = { nodes: [{ requestedReviewer: bob }, { requestedReviewer: alice }] };
+    const [item] = run({ mine: [pr(1, { reviewRequests: both }, "PENDING")] }).items;
+    expect(item.section).toBe("wait_ci");
+    expect(item.waitingOn?.map((who) => who.login)).toEqual(["bob", "alice"]);
+    const latestReviews = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] };
+    const replied = run({ mine: [pr(2, { reviewDecision: "CHANGES_REQUESTED", latestReviews, reviewRequests: asked })] }).items[0];
+    expect(replied.section).toBe("wait_reviewer");
+    expect(replied.waitingOn?.map((who) => who.login)).toEqual(["alice", "bob"]);
+    const ci = run({ mine: [pr(3, { reviewDecision: "CHANGES_REQUESTED", latestReviews, reviewRequests: asked }, "PENDING")] }).items[0];
+    expect(ci.section).toBe("wait_ci");
+    expect(ci.waitingOn?.map((who) => who.login)).toEqual(["bob"]);
+  });
+
+  it("WAI-02: a question waits on who my comments tag since the last answer, outside quotes, from their first tag", () => {
+    const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
+    const team = '<a class="team-mention js-team-mention notranslate" data-hovercard-type="team" href="https://github.com/orgs/acme/teams/frontend">@acme/frontend</a>';
+    const html = (body: string) => ({ bodyHTML: body });
+    const thread = issue(70, [
+      comment(me, "", 5, html(`<p>${tag("carol")} first round</p>`)),
+      comment(alice, "", 4),
+      comment(me, "", 3, html(`<blockquote><p>${tag("alice")} said so</p></blockquote><p>${tag("bob")} ${team} which shops?</p>`)),
+      comment(bot, "labelled", 2.5),
+      comment(me, "", 2, html(`<p>${tag("Bob")} ${tag("me")} also ${tag("dave")}?</p>`)),
+    ]);
+    const [item] = run({ involved: [thread] }).items;
+    expect(item.section).toBe("wait_answer");
+    expect(item.waitingOn).toEqual([
+      { login: "bob", team: false, avatarUrl: "https://github.com/bob.png?size=64", since: daysAgo(3) },
+      { login: "acme/frontend", team: true, avatarUrl: undefined, since: daysAgo(3) },
+      { login: "dave", team: false, avatarUrl: "https://github.com/dave.png?size=64", since: daysAgo(2) },
+    ]);
+    expect(item.person).toBeUndefined();
+  });
+
+  it("WAI-02: a question that tags nobody waits on nobody", () => {
+    const [item] = run({ involved: [issue(70, [comment(me, "@bob which shops?", 1, { bodyHTML: "<p>@bob which shops?</p>" })])] }).items;
+    expect(item).toMatchObject({ section: "wait_answer", waitingOn: undefined });
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
     const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
     expect(chips(attention.items[0])).toEqual(["waiting for review · 4d"]);
+    expect(attention.items[0].waitingOn?.map((who) => who.login)).toEqual(["bob"]);
   });
 });
 
@@ -412,16 +453,16 @@ describe("needs a reviewer", () => {
   it("WAI-01, PRS-12: a request to a team waits for review, showing the team", () => {
     const team = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: "https://avatars/t" };
     const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: team }] } })] }).items;
-    expect(item).toMatchObject({ section: "wait_review", person: { login: "acme/frontend", avatarUrl: "https://avatars/t" } });
+    expect(item).toMatchObject({ section: "wait_review", waitingOn: [{ login: "acme/frontend", avatarUrl: "https://avatars/t", team: true }] });
   });
 
   it("PRS-12: a request I can't see the reviewer of still counts", () => {
     expect(run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0].section).toBe("wait_review");
   });
 
-  it("WAI-01: after a review that only commented, it keeps waiting on that reviewer", () => {
+  it("WAI-02: after a review that only commented, with nobody asked again, it waits on nobody", () => {
     const latestReviews = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
-    expect(run({ mine: [pr(1, { latestReviews })] }).items[0]).toMatchObject({ section: "wait_review", person: { login: "alice" } });
+    expect(run({ mine: [pr(1, { latestReviews })] }).items[0]).toMatchObject({ section: "wait_review", person: undefined, waitingOn: undefined });
   });
 
   it("PRS-12: my own review doesn't count as asking", () => {

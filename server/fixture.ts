@@ -20,6 +20,8 @@ export const alice: Actor = { __typename: "User", login: "alice", avatarUrl: ava
 export const bob: Actor = { __typename: "User", login: "bob", avatarUrl: avatar(2) };
 export const bot: Actor = { __typename: "Bot", login: "reviewbot" };
 const frontend = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: avatar(9919) };
+// A tag as GitHub renders it in a comment [WAI-02].
+const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
 
 export function builders(now: Date) {
   const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
@@ -150,7 +152,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(110, { title: "requirements.yaml for the shop", isDraft: true, updatedAt: daysAgo(64) }),
       pr(111, { title: "Faster product search", reviewRequests: { nodes: [{ requestedReviewer: bob }] }, commits: commit("SUCCESS", 0.3) }),
       pr(112, { title: "Translate the checkout emails", reviewDecision: "CHANGES_REQUESTED", latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] }, commits: commit("SUCCESS", 1) }),
-      pr(113, { title: "Upgrade the payment SDK", reviewRequests: { nodes: [{ requestedReviewer: bob }] } }, "PENDING"),
+      pr(113, { title: "Upgrade the payment SDK", reviewRequests: { nodes: [{ requestedReviewer: bob }, { requestedReviewer: alice }] } }, "PENDING"),
       pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED" }),
       pr(115, { title: "Split the settings page into tabs", isDraft: true, mergeable: "CONFLICTING" }),
       pr(116, { title: "Try a faster PDF renderer", isDraft: true }, "FAILURE"),
@@ -162,7 +164,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       // Nobody asked yet: green, so Merge too; and one still in CI [PRS-12].
       pr(124, { title: "Export invoices as CSV", commits: commit("SUCCESS", 0.5) }),
       pr(125, { title: "Log slow database queries" }, "PENDING"),
-      // A review that only commented keeps it waiting on that reviewer.
+      // A review that only commented, and nobody asked again: it waits, on nobody in particular [WAI-02].
       pr(126, { title: "Tidy the admin menu", latestReviews: { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(0.8) }] } }),
       // Approved and green, yet a repo rule blocks it, so it waits [PRS-13].
       pr(127, { title: "Sign the release artifacts", reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" }),
@@ -193,10 +195,19 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       }),
     ],
     involved: [
-      issue(140, [comment(alice, "", 9), comment(me, "Which customers see this?", 1)], "Invoice totals round wrong"),
+      // Questions that tag people wait on them: several by picture, one by name [WAI-02].
+      issue(
+        140,
+        [comment(alice, "", 9), comment(me, "@alice @bob which customers see this?", 1, { bodyHTML: `<p>${tag("alice")} ${tag("bob")} which customers see this?</p>` })],
+        "Invoice totals round wrong",
+      ),
       // Answered on my own issue without mentioning me [ATT-16]; and a bot after my question, which doesn't count [MEN-05].
       issue(142, [comment(me, "Does this happen on every shop, or only some?", 2), comment(alice, "Only the Danish one, as far as I can tell. It started after the **VAT change** on Monday.", 0.4)], "Order confirmation shows the wrong VAT", { author: me }),
-      issue(143, [comment(me, "Can we drop the old endpoint yet?", 1), comment(bot, "This issue has been labelled `needs-triage`.", 0.5)], "Retire the v1 orders endpoint"),
+      issue(
+        143,
+        [comment(me, "@bob can we drop the old endpoint yet?", 1, { bodyHTML: `<p>${tag("bob")} can we drop the old endpoint yet?</p>` }), comment(bot, "This issue has been labelled `needs-triage`.", 0.5)],
+        "Retire the v1 orders endpoint",
+      ),
       // A comment on my PR's conversation [ATT-16].
       issue(111, [comment(bob, "Big change. Could you split the index migration into its own PR?", 0.2)], "Faster product search", { __typename: "PullRequest", author: me, createdAt: daysAgo(2) }),
       // Someone else's old thread where people kept going after me: not mine to follow [ATT-16].

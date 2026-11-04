@@ -97,6 +97,7 @@ functional:
   waiting:
     As a developer, I can:
       WAI-01: see my work that is waiting on others, grouped by what it waits for, where a pull request waits for review only once someone has been asked; so that I know that work is tracked.
+      WAI-02: see who my waiting work waits on: reviewers I asked, reviewers who asked for changes and people I tagged in my unanswered question, and nobody where none of those apply; so that I know whom to nudge without guessing.
   history:
     As a developer, I can:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.

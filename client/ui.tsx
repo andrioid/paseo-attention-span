@@ -114,9 +114,9 @@ export function Meta({ facts, chips }: { facts: string[]; chips: Chip[] }) {
   );
 }
 
-export function Avatar({ url, bot, size = 18 }: { url?: string; bot?: boolean; size?: number }) {
+export function Avatar({ url, bot, team, size = 18 }: { url?: string; bot?: boolean; team?: boolean; size?: number }) {
   const styles = useStyles();
-  if (bot || !url) return <TablerIcon name={bot ? "bot" : "issue"} size={size} />;
+  if (bot || !url) return <TablerIcon name={bot ? "bot" : team ? "team" : "issue"} size={size} />;
   return <Image source={{ uri: url }} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: styles.c.surface2 }} />;
 }
 

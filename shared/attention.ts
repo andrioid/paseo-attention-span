@@ -72,6 +72,15 @@ export interface Person {
   comments?: WaitingComment[];
 }
 
+// Someone my waiting work waits on: a reviewer I asked, one who asked for changes, or someone I tagged. Never a guess [WAI-02].
+export interface WaitingOn {
+  login: string;
+  avatarUrl?: string;
+  team: boolean;
+  // Since I asked or tagged them, or last pushed or replied.
+  since: string;
+}
+
 export interface WaitingComment {
   // The comment's node, or the issue or PR when its description mentions me.
   id: string;
@@ -142,6 +151,8 @@ export interface Item {
   url: string;
   chips: Chip[];
   person?: Person;
+  // Waiting and Waiting too long only [WAI-02].
+  waitingOn?: WaitingOn[];
   actions: ActionId[];
   // Linked PRs under an issue, or the PRs above the bottom of a stack.
   children: SubRow[];

@@ -41,6 +41,8 @@ Anything that's sat in Waiting for more than three days moves back here under **
 
 This is your work where someone else has the next move: waiting for the review you asked for, waiting for the reviewer to look again, CI running, or a question you asked that nobody's answered yet.
 
+Each item shows who you're waiting on, but only when that's on record: the reviewers you asked, the reviewer who asked for changes, or the people you tagged in your question. Otherwise it shows nobody rather than a guess. That way, when something has waited too long, you know whom to nudge.
+
 There's nothing to do here. That's the point. It's tracked, so you can stop holding it in your head.
 
 ![Waiting](docs/screenshots/desktop-dark-waiting.png)

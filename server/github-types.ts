@@ -20,6 +20,8 @@ export interface Comment {
   id?: string;
   author: Actor | null;
   body?: string;
+  // Threads I'm in only: GitHub's rendering, where tags of real accounts are links [WAI-02].
+  bodyHTML?: string;
   createdAt: string;
   url?: string;
   reactionGroups?: { viewerHasReacted: boolean }[];

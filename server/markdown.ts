@@ -71,3 +71,25 @@ export function plainText(markdown: string): string {
     .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
     .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/gm, "");
 }
+
+// People and teams tagged in a comment, from GitHub's rendering of it: GitHub links a tag only to an account that exists and
+// a team I can see, and never in code. Tags in quoted replies are someone else's words, so they don't count [WAI-02].
+export function taggedIn(html: string | undefined): { login: string; team: boolean }[] {
+  let text = html ?? "";
+  // Innermost quotes first, so nested ones go whole.
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<blockquote\b[^>]*>(?:(?!<blockquote\b)[\s\S])*?<\/blockquote>/g, "");
+  } while (text !== previous);
+  const tags: { login: string; team: boolean }[] = [];
+  for (const [, attributes] of text.matchAll(/<a\b([^>]*)>/g)) {
+    const kind = /\bclass="[^"]*\b(user|team)-mention\b/.exec(attributes)?.[1];
+    const path = /\bhref="(?:https?:\/\/[^/"]+)?([^"?#]*)/.exec(attributes)?.[1] ?? "";
+    const team = /^\/orgs\/([^/]+)\/teams\/([^/]+)\/?$/.exec(path);
+    const user = /^\/([^/]+)\/?$/.exec(path);
+    const login = kind === "team" && team ? `${team[1]}/${team[2]}` : kind === "user" && user ? user[1] : undefined;
+    if (login && !tags.some((tag) => tag.login.toLowerCase() === login.toLowerCase())) tags.push({ login, team: kind === "team" });
+  }
+  return tags;
+}

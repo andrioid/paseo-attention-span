@@ -3,10 +3,10 @@ import type { AttentionConfig } from "../shared/config";
 import type { PickableNode, PullRequestNode, RequiredChecks } from "./github-types";
 import type { IssueRef } from "./references";
 
-// An issue or PR with its last conversation comments [ATT-16].
+// An issue or PR with its last conversation comments [ATT-16], rendered too for who my questions tag [WAI-02].
 const THREAD = `__typename
-      ... on Issue { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment } } }
-      ... on PullRequest { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment } } }`;
+      ... on Issue { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment bodyHTML } } }
+      ... on PullRequest { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment bodyHTML } } }`;
 
 // Each search with how many results it asks for and what it reads of each.
 const SEARCHES = {

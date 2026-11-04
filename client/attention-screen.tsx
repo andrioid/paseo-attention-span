@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, itemSessions, looseSessions, type NextUpIssue, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -587,9 +587,10 @@ function ItemRow({ item, first, actions }: { item: Item; first: boolean; actions
         signals: chips,
       }}
       extra={
-        item.person || children.length > 0 ? (
+        item.person || item.waitingOn || children.length > 0 ? (
           <>
             {item.person ? <PersonQuote person={item.person} expanded={false} /> : null}
+            {item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded={false} /> : null}
             {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} /> : null}
           </>
         ) : null
@@ -668,6 +669,7 @@ function ItemSheet({ item, sessions, actions, ...handlers }: { item: Item; sessi
         <>
           <Meta facts={meta} chips={item.chips} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
+          {item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
         </>
       }
@@ -889,6 +891,49 @@ function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>
       <Text style={{ color: styles.c.foreground, fontSize: 13, lineHeight: 18 }} numberOfLines={expanded ? undefined : 2}>
         {person.snippet}
       </Text>
+    </View>
+  );
+}
+
+// Pictures on a card before the rest are counted, so a crowd fits a phone; the sheet names everyone.
+const MAX_FACES = 5;
+
+// Who my work waits on: one by name, several by picture, named on hover, and each by name in the sheet [WAI-02].
+function WaitingOnLine({ people, expanded }: { people: WaitingOn[]; expanded: boolean }) {
+  const styles = useStyles();
+  const [hovered, setHovered] = useState<string | null>(null);
+  const name = (login: string) => (
+    <Text style={{ color: styles.c.foreground, fontSize: 12, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
+      {login}
+    </Text>
+  );
+  const since = (at: string) => <Text style={styles.muted}>· {ago(at)}</Text>;
+  if (expanded || people.length === 1) {
+    return (
+      <View style={{ gap: 6 }}>
+        {people.map((who) => (
+          <View key={who.login} style={styles.row}>
+            <Avatar url={who.avatarUrl} team={who.team} />
+            {name(who.login)}
+            {since(who.since)}
+          </View>
+        ))}
+      </View>
+    );
+  }
+  const earliest = people.map((who) => who.since).sort()[0];
+  return (
+    <View style={styles.row} accessibilityLabel={`Waiting on ${people.map((who) => who.login).join(", ")}`}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+        {people.slice(0, MAX_FACES).map((who) => (
+          <View key={who.login} onPointerEnter={() => setHovered(who.login)} onPointerLeave={() => setHovered((current) => (current === who.login ? null : current))}>
+            <Avatar url={who.avatarUrl} team={who.team} />
+          </View>
+        ))}
+        {people.length > MAX_FACES ? <Text style={styles.muted}>+{people.length - MAX_FACES}</Text> : null}
+      </View>
+      {hovered ? name(hovered) : null}
+      {since(earliest)}
     </View>
   );
 }
