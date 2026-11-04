@@ -74,6 +74,12 @@ export function plainText(markdown: string): string {
 
 // People and teams tagged in a comment, from GitHub's rendering of it: GitHub links a tag only to an account that exists and
 // a team I can see, and never in code. Tags in quoted replies are someone else's words, so they don't count [WAI-02].
+// Whether a comment asks something: a question mark in its own words, not in quotes, code or links [WAI-01].
+export function asksQuestion(markdown: string | undefined): boolean {
+  const withoutCode = (markdown ?? "").replace(/^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$/gm, "").replace(/`[^`\n]*`/g, "");
+  return /[?？]/.test(plainText(withoutCode).replace(/https?:\/\/\S+/g, ""));
+}
+
 export function taggedIn(html: string | undefined): { login: string; team: boolean }[] {
   let text = html ?? "";
   // Innermost quotes first, so nested ones go whole.

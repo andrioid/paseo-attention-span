@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { excerpt, plainText, taggedIn } from "./markdown";
+import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 
 describe("markdown", () => {
   it("MEN-07: drops template comments and images", () => {
@@ -55,5 +55,15 @@ describe("markdown", () => {
       { login: "erin", team: false },
     ]);
     expect(taggedIn(undefined)).toEqual([]);
+  });
+
+  it("WAI-01: a question is a ? in my own words, not in quotes, code or links", () => {
+    expect(asksQuestion("@bob which shops?")).toBe(true);
+    expect(asksQuestion("Can you check？")).toBe(true);
+    expect(asksQuestion("@bob deployed to staging")).toBe(false);
+    expect(asksQuestion("> did it work?\n\nIt did.")).toBe(false);
+    expect(asksQuestion("Use `a ? b : c` here.\n\n```ts\nconst x = y ?? z;\n```")).toBe(false);
+    expect(asksQuestion("See https://example.com/list?page=2 and [this](https://x.dev/?q=1)")).toBe(false);
+    expect(asksQuestion(undefined)).toBe(false);
   });
 });

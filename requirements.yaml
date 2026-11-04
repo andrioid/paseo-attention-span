@@ -96,7 +96,7 @@ functional:
       NXT-11: close an issue from Next up as completed or not planned, with an optional comment, and undo it; so that work that's done or won't be done stops being suggested.
   waiting:
     As a developer, I can:
-      WAI-01: see my work that is waiting on others, grouped by who it waits on with whoever blocks the most first, bots after people, and work no person holds up last, each group with work that has an active session first, and each card saying why it waits and for how long, including work that waited too long, where a pull request waits for review only once someone has been asked; so that I know that work is tracked and who is blocking me most.
+      WAI-01: see my work that is waiting on others, grouped by who it waits on with whoever blocks the most first, bots after people, and work no person holds up last, each group with work that has an active session first, and each card saying why it waits and for how long, including work that waited too long, where a pull request waits for review only once someone has been asked, and a thread only once my last words ask a question; so that I know that work is tracked and who is blocking me most.
       WAI-02: see who my waiting work waits on: reviewers I asked, reviewers who asked for changes and people I tagged in my unanswered question, and nobody where none of those apply; so that I know whom to nudge without guessing.
       WAI-03: copy the list of my work waiting on one person or team, oldest first, each line a Markdown link led by why and for how long, like "Review 2h: [title](link)"; so that nudging them is one paste they can skim.
   history:

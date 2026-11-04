@@ -39,7 +39,7 @@ Anything that's sat in Waiting for more than three days shows up here too, under
 
 ## Waiting: out of your hands
 
-This is your work where someone else has the next move: the review you asked for, the reviewer looking again, CI running, or a question you asked that nobody's answered yet.
+This is your work where someone else has the next move: the review you asked for, the reviewer looking again, CI running, or a question you asked that nobody's answered yet. Only questions count: a comment that just tells people something, even one that tags them, isn't waiting on anyone.
 
 It's grouped by who you're waiting on, whoever blocks the most first, and each item says why and for how long. Work with a session that's running or needs you leads its group. Who counts only when it's on record: the reviewers you asked, the reviewer who asked for changes, or the people you tagged in your question. Work that waits on nobody in particular, like CI or a repo rule, sits at the bottom rather than under a guess. Work that waited too long shows here as well as in Doing.
 

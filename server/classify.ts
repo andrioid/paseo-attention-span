@@ -15,7 +15,7 @@ import {
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
-import { excerpt, plainText, taggedIn } from "./markdown";
+import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
 import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
@@ -423,16 +423,21 @@ export function threadState(
   const after = people.slice(index + 1);
   const recent = (at: string) => daysSince(at, now) < config.mentionDays;
   const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
+  // My comments since someone else last spoke; bots don't end the run.
+  let first = index;
+  while (first > 0 && people[first - 1].author?.login.toLowerCase() === me) first -= 1;
+  const run = index >= 0 ? people.slice(first, index + 1) : [];
   const flags: IssueState = {
     authored,
     follow: config.followThreads,
     // Opening a thread isn't asking a question; a comment is.
     mineLast: index >= 0 && after.length === 0,
+    question: run.some((comment) => asksQuestion(comment.body)),
     answered: unread.length > 0,
     fresh: recent(mine),
     tooLong: daysSince(mine, now) >= config.waitingTooLongDays,
   };
-  const tagged = flags.mineLast ? taggedSince(people, index, me, thread.url) : [];
+  const tagged = flags.mineLast ? taggedSince(run, me, thread.url) : [];
   const last = unread.at(-1);
   if (!last?.author) return { flags, mine, tagged };
   return {
@@ -451,14 +456,12 @@ export function threadState(
   };
 }
 
-// Who my comments tag since someone else last spoke, each from the first comment that tags them; bots don't end the run, and
-// only the fetched comments count. A tag gives just a name, so a person's picture is GitHub's for that name [WAI-02].
-function taggedSince(people: Comment[], last: number, me: string, url: string): WaitingOn[] {
-  let first = last;
-  while (first > 0 && people[first - 1].author?.login.toLowerCase() === me) first -= 1;
+// Who my comments since someone else last spoke tag, each from the first comment that tags them; only the fetched comments
+// count. A tag gives just a name, so a person's picture is GitHub's for that name [WAI-02].
+function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
   const origin = new URL(url).origin;
   const tagged: WaitingOn[] = [];
-  for (const comment of people.slice(first, last + 1)) {
+  for (const comment of run) {
     for (const { login, team } of taggedIn(comment.bodyHTML)) {
       const seen = (other: { login: string }) => other.login.toLowerCase() === login.toLowerCase();
       if (login.toLowerCase() === me || tagged.some(seen)) continue;

@@ -305,7 +305,7 @@ describe("waiting", () => {
   it("WAI-01: groups my work by what it waits for, with who I'm waiting on", () => {
     const attention = run({
       mine: [pr(1, { reviewRequests: asked }), pr(2, { reviewRequests: asked }, "PENDING")],
-      involved: [issue(70, [comment(me, "", 1)]), issue(72, [comment(alice, "", 1)])],
+      involved: [issue(70, [comment(me, "which shops?", 1)]), issue(72, [comment(alice, "", 1)])],
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
     expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [], wait: { reason: "review", since: daysAgo(1) } });
@@ -357,7 +357,7 @@ describe("waiting", () => {
     const thread = issue(70, [
       comment(me, "", 5, html(`<p>${tag("carol")} first round</p>`)),
       comment(alice, "", 4),
-      comment(me, "", 3, html(`<blockquote><p>${tag("alice")} said so</p></blockquote><p>${tag("bob")} ${team} which shops?</p>`)),
+      comment(me, "> @alice said so\n\n@bob @acme/frontend which shops?", 3, html(`<blockquote><p>${tag("alice")} said so</p></blockquote><p>${tag("bob")} ${team} which shops?</p>`)),
       comment(bot, "labelled", 2.5),
       comment(me, "", 2, html(`<p>${tag("Bob")} ${tag("me")} also ${tag("dave")}?</p>`)),
     ]);
@@ -371,13 +371,21 @@ describe("waiting", () => {
     expect(item.person).toBeUndefined();
   });
 
+  it("WAI-01: a statement waits on nobody, even one that tags someone; a question in an earlier comment of mine still counts", () => {
+    const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
+    const stated = issue(70, [comment(me, "@bob deployed to staging", 1, { bodyHTML: `<p>${tag("bob")} deployed to staging</p>` })]);
+    expect(run({ involved: [stated] }).items).toEqual([]);
+    const both = issue(71, [comment(me, "@bob which shops?", 2, { bodyHTML: `<p>${tag("bob")} which shops?</p>` }), comment(me, "found the logs", 1)]);
+    expect(run({ involved: [both] }).items[0]).toMatchObject({ section: "wait_answer", waitingOn: [{ login: "bob" }] });
+  });
+
   it("WAI-02: a question that tags nobody waits on nobody", () => {
     const [item] = run({ involved: [issue(70, [comment(me, "@bob which shops?", 1, { bodyHTML: "<p>@bob which shops?</p>" })])] }).items;
     expect(item).toMatchObject({ section: "wait_answer", waitingOn: undefined });
   });
 
   it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
-    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "", 5)])] });
+    const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "any news?", 5)])] });
     expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
     expect(attention.items[0].wait).toEqual({ reason: "review", since: daysAgo(4), overdue: "waiting for review" });
     expect(attention.items[0].waitingOn?.map((who) => who.login)).toEqual(["bob"]);
@@ -392,9 +400,11 @@ describe("answered", () => {
     expect(item.othersActivityAt).toBe(daysAgo(0.5));
   });
 
-  it("ATT-16, MEN-02: replying makes it wait again; a 👍 on the answer clears it", () => {
-    const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
+  it("ATT-16, MEN-02, WAI-01: replying with a question makes it wait again, a statement doesn't; a 👍 on the answer clears it", () => {
+    const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, which version?", 0.5)]);
     expect(sections(run({ involved: [replied] }).items)).toEqual([[70, "wait_answer"]]);
+    const stated = issue(72, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
+    expect(run({ involved: [stated] }).items).toEqual([]);
     const reacted = issue(71, [comment(me, "which shops?", 2), comment(alice, "Danish", 1, { reactionGroups: [{ viewerHasReacted: true }] })]);
     expect(run({ involved: [reacted] }).items).toEqual([]);
   });

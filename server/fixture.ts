@@ -210,6 +210,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       ),
       // A comment on my PR's conversation [ATT-16].
       issue(111, [comment(bob, "Big change. Could you split the index migration into its own PR?", 0.2)], "Faster product search", { __typename: "PullRequest", author: me, createdAt: daysAgo(2) }),
+      // A statement that tags someone isn't a question: nobody owes me an answer, so it's not listed [WAI-01].
+      issue(145, [comment(me, "@bob deployed the fix to staging.", 0.5, { bodyHTML: `<p>${tag("bob")} deployed the fix to staging.</p>` })], "Checkout hangs on slow networks"),
       // Someone else's old thread where people kept going after me: not mine to follow [ATT-16].
       issue(144, [comment(me, "Same here on 2.3", 400), comment(bob, "+1", 300)], "Crash on startup"),
     ],
