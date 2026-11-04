@@ -215,6 +215,20 @@ export function detailsQuery(prs: PullRequestNode[], orgs: string[], refs: Issue
   return { query: `query Details {\n${fields.join("\n")}\n}`, compares };
 }
 
+// GitHub works out at most this many PRs' merge state per request; asked about more, it says BLOCKED for all of them, even
+// in search and in a repo's PR list. Seen on 2026-11-04 [PRS-13].
+export const MERGE_STATE_BATCH = 5;
+
+// The merge state of up to MERGE_STATE_BATCH PRs, in one request; m0, m1, … map back to their keys.
+export function mergeStateQuery(prs: PullRequestNode[]): { query: string; keys: Record<string, string> } {
+  const keys: Record<string, string> = {};
+  const fields = prs.map((pr, index) => {
+    keys[`m${index}`] = prKey(pr);
+    return `m${index}: ${repository(pr.repository.nameWithOwner)} { pullRequest(number: ${pr.number}) { mergeStateStatus } }`;
+  });
+  return { query: `query MergeState {\n${fields.join("\n")}\n}`, keys };
+}
+
 export type CheckContext = { status?: string; conclusion?: string | null; state?: string; isRequired?: boolean };
 
 // How the checks the repo requires stand. A check run passes as success, neutral or skipped, like GitHub counts it [PRS-14].

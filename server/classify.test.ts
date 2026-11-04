@@ -4,7 +4,7 @@ import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, mergeUnclaimed, requiredChecks, searchQuery, searchVariables, unclaimedSearches } from "./queries";
+import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, mergeStateQuery, mergeUnclaimed, requiredChecks, searchQuery, searchVariables, unclaimedSearches } from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = AttentionConfig.parse({ orgs: ["acme"] });
@@ -16,9 +16,9 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(
   parts: Parameters<typeof search>[0],
   behind: Record<string, number> = {},
-  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; issues?: Details["issues"]; checks?: Details["checks"] } = {},
+  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; issues?: Details["issues"]; checks?: Details["checks"]; mergeState?: Details["mergeState"] } = {},
 ) {
-  const details = { behind, fieldOptions: options.fieldOptions ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {} };
+  const details = { behind, fieldOptions: options.fieldOptions ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {}, mergeState: options.mergeState ?? {} };
   return classify({ data: search(parts), details, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
@@ -47,10 +47,11 @@ describe("doing", () => {
     expect(item.chips).toContainEqual({ text: "CI failing", tone: "bad" });
   });
 
-  it("PRS-02: lists unresolved threads waiting on me; a thread I answered waits on the reviewer", () => {
+  it("PRS-02: lists unresolved threads waiting on me; a thread I answered waits on the reviewer I asked again", () => {
     expect(run({ mine: [pr(3, { reviewThreads: { nodes: [thread(alice, 1)] } })] }).items[0]).toMatchObject({ section: "changes", actions: ["address"] });
     const reviewed = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1.5) }] };
-    expect(sections(run({ mine: [pr(3, { latestReviews: reviewed, reviewThreads: { nodes: [thread(me, 1)] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
+    const answered = { latestReviews: reviewed, reviewThreads: { nodes: [thread(me, 1)] } };
+    expect(sections(run({ mine: [pr(3, { ...answered, reviewRequests: { nodes: [{ requestedReviewer: alice }] } })] }).items)).toEqual([[3, "wait_reviewer"]]);
   });
 
   it("PRS-02: requested changes followed by a new push wait on that reviewer", () => {
@@ -115,6 +116,15 @@ describe("ready to merge and behind base", () => {
     const blocked = { reviewDecision: "APPROVED" as const, mergeStateStatus: "BLOCKED" as const };
     expect(run({ mine: [pr(1, blocked, "PENDING")] }).items[0]).toMatchObject({ section: "ready" });
     expect(run({ mine: [pr(1, { ...blocked, reviewDecision: "REVIEW_REQUIRED", reviewRequests: asked })] }).items[0].chips.map((c) => c.text)).not.toContain("blocked by repo rules");
+  });
+
+  it("PRS-13: the merge state asked a few PRs at a time beats search's, which says BLOCKED for all once there are more", () => {
+    const approved = pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" });
+    expect(run({ mine: [approved] }, {}, { mergeState: { [key(1)]: "CLEAN" } }).items[0]).toMatchObject({ section: "ready", actions: ["merge"] });
+    expect(run({ mine: [pr(1, { mergeStateStatus: "CLEAN" })] }, {}, { mergeState: { [key(1)]: "BLOCKED" } }).items[0].actions).toEqual(["request_review"]);
+    const { query, keys } = mergeStateQuery([pr(7), pr(8)]);
+    expect(query).toContain('m1: repository(owner: "acme", name: "shop") { pullRequest(number: 8) { mergeStateStatus } }');
+    expect(keys).toEqual({ m0: key(7), m1: key(8) });
   });
 
   it("PRS-13: UNKNOWN or missing merge state decides nothing", () => {
@@ -312,19 +322,16 @@ describe("waiting", () => {
     expect(attention.items[2].wait).toEqual({ reason: "question", since: daysAgo(1), overdue: undefined });
   });
 
-  it("WAI-01: says why each waits: a review, a re-review after my reply, a question, or a review nobody was asked for again", () => {
+  it("WAI-01: says why each waits: a review, a re-review after my reply, or a question", () => {
     const latestReviews = { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] };
     const replied = run({ mine: [pr(1, { reviewDecision: "CHANGES_REQUESTED", latestReviews })] }).items[0];
     expect(replied).toMatchObject({ section: "wait_reviewer", wait: { reason: "re-review" } });
-    const commented = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
-    expect(run({ mine: [pr(2, { latestReviews: commented })] }).items[0].wait?.reason).toBe("nobody asked again");
     const unseen = run({ mine: [pr(3, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0];
     expect(unseen.wait?.reason).toBe("review");
   });
 
-  it("WAI-01: while CI runs and nobody is asked, CI running says why, not a missing request", () => {
-    const commented = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
-    const [item] = run({ mine: [pr(1, { latestReviews: commented }, "PENDING")] }).items;
+  it("WAI-01: while CI runs on an approved PR, CI running says why, not a missing request", () => {
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", autoMergeRequest: { enabledAt: daysAgo(1) } }, "PENDING")] }).items;
     expect(item).toMatchObject({ section: "wait_ci", wait: { reason: undefined } });
     expect(chips(item)).toContain("CI running");
   });
@@ -495,9 +502,17 @@ describe("needs a reviewer", () => {
     expect(run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: null }] } })] }).items[0].section).toBe("wait_review");
   });
 
-  it("WAI-02: after a review that only commented, with nobody asked again, it waits on nobody", () => {
-    const latestReviews = { nodes: [{ author: alice, state: "COMMENTED", submittedAt: daysAgo(1) }] };
-    expect(run({ mine: [pr(1, { latestReviews })] }).items[0]).toMatchObject({ section: "wait_review", person: undefined, waitingOn: undefined });
+  it("PRS-12: a review that only commented, by a person or a bot, with nobody asked again, is mine to re-request", () => {
+    for (const author of [alice, bot]) {
+      const latestReviews = { nodes: [{ author, state: "COMMENTED", submittedAt: daysAgo(1) }] };
+      expect(run({ mine: [pr(1, { latestReviews, mergeStateStatus: "BLOCKED" })] }).items[0]).toMatchObject({ section: "needs_reviewer", actions: ["request_review"] });
+      expect(run({ mine: [pr(1, { latestReviews, mergeStateStatus: "CLEAN" })] }).items[0].actions).toEqual(["request_review", "merge"]);
+    }
+  });
+
+  it("PRS-12: a bot's approval is an approval, when the repo counts it", () => {
+    const latestReviews = { nodes: [{ author: bot, state: "APPROVED", submittedAt: daysAgo(1) }] };
+    expect(run({ mine: [pr(1, { latestReviews, reviewDecision: "APPROVED", mergeStateStatus: "CLEAN" })] }).items[0]).toMatchObject({ section: "ready", actions: ["merge"] });
   });
 
   it("PRS-12: my own review doesn't count as asking", () => {
