@@ -226,10 +226,20 @@ for (const layout of layouts) {
       await filter(["🔙 Backend", "My repos"]);
       await done();
       await shot("next-up-source");
-      // Picks are saved, so clear them for the next layout.
-      await page.getByRole("button", { name: /^Filter/ }).click();
+      // Clear empties a source and a scope together. Picks are saved, so this also resets the next layout.
+      // My repos is still ticked from above; tick a scope beside it.
+      await filter(["🔙 Backend"]);
+      await page.waitForTimeout(300);
+      const ticked = await page.getByRole("checkbox", { checked: true }).count();
+      if (ticked !== 2) throw new Error(`Expected a source and a scope ticked before Clear, got ${ticked}`);
       await page.getByRole("button", { name: "Clear" }).click();
+      await page.waitForTimeout(300);
+      const stillTicked = await page.getByRole("checkbox", { checked: true }).count();
+      if (stillTicked) throw new Error(`Clear left ${stillTicked} filter(s) ticked`);
       await done();
+      const label = await page.getByRole("button", { name: /^Filter/ }).first().getAttribute("aria-label");
+      if (label !== "Filter") throw new Error(`Filter button after Clear: ${label}`);
+      await shot("next-up-cleared");
       // Settings from the gear: a typo is caught, then a repo is added and saved to config.json [SRC-02].
       await doing();
       await page.getByRole("button", { name: "Attention Span settings" }).click();

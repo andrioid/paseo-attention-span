@@ -428,15 +428,14 @@ function AttentionList({
           unclaimed={view.unclaimed}
           unclaimedFrom={view.unclaimedFrom}
           selected={view.scopes}
-          onSelect={(scopes) => {
-            attention.setView({ ...view, scopes });
-            saveScopes({ scopes }).catch((error) => toast.error(`Saving the filter failed: ${(error as Error).message}`));
-          }}
           sources={nextUpSources(view.config)}
           selectedSources={view.sources}
-          onSelectSources={(sources) => {
-            attention.setView({ ...view, sources });
-            saveSources({ sources }).catch((error) => toast.error(`Saving the filter failed: ${(error as Error).message}`));
+          // One setView for both, so clearing scopes and sources together can't put either back.
+          onFilter={(change) => {
+            attention.setView({ ...view, ...change });
+            const failed = (error: Error) => toast.error(`Saving the filter failed: ${error.message}`);
+            if (change.scopes) saveScopes({ scopes: change.scopes }).catch(failed);
+            if (change.sources) saveSources({ sources: change.sources }).catch(failed);
           }}
           agents={actions.agents}
           login={view.login}

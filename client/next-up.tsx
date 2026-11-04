@@ -21,11 +21,11 @@ interface Props {
   unclaimedFrom: UnclaimedSource;
   // Scopes I ticked in the filter; none means all [NXT-03].
   selected: string[];
-  onSelect: (scopes: string[]) => void;
   // Where Next up looks, and the sources I ticked; none means all [NXT-09].
   sources: NextUpSource[];
   selectedSources: string[];
-  onSelectSources: (sources: string[]) => void;
+  // Change either filter or both at once, so Clear empties both in one go.
+  onFilter: (change: { scopes?: string[]; sources?: string[] }) => void;
   agents: AgentSummary[];
   // Mine, so my repos show without the owner.
   login: string | null;
@@ -41,10 +41,10 @@ interface Props {
   onOpenAgent: (agentId: string) => void;
 }
 
-type RowProps = Omit<Props, "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "onSelect" | "sources" | "selectedSources" | "onSelectSources">;
+type RowProps = Omit<Props, "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "onFilter">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
-export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, onSelect, sources, selectedSources, onSelectSources, ...rowProps }: Props) {
+export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, onFilter, ...rowProps }: Props) {
   const styles = useStyles();
   const scopes = useMemo(() => [...new Set(unclaimed.map((issue) => issue.scope).filter((scope): scope is string => !!scope))].sort(), [unclaimed]);
   // Filter by the scopes I picked last time [NXT-03]; a picked scope with no issues left is ignored.
@@ -54,8 +54,8 @@ export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, onSel
   const shown = unclaimed.filter(
     (issue) => (active.length === 0 || (issue.scope && active.includes(issue.scope))) && (activeSources.length === 0 || issue.sources.some((id) => activeSources.includes(id))),
   );
-  const toggle = (scope: string) => onSelect(active.includes(scope) ? active.filter((s) => s !== scope) : [...active, scope]);
-  const toggleSource = (id: string) => onSelectSources(activeSources.includes(id) ? activeSources.filter((s) => s !== id) : [...activeSources, id]);
+  const toggle = (scope: string) => onFilter({ scopes: active.includes(scope) ? active.filter((s) => s !== scope) : [...active, scope] });
+  const toggleSource = (id: string) => onFilter({ sources: activeSources.includes(id) ? activeSources.filter((s) => s !== id) : [...activeSources, id] });
   const narrowedBy = [activeSources.length ? "sources" : null, active.length ? "scopes" : null].filter(Boolean).join(" and ");
   const [filtering, setFiltering] = useState(false);
   const picked = active.length + activeSources.length;
@@ -92,10 +92,7 @@ export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, onSel
         {filtering ? (
           <FilterSheet
             groups={groups}
-            onClear={() => {
-              onSelect([]);
-              onSelectSources([]);
-            }}
+            onClear={() => onFilter({ scopes: [], sources: [] })}
             onClose={() => setFiltering(false)}
           />
         ) : null}
@@ -154,6 +151,7 @@ function FilterOption({ label, checked, first, onPress }: { label: string; check
     <Pressable
       accessibilityRole="checkbox"
       accessibilityState={{ checked }}
+      aria-checked={checked}
       accessibilityLabel={label}
       onPress={onPress}
       {...hover}
