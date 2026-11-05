@@ -21,12 +21,14 @@ import { FIXTURE_CONTEXT, fixtureDetails, fixtureReviewerChoices } from "./serve
 import { FIXTURE } from "./server/gh";
 import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
+import { UpdateCheck } from "./server/update";
 import type { Chip } from "./shared/attention";
 import { readyProviders } from "./shared/providers";
 import * as rpc from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
   const attention = new AttentionService();
+  const updates = new UpdateCheck();
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
 
@@ -72,6 +74,13 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.itemDetails, ({ subject, target, checks }) => (FIXTURE ? Promise.resolve(fixtureDetails(subject, target, checks)) : itemDetails(subject, target, checks)));
   server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: FIXTURE ? "main" : await defaultBranch(repo) }));
   server.handle(rpc.feedbackInfo, () => feedbackInfo());
+  // [UPD-01]
+  server.handle(rpc.checkUpdate, () => ready(async () => {
+    const notice = await updates.get();
+    return notice && notice.latest !== attention.skippedUpdate ? notice : null;
+  }));
+  server.handle(rpc.applyUpdate, ({ latest }) => updates.apply(latest).then(() => ({ ok: true as const })));
+  server.handle(rpc.skipUpdate, ({ latest }) => ready(() => attention.skipUpdate(latest)).then(() => ({ ok: true as const })));
   // The server's Paseo connection expands the snapshot; the app's may not (getpaseo compact snapshots) [SES-06].
   server.handle(rpc.readyProviders, async (_input, { paseo }) => ({ providers: readyProviders((await paseo.providers.snapshot()).entries) }));
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: FIXTURE ? FIXTURE_CONTEXT : await sessionContext(kind, target) }));

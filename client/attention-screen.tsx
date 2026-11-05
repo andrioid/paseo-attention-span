@@ -20,6 +20,7 @@ import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
+import { UpdateNotice } from "./update";
 import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
@@ -397,6 +398,7 @@ function AttentionList({
         </View>
       </View>
       {feed.error ? <Text style={styles.danger}>{feed.error}</Text> : null}
+      <UpdateNotice />
 
       {undoable.map((row) => (
         <View key={row.id} style={[styles.panel, styles.row, { justifyContent: "space-between" }]}>

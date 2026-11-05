@@ -40,7 +40,7 @@ flowchart LR
     - optional merge method per repo [PRS-04]
     - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
     - `nextUp`: where unclaimed issues come from (`mine`, `orgs`, `repos`, set in Settings) and the org issue fields for priority, effort and scope [NXT-04]
-  - `state.json`: dismissals [ATT-08], the scopes and sources ticked in Next up's filter [NXT-03, NXT-09], my Paseo projects' GitHub repos [NXT-08] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
+  - `state.json`: dismissals [ATT-08], the scopes and sources ticked in Next up's filter [NXT-03, NXT-09], my Paseo projects' GitHub repos [NXT-08], the update put off with Not now [UPD-01] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
 
 ## Tabs
 
@@ -147,6 +147,18 @@ While an item has an open session, its main action is **Open session** instead, 
 Each session gets its own workspace on an empty scratch directory, so archiving that workspace closes it cleanly and nothing is written into the plugin. The agent reads the plugin's installed source by its path, which is why the npm package ships `requirements.yaml` and this file. Paseo evaluates the server as a bundle with no file location, so the source is the path Paseo's `config.json` records for the plugin whose manifest ID is `attention-span`, preferring the install under that ID. It uses the default profile and its mode, like other sessions: a plan mode would ask before nearly every step. Without the source it reads the repo through `gh api`. The prompt carries the version (`package.json`, or the commit in a checkout), phone or desktop, theme, tab and a failed refresh's error.
 
 The agent asks one question at a time from its kind's checklist, and checks the report against the requirements and docs, `config.json` and `state.json`, and open issues and discussions. A match gets its link and nothing else. It files an issue if a maintainer could finish and close it, otherwise a discussion in Q&A or Ideas, and says which and why. Posts are short up front, with the rest in collapsed `<details>` blocks, in English, in the user's voice, with nothing from their own setup they didn't write. It posts only after Post it in its question tool, or the reply "post" [SAFE-01], then archives its workspace (`archive_workspace`, or `archive_agent` without it). The client watches workspace updates, remembers the scratch ones by their directory, and opens Attention Span when one is removed, instead of leaving "workspace unavailable" on screen. The prompts are built in: `config.json` can't replace them, since they carry those rules.
+
+## Updates
+
+A notice above the list says when a newer version is out, and Update installs it [UPD-01].
+
+**Check.** Paseo has no update signal for plugins and doesn't tell a plugin its version. So the server asks Paseo's CLI the same thing `paseo plugin update` would: `$PASEO_CLI plugin update <id> --check --json --home $PASEO_HOME`. Paseo gives every plugin subprocess both variables, so this reaches the daemon the plugin runs in. The ID is the one Paseo's `config.json` lists this plugin under, found as Feedback finds the source. The answer covers each kind of install: a registry install's reviewed pin, npm's `latest`, or a Git remote's HEAD. Directory installs report `local` and get no notice, since Paseo never updates them. The server caches the answer for 12 hours, since the registry picks up npm releases twice a day, and retries a failed check after an hour.
+
+**Notice.** It shows the version, or the short commit for Git, where it comes from, and What's new: GitHub Releases, or Paseo's compare link for Git. Not now saves that version in `state.json` and hides the notice until a newer one comes out.
+
+**Update** is a tap on the version shown [SAFE-01]. The server runs `paseo plugin update <id>` pinned to it where Paseo allows: `--version` for npm and `--ref <commit>` for Git. A registry install accepts only `--yes`, which takes the reviewed pin. Paseo installs it and restarts the plugin itself, so no separate reload is needed. The restart ends the server process, so the CLI runs detached and outlives it. The app loads the new client on its own, with no page reload. While it runs, the notice polls every 2 seconds. Once the new version is running, the check says it's current and the notice goes. If the CLI fails, the server, still running, keeps the reason, and the notice shows it with Try again and the command to run by hand.
+
+In previews, `PASEO_ATTENTION_SPAN_FIXTURE_UPDATE=1` makes up an update from 0.4.3 to 0.5.0, and Update fails with "Previews don't update."
 
 ## GitHub requests
 

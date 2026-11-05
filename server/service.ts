@@ -123,6 +123,16 @@ export class AttentionService {
     await this.save();
   }
 
+  // "Not now" on an update notice holds until a newer one [UPD-01].
+  get skippedUpdate(): string | null {
+    return this.state.skippedUpdate;
+  }
+
+  async skipUpdate(latest: string): Promise<void> {
+    this.state.skippedUpdate = latest;
+    await this.save();
+  }
+
   // Who reviewed or was asked on my PRs in a repo, from the last fetch, and who I am [PRS-12].
   reviewers(repo: string): { recent: Reviewer[]; login: string | null } {
     const live = this.state.live?.attention;

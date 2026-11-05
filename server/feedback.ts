@@ -16,13 +16,19 @@ export async function feedbackInfo(): Promise<FeedbackInfo> {
 
 // Paseo evaluates the server as a bundle, so it has no file location of its own (import.meta.url is undefined).
 // Paseo's config.json records where each plugin's source is: take this plugin's, by its manifest's ID.
-export function pluginDir(paseoHome = process.env.PASEO_HOME || join(homedir(), ".paseo")): string | null {
+export function pluginDir(paseoHome?: string): string | null {
+  return ourInstall(paseoHome)?.path ?? null;
+}
+
+// The runtime ID this plugin is installed under, and its source. The update check names the ID [UPD-01].
+export function ourInstall(paseoHome = process.env.PASEO_HOME || join(homedir(), ".paseo")): { id: string; path: string } | null {
   try {
     const { plugins = {} } = JSON.parse(readFileSync(join(paseoHome, "config.json"), "utf8")) as { plugins?: Record<string, { path?: string }> };
     const ours = Object.entries(plugins)
       .filter(([, source]) => source.path && manifestId(source.path) === PLUGIN_ID)
       .sort(([a], [b]) => Number(b === PLUGIN_ID) - Number(a === PLUGIN_ID));
-    return ours[0]?.[1].path ?? null;
+    const [id, source] = ours[0] ?? [];
+    return id && source?.path ? { id, path: source.path } : null;
   } catch {
     return null;
   }

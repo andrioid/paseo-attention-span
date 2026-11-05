@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { pluginDir } from "./feedback";
+import { ourInstall, pluginDir } from "./feedback";
 
 // A Paseo home whose config.json lists the given plugin sources, each with a manifest of the given ID.
 function paseoHome(plugins: Record<string, string>): { home: string; dirs: Record<string, string> } {
@@ -36,5 +36,12 @@ describe("pluginDir", () => {
 
   it("FB-01: has none, rather than failing, without a config", () => {
     expect(pluginDir(join(tmpdir(), "no-such-paseo-home"))).toBeNull();
+  });
+});
+
+describe("ourInstall", () => {
+  it("UPD-01: gives the runtime ID the update check names", () => {
+    const { home, dirs } = paseoHome({ "attention-span-dev": "attention-span", other: "other-plugin" });
+    expect(ourInstall(home)).toEqual({ id: "attention-span-dev", path: dirs["attention-span-dev"] });
   });
 });

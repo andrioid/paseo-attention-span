@@ -107,6 +107,9 @@ functional:
   feedback:
     As a developer, I can:
       FB-01: tell the Attention Span project what to improve from the bottom of any tab, picking a problem, an idea or that I like it, with an agent that asks until it's clear, checks it against what's planned and already reported, and files it as an issue or a discussion, saying which and why, only once I approve the draft; so that feedback costs a minute and lands where it can be acted on or talked through.
+  updates:
+    As a developer, I can:
+      UPD-01: see when a newer version of Attention Span is out than the one I have, with what changed, and update to it with one tap or put it off until the next one; so that I get fixes without checking for them or going to a terminal.
 
 non_functional:
   github_usage:

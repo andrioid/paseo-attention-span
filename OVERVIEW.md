@@ -135,6 +135,7 @@ Everything else lives in `~/.config/paseo-attention-span/config.json` on the dae
 
 - **GitHub:** it reads your PRs, review requests, mentions and issues through `gh`, limited to the orgs and repos you've configured. By default it refreshes every 15 minutes, which uses about 7% of GitHub's hourly API allowance. I checked.
 - **Local files:** a cache of what it shows, your dismissals and your Next up filter live in `~/.config/paseo-attention-span/state.json` on the daemon host. That's it.
+- **Paseo:** about twice a day it asks Paseo whether a newer version of Attention Span is out, the same check `paseo plugin update --check` makes. Paseo looks it up in its plugin registry, on npm or on GitHub, depending on how you installed it. If there is one, the screen says so, with a link to what changed. Update installs it and restarts Attention Span. Nothing updates until you tap it.
 - **Agent providers:** when a session starts, the item's context goes into the agent's prompt: descriptions, comments, review threads, failing CI logs. That prompt goes to whichever provider your agent profile uses, so it's worth knowing which one that is.
 
 ## What it doesn't do (yet)
