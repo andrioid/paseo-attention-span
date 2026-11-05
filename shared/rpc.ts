@@ -5,6 +5,7 @@ import { SessionKind } from "./config";
 import type { ConfigStatus, CoverageCheck, SetupStatus } from "./setup";
 import type { FeedbackInfo } from "./feedback";
 import type { ReadyProvider } from "./providers";
+import type { UpdateNotice } from "./update";
 
 // Both sides are this plugin, so the types are checked by TypeScript, not repeated as schemas.
 const view = z.custom<AttentionView>();
@@ -76,3 +77,9 @@ export const sessionContext = defineRpc({
 export const feedbackInfo = defineRpc({ name: "feedback.info", input: z.object({}), output: z.custom<FeedbackInfo>() });
 // The host's ready providers, read by the plugin's server: the app's own snapshot can arrive compact, with no entries [SES-06].
 export const readyProviders = defineRpc({ name: "providers.ready", input: z.object({}), output: z.custom<{ providers: ReadyProvider[] }>() });
+
+// A newer Attention Span, by Paseo's own update check; null when there's none or it was put off [UPD-01].
+export const checkUpdate = defineRpc({ name: "update.check", input: z.object({}), output: z.custom<UpdateNotice | null>() });
+// Starts `paseo plugin update` for the version on offer; it restarts the plugin when it's done.
+export const applyUpdate = defineRpc({ name: "update.apply", input: z.object({ latest: z.string() }), output: done });
+export const skipUpdate = defineRpc({ name: "update.skip", input: z.object({ latest: z.string() }), output: done });
