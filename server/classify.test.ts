@@ -659,12 +659,12 @@ describe("history", () => {
       reviewed: [{ number: 65, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository, author: alice, labels: labels("bug") }],
     }));
     expect(items.map((item) => [item.number, item.work, chips(item)])).toEqual([
-      [60, "bug", ["🐞 bug"]],
-      [61, "task", ["🔧 task"]],
-      [62, "feature", ["🚀 feature"]],
+      [60, "bug", ["bug"]],
+      [61, "task", ["task"]],
+      [62, "feature", ["feature"]],
       [63, undefined, []],
       [64, undefined, []],
-      [65, "bug", ["🐞 bug"]],
+      [65, "bug", ["bug"]],
     ]);
   });
 

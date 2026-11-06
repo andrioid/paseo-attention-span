@@ -72,4 +72,5 @@ export function workEmoji(item: { kind: "pr" | "issue"; work?: WorkKind }): stri
   return item.work ? WORK_EMOJI[item.work] : item.kind === "pr" ? PR_EMOJI : undefined;
 }
 
-export const workChip = (kind: WorkKind) => ({ text: `${WORK_EMOJI[kind]} ${kind}`, tone: "neutral" as const });
+// Chips are plain words like every other chip; the emoji are for the copied lines.
+export const workChip = (kind: WorkKind) => ({ text: kind, tone: "neutral" as const });

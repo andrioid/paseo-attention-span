@@ -144,8 +144,8 @@ describe("pending changes", () => {
   });
 
   it("FRESH-02, HIS-04: until History is fetched, the issue type or title prefix tells the kind of work", () => {
-    expect(doneItem({ ...issue("i"), type: "Bug" }, at)).toMatchObject({ work: "bug", chips: [{ text: "🐞 bug" }] });
-    expect(doneItem({ ...item("a", "ready", "x"), title: "feat: export" }, at)).toMatchObject({ work: "feature", chips: [{ text: "🚀 feature" }] });
+    expect(doneItem({ ...issue("i"), type: "Bug" }, at)).toMatchObject({ work: "bug", chips: [{ text: "bug" }] });
+    expect(doneItem({ ...item("a", "ready", "x"), title: "feat: export" }, at)).toMatchObject({ work: "feature", chips: [{ text: "feature" }] });
     expect(doneItem(issue("i"), at, true)).toMatchObject({ notPlanned: true });
     expect(doneItem(item("a", "ready", "x"), at).work).toBeUndefined();
   });
