@@ -1,5 +1,6 @@
 import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
+import { workChip, workKind } from "../shared/work";
 import type { State } from "./store";
 
 export interface ViewMeta {
@@ -42,6 +43,8 @@ export function isPending({ at, effect }: Pending, fetchedAt: Record<FeedId, str
 export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanned = false): Item {
   const { key, repo, number, title, url } = source;
   const kind = "kind" in source ? source.kind : "issue";
+  // Labels come with the next History fetch; until then the issue type and title prefix tell what kind of work it was [HIS-04].
+  const work = workKind({ type: "type" in source ? source.type : undefined, title });
   return {
     key,
     section: "done",
@@ -51,9 +54,12 @@ export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanne
     number,
     title,
     url,
-    chips: notPlanned ? [{ text: "not planned", tone: "neutral" }] : [],
+    chips: [...(work ? [workChip(work)] : []), ...(notPlanned ? [{ text: "not planned", tone: "neutral" as const }] : [])],
+    ...(work ? { work } : {}),
+    ...(notPlanned ? { notPlanned: true as const } : {}),
     actions: [],
-    children: "children" in source ? source.children.map((child) => ({ ...child, draft: false, chips: [], attention: false })) : [],
+    // Not planned issues list their PRs on their own, as classifyHistory does [HIS-03].
+    children: "children" in source && !notPlanned ? source.children.map((child) => ({ ...child, draft: false, chips: [], attention: false })) : [],
     target: { kind, repo, number, title, url },
     othersActivityAt: "1970-01-01T00:00:00Z",
     closedAt,
@@ -73,7 +79,8 @@ export function applyPending(attention: Attention | null, history: Item[], pendi
     });
   const assigned = [...attention.assigned.filter((issue) => !off(issue.key) && effect(issue.key) !== "unclaimed"), ...attention.unclaimed.filter((issue) => effect(issue.key) === "claimed")];
   const unclaimed = [...attention.unclaimed.filter((issue) => !off(issue.key) && effect(issue.key) !== "claimed"), ...attention.assigned.filter((issue) => effect(issue.key) === "unclaimed")];
-  const known = new Set(history.map((item) => item.key));
+  // PRs listed under their issue count as known too, so a merge doesn't show twice [HIS-01].
+  const known = new Set(history.flatMap((item) => [item.key, ...item.children.map((child) => child.key)]));
   const done = Object.values(pending).flatMap(({ effect }) => (effect.kind === "done" && !known.has(effect.item.key) ? [effect.item] : []));
   // History is newest first; what I just finished is newest of all.
   return { attention: { ...attention, items, assigned, unclaimed }, history: [...done, ...history] };

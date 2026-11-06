@@ -7,6 +7,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
+import { workEmoji } from "../shared/work";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { type FeedbackKind, themeName } from "../shared/feedback";
@@ -1033,7 +1034,7 @@ function weekLabel(monday: Date): string {
 }
 
 // What I finished, by week, with reviews tucked away per week [HIS-01, HIS-02].
-// A week copies as a list of links to paste into a report; reviews stay out of it [HIS-03].
+// A week copies as a list of links to paste into a report, each led by its kind; reviews stay out of it [HIS-03, HIS-04].
 function History({ items, actions }: { items: Item[]; actions: Actions }) {
   const styles = useStyles();
   const copy = useCopy();
@@ -1048,6 +1049,8 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
   for (const [week, all] of [...weeks].sort((a, b) => b[0] - a[0])) {
     const done = all.filter((item) => item.section === "done").sort((a, b) => b.closedAt!.localeCompare(a.closedAt!));
     const reviewed = all.filter((item) => item.section === "reviewed");
+    // What was done, each led by its kind; not planned issues stay on screen but out of the report [HIS-03, HIS-04].
+    const copied = done.filter((item) => !item.notPlanned);
     const label = weekLabel(new Date(week));
     blocks.push(
       <View key={week} style={{ gap: 8 }}>
@@ -1056,12 +1059,17 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
           title={label}
           count={done.length}
           action={
-            done.length > 0 ? (
+            copied.length > 0 ? (
               <Button
                 icon="copy"
                 variant="ghost"
                 accessibilityLabel={`Copy links from ${label}`}
-                onPress={() => copy(linkList(done), `Copied ${done.length} link${done.length === 1 ? "" : "s"} from ${label}`)}
+                onPress={() =>
+                  copy(
+                    linkList(copied.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
+                    `Copied ${copied.length} link${copied.length === 1 ? "" : "s"} from ${label}`,
+                  )
+                }
               />
             ) : null
           }

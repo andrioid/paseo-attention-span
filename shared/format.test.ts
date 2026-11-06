@@ -15,6 +15,10 @@ describe("linkList", () => {
     expect(linkList([{ title: "[WIP] Fix a\\b", url: "https://github.com/acme/app/pull/1" }])).toBe("- [\\[WIP\\] Fix a\\\\b](https://github.com/acme/app/pull/1)");
   });
 
+  it("HIS-04: leads with a mark for what kind of work it was", () => {
+    expect(linkList([{ title: "Crash", url: "https://github.com/acme/app/issues/3", mark: "🐞" }])).toBe("- 🐞 [Crash](https://github.com/acme/app/issues/3)");
+  });
+
   it("WAI-03: leads with why and how long each has waited, for a nudge", () => {
     expect(linkList([{ title: "Retire v1", url: "https://github.com/acme/app/issues/2", lead: "Question 3d" }])).toBe("- Question 3d: [Retire v1](https://github.com/acme/app/issues/2)");
   });

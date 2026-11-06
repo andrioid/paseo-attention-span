@@ -67,7 +67,7 @@ Some orgs keep issues in a separate repo from the code. When that happens, the f
 
 The issues and PRs you finished in recent weeks, grouped by week, plus the PRs you reviewed that got merged. Reviews are work too, even if nobody counts them.
 
-There's a copy button per week that gives you a Markdown list of links. That's my standup prep now, and it takes about four seconds.
+There's a copy button per week that gives you a Markdown list of links, each led by what kind of work it was: 🐞 bug, 🚀 feature, 🔧 task, or 🔀 for a PR that's none of those. The kind comes from the issue type, else the labels, else a title like "fix: …", so it works whether or not your repos use issue types. Cards show it too. Issues closed as not planned stay out of the list. That's my standup prep now, and it takes about four seconds.
 
 ![History](docs/screenshots/desktop-dark-history.png)
 

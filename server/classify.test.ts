@@ -643,6 +643,46 @@ describe("history", () => {
     expect(item).toMatchObject({ section: "reviewed", person: { login: "alice" } });
   });
 
+  it("HIS-04: tells each finished item's kind from its type, labels or title, on a chip", () => {
+    const repository = { nameWithOwner: REPO };
+    const labels = (...names: string[]) => ({ nodes: names.map((name) => ({ name })) });
+    const items = classifyHistory(search({
+      closed: [
+        { number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository, issueType: { name: "Bug" }, labels: labels("enhancement") },
+        { number: 64, title: "Notes", url: "u", closedAt: daysAgo(5), stateReason: "COMPLETED", repository, issueType: null, labels: labels() },
+      ],
+      merged: [
+        { number: 61, title: "chore: tidy", url: "u", mergedAt: daysAgo(2), repository, labels: labels(), closingIssuesReferences: { nodes: [] } },
+        { number: 62, title: "Speed up", url: "u", mergedAt: daysAgo(3), repository, labels: labels("kind/feature"), closingIssuesReferences: { nodes: [] } },
+        { number: 63, title: "Tidy", url: "u", mergedAt: daysAgo(4), repository, closingIssuesReferences: { nodes: [] } },
+      ],
+      reviewed: [{ number: 65, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository, author: alice, labels: labels("bug") }],
+    }));
+    expect(items.map((item) => [item.number, item.work, chips(item)])).toEqual([
+      [60, "bug", ["🐞 bug"]],
+      [61, "task", ["🔧 task"]],
+      [62, "feature", ["🚀 feature"]],
+      [63, undefined, []],
+      [64, undefined, []],
+      [65, "bug", ["🐞 bug"]],
+    ]);
+  });
+
+  it("HIS-03: a not planned issue is marked, and the PRs that referred to it are listed on their own", () => {
+    const repository = { nameWithOwner: REPO };
+    const items = classifyHistory(search({
+      closed: [{ number: 60, title: "Dark mode", url: "u", closedAt: daysAgo(1), stateReason: "NOT_PLANNED", repository }],
+      merged: [{ number: 61, title: "Spike dark mode", url: "u", mergedAt: daysAgo(2), repository, closingIssuesReferences: { nodes: [{ number: 60, repository }] } }],
+    }));
+    expect(items.map((item) => [item.number, item.notPlanned, item.children.length])).toEqual([[60, true, 0], [61, undefined, 0]]);
+  });
+
+  it("HIS-04: asks for labels and issue types, bounded, with History's searches", () => {
+    const query = searchQuery(HISTORY_SEARCHES);
+    expect(query).toContain("issueType { name }");
+    expect(query.match(/labels\(first: 20\) \{ nodes \{ name \} \}/g)).toHaveLength(3);
+  });
+
   it("HIS-01: searches whole weeks back from Monday", () => {
     expect(searchVariables(config, NOW).merged).toContain("merged:>=2026-10-05"); // 4 weeks: Oct 5, 12, 19, 26
   });
