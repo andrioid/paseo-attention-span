@@ -143,6 +143,20 @@ describe("pending changes", () => {
     expect(doneItem(issue("i"), at, true)).toMatchObject({ kind: "issue", section: "done", chips: [{ text: "not planned" }] });
   });
 
+  it("FRESH-02, HIS-04: until History is fetched, the issue type or title prefix tells the kind of work", () => {
+    expect(doneItem({ ...issue("i"), type: "Bug" }, at)).toMatchObject({ work: "bug", chips: [{ text: "bug" }] });
+    expect(doneItem({ ...item("a", "ready", "x"), title: "feat: export" }, at)).toMatchObject({ work: "feature", chips: [{ text: "feature" }] });
+    expect(doneItem(issue("i"), at, true)).toMatchObject({ notPlanned: true });
+    expect(doneItem(item("a", "ready", "x"), at).work).toBeUndefined();
+  });
+
+  it("FRESH-02: a merged PR History already lists under its issue isn't shown twice", () => {
+    const pr = item("a", "ready", "x");
+    const issueDone = { ...item("i", "done", "x"), kind: "issue" as const, children: [{ key: "a", number: 1, title: "a", url: "u", draft: false, chips: [], attention: false }] };
+    const { history } = applyPending(lists([]), [issueDone], { a: pending({ kind: "done", item: doneItem(pr, at) }) });
+    expect(history.map((i) => i.key)).toEqual(["i"]);
+  });
+
   it("FRESH-02: a closed item leaves every list; claim and unclaim move the issue", () => {
     const shown = applyPending(lists([item("pr", "drafts", "x")], [issue("mine"), issue("back")], [issue("take"), issue("shut")]), [], {
       pr: pending({ kind: "gone" }),

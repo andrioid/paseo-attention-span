@@ -120,10 +120,13 @@ export interface LiveResult {
 }
 
 // One request for all three [HIS-01, HIS-02].
+// Labels say what kind of work a finished item was [HIS-04].
+type Labels = { labels?: Nodes<{ name: string }> };
+
 export interface HistoryResult {
-  merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> }>;
-  reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; author: Actor | null }>;
-  closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo }>;
+  merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
+  reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; author: Actor | null } & Labels>;
+  closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo; issueType?: { name: string } | null } & Labels>;
 }
 
 export type SearchResult = LiveResult & HistoryResult;

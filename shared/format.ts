@@ -15,10 +15,13 @@ export function daysSince(iso: string, now: Date): number {
   return (now.getTime() - new Date(iso).getTime()) / 86_400_000;
 }
 
-// A Markdown bullet list of links, for pasting a week's work into a report [HIS-03], or a nudge, each led by why and how
-// long so it skims down the left edge: "- Review 2h: [title](url)" [WAI-03].
-export function linkList(items: { title: string; url: string; lead?: string }[]): string {
-  return items.map(({ title, url, lead }) => `- ${lead ? `${lead}: ` : ""}[${title.replace(/[[\]\\]/g, "\\$&")}](${url})`).join("\n");
+// A Markdown bullet list of links, for pasting a week's work into a report, each led by what kind of work it was:
+// "- 🐞 [title](url)" [HIS-03, HIS-04]; or a nudge, each led by why and how long so it skims down the left edge:
+// "- Review 2h: [title](url)" [WAI-03].
+export function linkList(items: { title: string; url: string; lead?: string; mark?: string }[]): string {
+  return items
+    .map(({ title, url, lead, mark }) => `- ${mark ? `${mark} ` : ""}${lead ? `${lead}: ` : ""}[${title.replace(/[[\]\\]/g, "\\$&")}](${url})`)
+    .join("\n");
 }
 
 // Where a card's item lives: "app" for my own repos, "acme/app" for anyone else's, so same-named repos don't blur [ATT-05, NXT-10].

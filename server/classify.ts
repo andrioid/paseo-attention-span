@@ -15,6 +15,7 @@ import {
 } from "../shared/attention";
 import type { AttentionConfig, MergeMethod } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
+import { workChip, workKind } from "../shared/work";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
@@ -409,10 +410,16 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
 export function classifyHistory(data: HistoryResult): Item[] {
   const items: Item[] = [];
   const closed = new Map<string, Item>();
+  // What kind of work it was, on the card and its copied line [HIS-04].
+  const kinded = (item: Item, node: { title: string; labels?: { nodes: { name: string }[] }; issueType?: { name: string } | null }): Item => {
+    const work = workKind({ type: node.issueType?.name, labels: node.labels?.nodes.map((label) => label.name), title: node.title });
+    return work ? { ...item, work, chips: [workChip(work), ...item.chips] } : item;
+  };
   for (const issue of compact(data.closed.nodes)) {
     const notPlanned = issue.stateReason === "NOT_PLANNED";
-    const item = { ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: notPlanned ? [chip("not planned")] : [] };
-    closed.set(prKey(issue), item);
+    const item = kinded({ ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: notPlanned ? [chip("not planned")] : [], ...(notPlanned ? { notPlanned: true as const } : {}) }, issue);
+    // Not planned issues get no PRs under them: the PRs were still done, so they're listed on their own [HIS-03].
+    if (!notPlanned) closed.set(prKey(issue), item);
     items.push(item);
   }
   for (const pr of compact(data.merged.nodes)) {
@@ -420,9 +427,9 @@ export function classifyHistory(data: HistoryResult): Item[] {
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
     const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
     if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false });
-    else items.push({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt });
+    else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt }, pr));
   }
-  for (const pr of compact(data.reviewed.nodes)) items.push({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) });
+  for (const pr of compact(data.reviewed.nodes)) items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) }, pr));
   return items.sort(order);
 }
 

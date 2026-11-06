@@ -30,10 +30,11 @@ const SEARCHES = {
   unclaimed: { first: 100, nodes: "...pickable" },
   merged: {
     first: 100,
-    nodes: "... on PullRequest { number title url body mergedAt repository { nameWithOwner } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
+    nodes: "... on PullRequest { number title url body mergedAt repository { nameWithOwner } labels(first: 20) { nodes { name } } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
   },
-  reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } }" },
-  closed: { first: 100, nodes: "... on Issue { number title url closedAt stateReason repository { nameWithOwner } }" },
+  reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } labels(first: 20) { nodes { name } } }" },
+  // Labels and type say what kind of work each was [HIS-04].
+  closed: { first: 100, nodes: "... on Issue { number title url closedAt stateReason repository { nameWithOwner } issueType { name } labels(first: 20) { nodes { name } } }" },
 };
 export type SearchName = keyof typeof SEARCHES;
 

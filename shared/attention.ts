@@ -1,4 +1,5 @@
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
+import type { WorkKind } from "./work";
 
 // Tabs tell the story of my work: what I finished, what needs me, what waits on others, what's next.
 export type TabId = "history" | "doing" | "waiting" | "next";
@@ -200,6 +201,10 @@ export interface Item {
   othersActivityAt: string;
   // History only: when it merged or closed.
   closedAt?: string;
+  // History only: what kind of work it was, when that can be told [HIS-04].
+  work?: WorkKind;
+  // History only: an issue closed as not planned, kept out of the copied week [HIS-03].
+  notPlanned?: true;
 }
 
 // An issue to pick up: assigned to me [NXT-06] or nobody [NXT-01].

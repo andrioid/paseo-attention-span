@@ -121,21 +121,25 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
   const key = (n: number) => `${REPO}#${n}`;
   const closes = (number: number, title: string) => ({ nodes: [{ number, title, url: `https://github.com/${REPO}/issues/${number}`, repository }] });
   const fields = (priority: string, effort: string, scope: string) => ({ Priority: priority, Effort: effort, Scope: scope });
-  const merged = (number: number, title: string, days: number, closesIssue?: number) => ({
+  const labels = (...names: string[]) => ({ nodes: names.map((name) => ({ name })) });
+  const merged = (number: number, title: string, days: number, closesIssue?: number, ...names: string[]) => ({
     number,
     title,
     url: `https://github.com/${REPO}/pull/${number}`,
     mergedAt: daysAgo(days),
     repository,
+    labels: labels(...names),
     closingIssuesReferences: { nodes: closesIssue ? [{ number: closesIssue, repository }] : [] },
   });
-  const closed = (number: number, title: string, days: number, stateReason = "COMPLETED") => ({
+  const closed = (number: number, title: string, days: number, stateReason = "COMPLETED", type?: string, ...names: string[]) => ({
     number,
     title,
     url: `https://github.com/${REPO}/issues/${number}`,
     closedAt: daysAgo(days),
     stateReason,
     repository,
+    issueType: type ? { name: type } : null,
+    labels: labels(...names),
   });
 
   const data = search({
@@ -243,13 +247,24 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       { ...pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"), sources: ["org:acme"] },
       { ...pickable(165, {}, 3, "Task", "Devcontainers for pull requests", "me/tool"), sources: ["mine"] },
     ],
-    merged: [merged(170, "Nightly backup check", 1, 171), merged(172, "Fix VAT on credit notes", 3), merged(173, "Speed up the order list", 9, 174), merged(175, "Remove the old importer", 16)],
+    merged: [
+      merged(170, "Nightly backup check", 1, 171),
+      merged(172, "Fix VAT on credit notes", 3, undefined, "bug"),
+      merged(177, "chore: bump the build image", 4),
+      merged(178, "Tidy the settings screen", 5),
+      merged(173, "Speed up the order list", 9, 174),
+      merged(175, "Remove the old importer", 16),
+    ],
     reviewed: [
-      { number: 180, title: "New onboarding checklist", url: `https://github.com/${REPO}/pull/180`, mergedAt: daysAgo(2), repository, author: alice },
+      { number: 180, title: "New onboarding checklist", url: `https://github.com/${REPO}/pull/180`, mergedAt: daysAgo(2), repository, author: alice, labels: labels("feature") },
       { number: 181, title: "Bump dependencies", url: `https://github.com/${REPO}/pull/181`, mergedAt: daysAgo(4), repository, author: bob },
       { number: 182, title: "Sentry release tracking", url: `https://github.com/${REPO}/pull/182`, mergedAt: daysAgo(11), repository, author: alice },
     ],
-    closed: [closed(171, "Backups are never verified", 1), closed(174, "Order list takes 8 seconds", 9), closed(176, "Dark mode for the admin", 10, "NOT_PLANNED")],
+    closed: [
+      closed(171, "Backups are never verified", 1, "COMPLETED", "Feature"),
+      closed(174, "Order list takes 8 seconds", 9, "COMPLETED", undefined, "type: bug"),
+      closed(176, "Dark mode for the admin", 10, "NOT_PLANNED", undefined, "enhancement"),
+    ],
   });
   return {
     data,
