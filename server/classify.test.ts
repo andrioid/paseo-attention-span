@@ -37,9 +37,18 @@ describe("doing", () => {
     expect(sections(attention.items)).toEqual([[9, "review"], [3, "ci"], [2, "ci"], [1, "ready"]]);
   });
 
-  it("REV-01: lists PRs requesting my review, showing the author", () => {
+  it("REV-01, ATT-19: lists PRs requesting my review, showing the author as the author", () => {
     const [item] = run({ reviews: [pr(9, { author: alice })] }).items;
-    expect(item).toMatchObject({ section: "review", actions: ["review"], person: { login: "alice", avatarUrl: alice.avatarUrl } });
+    expect(item).toMatchObject({ section: "review", actions: ["review"], person: { login: "alice", avatarUrl: alice.avatarUrl, role: "author" } });
+  });
+
+  it("ATT-19: a review bot's comments left to address say so; someone waiting on me is a quote, without a role", () => {
+    const [bots] = run({ mine: [pr(1, { reviewThreads: { nodes: [thread(bot, 1)] } })] }).items;
+    expect(bots).toMatchObject({ section: "changes", person: { login: "review bot", bot: true, role: "changes" } });
+    const [mentioned] = run({ mine: [pr(2)], mentions: [mention(2, [comment(alice, "@me which one?", 0.5)], { __typename: "PullRequest" })] }).items;
+    expect(mentioned.section).toBe("reply");
+    expect(mentioned.person).toMatchObject({ login: "alice" });
+    expect(mentioned.person?.role).toBeUndefined();
   });
 
   it("PRS-01, PRS-09: lists my PRs with failing checks with Fix, and Rerun beside it", () => {
@@ -638,9 +647,9 @@ describe("history", () => {
     expect(items.map((item) => [item.number, item.children.map((c) => c.number)])).toEqual([[60, [61, 62]], [63, []]]);
   });
 
-  it("HIS-02: lists PRs I reviewed apart from my own work, with their author", () => {
+  it("HIS-02, ATT-19: lists PRs I reviewed apart from my own work, with their author", () => {
     const [item] = classifyHistory(search({ reviewed: [{ number: 63, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository: { nameWithOwner: REPO }, author: alice }] }));
-    expect(item).toMatchObject({ section: "reviewed", person: { login: "alice" } });
+    expect(item).toMatchObject({ section: "reviewed", person: { login: "alice", role: "author" } });
   });
 
   it("HIS-04: tells each finished item's kind from its type, labels or title, on a chip", () => {

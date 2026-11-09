@@ -35,6 +35,7 @@ functional:
       ATT-16: see recent comments without a mention on issues and pull requests I opened, until I reply, react or dismiss them; so that answers to my questions don't get lost, while other people's threads stay out unless someone tags me.
       ATT-17: choose to follow threads I've commented on, so recent replies after mine there show without a tag, off by default; so that surfacing other people's threads is my choice, and the list stays signal, not noise.
       ATT-18: see a calm, restful scene in Doing when nothing needs me, only once a refresh has confirmed it; so that a clear list feels like rest rather than a blank page, and calm never stands in for a check that failed or hasn't run.
+      ATT-19: tell at a glance what each person shown on an item is to it: someone I'm waiting on, who opened it, or whose comments are left to address, with an icon by their picture and the meaning in words when I point at it; so that a face and a time never leave me guessing.
   mentions:
     As a developer, I can:
       MEN-01: see open threads where a person mentioned me and is still waiting for my response; so that I only hear about mentions when someone is waiting for me.

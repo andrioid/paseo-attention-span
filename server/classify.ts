@@ -53,6 +53,12 @@ const behindChip = (count: number, base: string) => chip(`${count} behind ${base
 const person = (actor: Actor | null | undefined, since: string): Person | undefined =>
   actor ? { login: actor.login, avatarUrl: actor.avatarUrl, bot: actor.__typename === "Bot", since } : undefined;
 
+// Who opened it, which their line says with an icon rather than a quote [ATT-19].
+const author = (actor: Actor | null | undefined, since: string): Person | undefined => {
+  const who = person(actor, since);
+  return who ? { ...who, role: "author" } : undefined;
+};
+
 // Search returns empty objects for result types a fragment doesn't cover.
 const compact = <T>(nodes: (T | null | undefined)[]) => nodes.filter((node): node is T => !!node && Object.keys(node).length > 0);
 
@@ -238,7 +244,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       person:
         waiting ??
         (section === "answered" ? answer : undefined) ??
-        (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt } : undefined),
+        (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt, role: "changes" as const } : undefined),
       waitingOn: waitingOn.length > 0 ? waitingOn : undefined,
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
     };
@@ -252,7 +258,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       section: waiting ? "reply" : "review",
       actions: waiting ? [...replyActions(waiting), "review"] : ["review"],
       chips: stack.some((pr) => state(pr).ciFailing) ? [chip("CI failing", "bad")] : [],
-      person: waiting ?? person(stack[0].author, lastCommitAt),
+      person: waiting ?? author(stack[0].author, lastCommitAt),
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), lastCommitAt, waiting?.since),
     };
   };
@@ -429,7 +435,7 @@ export function classifyHistory(data: HistoryResult): Item[] {
     if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false });
     else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt }, pr));
   }
-  for (const pr of compact(data.reviewed.nodes)) items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: person(pr.author, pr.mergedAt) }, pr));
+  for (const pr of compact(data.reviewed.nodes)) items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt) }, pr));
   return items.sort(order);
 }
 
