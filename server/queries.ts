@@ -208,12 +208,19 @@ export function detailsQuery(prs: PullRequestNode[], orgs: string[], refs: Issue
       issueOrPullRequest(number: ${ref.number}) { ... on Issue { number title url state repository { nameWithOwner } } }
     }`),
   );
-  orgs.forEach((org, index) =>
-    fields.push(`o${index}: organization(login: ${JSON.stringify(org)}) {
-      issueFields(first: 50) { nodes { ... on IssueFieldSingleSelect { name options { name } } } }
-    }`),
-  );
+  orgs.forEach((org, index) => fields.push(orgFields(`o${index}`, org)));
   return { query: `query Details {\n${fields.join("\n")}\n}`, compares };
+}
+
+// An org's single-select issue fields with their options, in the org's order [NXT-02].
+const orgFields = (alias: string, org: string) => `${alias}: organization(login: ${JSON.stringify(org)}) {
+      issueFields(first: 50) { nodes { ... on IssueFieldSingleSelect { name options { name } } } }
+    }`;
+export type OrgFields = { issueFields?: { nodes: { name?: string; options?: { name: string }[] }[] } } | null;
+
+// The fields settings offers for Next up, from every org it might pick from [NXT-04]. An owner that's a person fails only its own field.
+export function issueFieldsQuery(orgs: string[]): string {
+  return `query IssueFields {\n${orgs.map((org, index) => orgFields(`o${index}`, org)).join("\n")}\n}`;
 }
 
 // GitHub works out at most this many PRs' merge state per request; asked about more, it says BLOCKED for all of them, even

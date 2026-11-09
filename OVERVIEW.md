@@ -53,7 +53,7 @@ When someone needs a nudge, **Copy list** next to their name copies their items 
 
 ## Next up: for when your plate is clear
 
-It does happen. Next up lists issues assigned to you first, because finishing what you've taken seems polite, and then open issues nobody's claimed. If your org uses issue fields for priority and effort, it ranks by those, so the important quick wins float to the top. Each issue shows its repo, priority, effort and scope, and whether someone already has a PR open for it. That last one has saved me from duplicating a colleague's work more than once.
+It does happen. Next up lists issues assigned to you first, because finishing what you've taken seems polite, and then open issues nobody's claimed. If your org uses issue fields for priority and effort, it ranks by those, so the important quick wins float to the top. Fields called Priority, Effort and Scope are picked up on their own; if yours are called something else, pick them in Settings. Each issue shows its repo, priority, effort and scope, and whether someone already has a PR open for it. That last one has saved me from duplicating a colleague's work more than once.
 
 ![Next up](docs/screenshots/desktop-dark-next-up.png)
 
@@ -132,7 +132,7 @@ Everything else lives in `~/.config/paseo-attention-span/config.json` on the dae
 - `prompts`: your own prompt template per session type, if you don't like mine.
 - `mergeMethods`: squash, merge or rebase, per repo.
 - `codeRepos`: where an issue repo's code lives. The screen asks and fills this in, so you probably won't touch it.
-- `nextUp`: where Next up picks from (also in Settings), and which org issue fields mean priority, effort and scope.
+- `nextUp`: where Next up picks from and which org issue fields mean priority, effort and scope, both also in Settings. A field's `order` (best first) is the one thing here only the file sets, for when the org's own option order isn't the ranking you want.
 - `refreshMinutes` (15), `waitingTooLongDays` (3), `staleDraftDays` (30), `mentionDays` (30) and `historyWeeks` (4).
 
 ## Your data
@@ -145,4 +145,4 @@ Everything else lives in `~/.config/paseo-attention-span/config.json` on the dae
 ## What it doesn't do (yet)
 
 - github.com only. No other forges and no GitHub Enterprise, for now.
-- Apart from orgs and repos, settings are edited by hand. Yes, in JSON. Sorry.
+- Apart from orgs, repos and Next up, settings are edited by hand. Yes, in JSON. Sorry.

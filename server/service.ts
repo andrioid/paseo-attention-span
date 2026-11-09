@@ -1,13 +1,14 @@
 import type { Attention, AttentionView, FeedId, FeedStatus, Item, Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import { AttentionConfig, githubRepoOf } from "../shared/config";
+import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
+import type { IssueField } from "../shared/setup";
 import { classify, classifyHistory } from "./classify";
 import { FIXTURE, graphql } from "./gh";
-import { fixture, FIXTURE_AGENTS } from "./fixture";
+import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS } from "./fixture";
 import type { Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
-import { type CheckContext, detailsQuery, HISTORY_SEARCHES, MERGE_STATE_BATCH, mergeStateQuery, mergeUnclaimed, prKey, requiredChecks, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import { type CheckContext, detailsQuery, HISTORY_SEARCHES, issueFieldsQuery, type OrgFields, MERGE_STATE_BATCH, mergeStateQuery, mergeUnclaimed, prKey, requiredChecks, type SearchName, searchQuery, searchVariables, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import { toLookUp } from "./references";
-import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpSources, saveState, State } from "./store";
+import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpFields, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -105,6 +106,36 @@ export class AttentionService {
   async setNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<void> {
     this.config = await saveNextUpSources(sources);
     await this.refresh("live").catch(() => {});
+  }
+
+  // Which org issue fields Next up uses, chosen in settings [NXT-04]. Only the live feed has Next up.
+  async setNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<void> {
+    this.config = await saveNextUpFields(fields);
+    await this.refresh("live").catch(() => {});
+  }
+
+  // The single-select fields of every org Next up might pick from, merged by name, for settings [NXT-04]:
+  // the orgs chosen, the owners of the repos chosen and of my projects, and of the issues it last showed.
+  async issueFields(): Promise<IssueField[]> {
+    if (FIXTURE) return FIXTURE_ISSUE_FIELDS;
+    await this.reloadConfig().catch(() => {});
+    const { orgs, repos, nextUp } = this.config;
+    const live = this.state.live?.attention;
+    const shown = [...(live?.unclaimed ?? []), ...(live?.assigned ?? [])].map((issue) => issue.repo);
+    const owners = [...orgs, ...nextUp.orgs, ...[...repos, ...nextUp.repos, ...this.state.projectRepos, ...shown].map((repo) => repo.split("/")[0])];
+    const unique = [...new Map(owners.map((owner) => [owner.toLowerCase(), owner])).values()];
+    if (unique.length === 0) return [];
+    const result = await graphql<Record<string, OrgFields>>(issueFieldsQuery(unique));
+    const merged = new Map<string, IssueField>();
+    unique.forEach((org, index) => {
+      for (const field of result[`o${index}`]?.issueFields?.nodes ?? []) {
+        if (!field.name || !field.options) continue;
+        const known = merged.get(field.name.toLowerCase());
+        if (known) known.orgs.push(org);
+        else merged.set(field.name.toLowerCase(), { name: field.name, options: field.options.map((option) => option.name), orgs: [org] });
+      }
+    });
+    return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // Replies on others' threads without a tag [ATT-17]. Only the live feed has them.
@@ -265,8 +296,10 @@ export class AttentionService {
   // Behind counts [UPS-07], required checks [PRS-14] and issue field option order [NXT-02].
   private async details(data: Pick<LiveResult, "mine" | "assigned" | "unclaimed">): Promise<Details> {
     const prs = data.mine.nodes.filter((pr) => pr?.headRefName && !pr.isCrossRepository);
-    const { priority, effort } = this.config.nextUp;
-    const needsOptions = [priority, effort].some((field) => field && !field.order);
+    const needsOptions = (["priority", "effort"] as const).some((role) => {
+      const field = nextUpField(this.config, role);
+      return field && !field.order;
+    });
     const issues = [...data.unclaimed.nodes, ...data.assigned.nodes];
     const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
     const refs = toLookUp(data.mine.nodes.filter((pr) => pr?.repository));

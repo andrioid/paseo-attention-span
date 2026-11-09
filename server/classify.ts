@@ -13,7 +13,7 @@ import {
   type Target,
   type WaitingOn,
 } from "../shared/attention";
-import type { AttentionConfig, MergeMethod } from "../shared/config";
+import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField, sameField } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import { workChip, workKind } from "../shared/work";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
@@ -565,13 +565,13 @@ export function mergeMethodFor(pr: PullRequestNode, config: AttentionConfig): Me
 // ---- Next up: issues by priority, effort, then age [NXT-02] ----
 
 function rankIssues(nodes: PickableNode[], details: Details, config: AttentionConfig): NextUpIssue[] {
-  const { priority, effort, scope } = config.nextUp;
-  const valueOf = (node: PickableNode, field: string | undefined) =>
-    field ? node.issueFieldValues.nodes.find((value) => value.field?.name === field)?.name : undefined;
+  const [priority, effort, scope] = FIELD_ROLES.map((role) => nextUpField(config, role));
+  const valueOf = (node: PickableNode, field: string | undefined) => node.issueFieldValues.nodes.find((value) => sameField(value.field?.name, field))?.name;
+  const optionsOf = (field: string) => Object.entries(details.fieldOptions).find(([name]) => sameField(name, field))?.[1];
   // Position in the configured order (matched by name), else in the field's own options; missing goes last.
   const position = (value: string | undefined, ranked: { field: string; order?: string[] } | undefined) => {
     if (!value || !ranked) return Infinity;
-    const order = ranked.order ?? details.fieldOptions[ranked.field] ?? [];
+    const order = ranked.order ?? optionsOf(ranked.field) ?? [];
     const index = order.findIndex((name) => value.toLowerCase().includes(name.toLowerCase()));
     return index < 0 ? Infinity : index;
   };

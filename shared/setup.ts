@@ -1,3 +1,5 @@
+import type { FieldRole } from "./config";
+
 // What getting started needs, for the setup checklist [SET-01] and the settings screen [SRC-02].
 
 export interface ConfigStatus {
@@ -7,6 +9,8 @@ export interface ConfigStatus {
   repos: string[];
   // Where Next up looks; none chosen falls back to `orgs` and `repos`, then my Paseo projects [NXT-04, NXT-08].
   nextUp: { mine: boolean; orgs: string[]; repos: string[] };
+  // The issue field chosen for each role, null when turned off; a role left out uses the field named after it [NXT-04].
+  fields: Partial<Record<FieldRole, string | null>>;
   // Replies on others' threads count without a tag [ATT-17].
   followThreads: boolean;
 }
@@ -29,3 +33,10 @@ export function blocks(status: SetupStatus): boolean {
 // An org or repo checked on GitHub before it's saved: its exact name, or why it can't be added.
 export type CoverageCheck = { name: string; error: null } | { name: null; error: string };
 export type CoverageKind = "org" | "repo";
+
+// A single-select issue field Next up can use, merged by name across the orgs that have it [NXT-04].
+export interface IssueField {
+  name: string;
+  options: string[];
+  orgs: string[];
+}

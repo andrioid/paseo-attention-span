@@ -4,12 +4,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import * as rpc from "../shared/rpc";
-import type { ConfigStatus, CoverageKind } from "../shared/setup";
+import { DEFAULT_FIELD, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
+import type { ConfigStatus, CoverageKind, IssueField } from "../shared/setup";
 import { VIEW_QUERY_KEY } from "./data";
 import { Button, StylesProvider, useStyles } from "./ui";
 
 const COVERAGE_QUERY_KEY = ["attention-span", "coverage"] as const;
 const MY_ORGS_QUERY_KEY = ["attention-span", "my-orgs"] as const;
+const FIELDS_QUERY_KEY = ["attention-span", "issue-fields"] as const;
 // A caption belongs to the card above it, so it sits closer to that card than to the next heading.
 const CAPTION = { marginTop: -24, marginBottom: 16 };
 
@@ -30,6 +32,7 @@ function Coverage() {
   const save = useRpc(rpc.setCoverage);
   const saveNextUp = useRpc(rpc.setNextUpSources);
   const saveFollow = useRpc(rpc.setFollowThreads);
+  const saveFields = useRpc(rpc.setNextUpFields);
   const coverage = useQuery({ queryKey: COVERAGE_QUERY_KEY, queryFn: () => fetchCoverage({}) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,7 @@ function Coverage() {
         </SettingsCard>
       </SettingsSection>
     );
-  const { orgs, repos, nextUp, followThreads } = coverage.data;
+  const { orgs, repos, nextUp, fields, followThreads } = coverage.data;
   // A file that doesn't parse is left for the person who edited it.
   if (coverage.data.error)
     return (
@@ -61,6 +64,8 @@ function Coverage() {
       await send();
       queryClient.setQueryData(COVERAGE_QUERY_KEY, { ...coverage.data!, ...next });
       await queryClient.invalidateQueries({ queryKey: VIEW_QUERY_KEY });
+      // Other orgs may have other fields.
+      if (next.orgs || next.repos || next.nextUp) void queryClient.invalidateQueries({ queryKey: FIELDS_QUERY_KEY });
     } catch (failure) {
       setError(`Saving failed: ${(failure as Error).message}`);
     } finally {
@@ -106,6 +111,7 @@ function Coverage() {
               : "None chosen: using your Paseo projects."}
         </Text>
       </View>
+      <NextUpFields value={fields} disabled={saving} onChange={(role, field) => write({ fields: { ...fields, [role]: field } }, () => saveFields({ [role]: field }))} />
       <View style={{ gap: 8 }}>
         <SettingsSection title="Replies">
           <SettingsCard>
@@ -162,6 +168,62 @@ function NextUpSources({ value, disabled, onChange }: { value: ConfigStatus["nex
         <AddRow kind="repo" placeholder="owner/name" existing={value.repos} disabled={disabled} onAdd={(name) => onChange({ ...value, repos: [...value.repos, name] })} />
       </SettingsCard>
     </SettingsSection>
+  );
+}
+
+const ROLE_LABEL: Record<FieldRole, string> = { priority: "Priority", effort: "Effort", scope: "Scope" };
+const ROLE_HINT: Record<FieldRole, string> = {
+  priority: "Ranks the list, in the field's order",
+  effort: "Breaks ties, in the field's order",
+  scope: "Adds a filter to Next up",
+};
+
+// Which org issue fields rank and filter Next up [NXT-04], picked from the fields its orgs have. Until I pick, a field
+// named after the role is used, so an org with Priority and Effort needs no setup.
+function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fields"]; disabled: boolean; onChange: (role: FieldRole, field: string | null) => Promise<void> }) {
+  const styles = useStyles();
+  const fetchFields = useRpc(rpc.issueFields);
+  const available = useQuery({ queryKey: FIELDS_QUERY_KEY, queryFn: () => fetchFields({}) });
+  const fields: IssueField[] = available.data?.fields ?? [];
+  const find = (name: string | null | undefined) => fields.find((field) => sameField(field.name, name ?? undefined));
+  // What each role uses now: the chosen field, or the one named after it if an org has it. Names match without case,
+  // so a field typed "priority" shows as GitHub's "Priority".
+  const current = (role: FieldRole): string | null => {
+    const chosen = role in value ? (value[role] ?? null) : DEFAULT_FIELD[role];
+    return find(chosen)?.name ?? (role in value ? chosen : null);
+  };
+  const none = available.isLoading ? "Loading…" : "None";
+
+  return (
+    <View style={{ gap: 8 }}>
+      <SettingsSection title="Next up fields">
+        <SettingsCard>
+          {FIELD_ROLES.map((role) => {
+            const chosen = current(role);
+            // A field no org has any more still shows, so it can be seen and changed.
+            const missing = chosen && available.data && !find(chosen) ? [{ label: `${chosen} (not found)`, value: chosen }] : [];
+            const hint = !(role in value) && chosen ? `${ROLE_HINT[role]}. Picked by its name` : ROLE_HINT[role];
+            return (
+              <SettingsSelect
+                key={role}
+                label={ROLE_LABEL[role]}
+                hint={hint}
+                error={role === "priority" && available.error ? (available.error as Error).message : null}
+                value={chosen ?? ""}
+                options={[{ label: none, value: "" }, ...missing, ...fields.map((field) => ({ label: field.name, value: field.name }))]}
+                disabled={disabled || !available.data}
+                onValueChange={(field) => void onChange(role, field || null)}
+              />
+            );
+          })}
+        </SettingsCard>
+      </SettingsSection>
+      <Text style={[styles.muted, CAPTION]}>
+        {available.data && fields.length === 0
+          ? "None of the organizations Next up looks in have issue fields, so it lists issues oldest first."
+          : "Org issue fields from the organizations Next up looks in. Values rank in the order the organization lists them."}
+      </Text>
+    </View>
   );
 }
 

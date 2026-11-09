@@ -62,6 +62,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-settings.png` | After adding `acme/web`: the shooter has checked config.json kept `orgs` and `nextUp` |
    | `<layout>-settings-next-up.png` | The Next up section after adding `me/tool`: My repos on, `acme`, `me/tool` |
    | `<layout>-settings-org-picker.png` | The org picker open, offering only `globex` (`acme` is already added) |
+   | `<layout>-settings-fields.png` | Next up fields: Priority and Scope "Picked by its name" (the preview config names only Effort), Effort as config.json has it |
+   | `<layout>-settings-fields-picked.png` | After setting Scope to Team: the shooter has checked config.json saved only that, leaving Priority out (still found by its name) and Effort's `order` kept |
    | `<layout>-setup.png` | The setup checklist, from a `config.json` that doesn't parse. The shooter restores it and presses Check again |
 
    Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Sheets and modals are clipped to a band around the dialog, so their thumbnails stay readable. Look for:
@@ -81,7 +83,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 | Image: Node 24, Chromium, `playwright-core` | `preview/Dockerfile` |
 | Starts a daemon with `--home /tmp/paseo-home`, sets `pluginsEnabled`, `features.webUi.enabled` (the daemon serves the web app itself), dictation and voice off, then installs `/plugin` and runs the shooter | `preview/entrypoint.sh` |
 | Opens `http://127.0.0.1:6767/` inside the container, clicks the "Attention" sidebar entry, then each tab by its accessibility label | `preview/shoot.mjs` |
-| Plugin config inside the container (fields for Next up) | `preview/plugin-config.json` |
+| Plugin config inside the container (Next up sources, and Effort with its own order) | `preview/plugin-config.json` |
 | The fake GitHub data, plus fake sessions (`FIXTURE_AGENTS`), session context and sheet details (`fixtureDetails`) | `server/fixture.ts` |
 | A local repo with the `acme/shop` remote registered as a project, with a worktree workspace on `branch-102`, so Options has a project and a workspace to offer. `acme/issues` has no project on purpose | `preview/entrypoint.sh` |
 
