@@ -31,15 +31,15 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | File | Shows |
    |---|---|
    | `<layout>-doing.png` | Doing tab, every section |
-   | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, then Fix CI as its running session with a "working" badge, Rerun failed jobs with the made-up failing checks, a muted "Start another session…", then the fetched size |
+   | `<layout>-doing-sheet.png` | The sheet of "Show delivery dates on the order page" (a bottom sheet on phones): what the card knows, with "⌛ alice", asked to review and not yet (the requested review bot isn't shown) [PRS-15], then Fix CI as its running session with a "working" badge, Rerun failed jobs with the made-up failing checks, a muted "Start another session…", then the fetched size |
    | `<layout>-doing-issue-sheet.png` | The sheet of the issue "Supplier prices are a week out of date": its stack of PRs, each with a GitHub icon and opening that PR, then "Continue session" (no kind, needs you) first, Rebase stack as its working session, Open issue on GitHub |
    | `<layout>-doing-stack-issue-sheet.png` | The sheet of the issue "The calendar can't be used with a keyboard": the a11y stack (#105–#107) that GitHub links to no issue, grouped under it because its bottom PR says "for #132" and its top PR "Closes #132" |
-   | `<layout>-doing-review.png` | Review requested: the "Price rules" stack as one item with "stack of 2" and "agent idle", and "Add a status page" with an "agent working" chip and Open session, from a session started outside Attention Span [SES-08] |
+   | `<layout>-doing-review.png` | Review requested: the "Price rules" stack as one item with "stack of 2" and "agent idle", and "Add a status page" with an "agent working" chip and Open session, from a session started outside Attention Span [SES-08]. Each shows its author as "✏️ bob", without a time [ATT-19] |
    | `<layout>-doing-review-sheet.png` | The sheet of "Add a status page": "Continue session" (no kind, working) first, then Review… still offered, Open PR on GitHub, a muted "Start another session…" |
    | `<layout>-doing-review-stack-sheet.png` | The sheet of "Price rules: data model", bob's stack of two (#196, #197) asking for my review, one item [ATT-04]: #197 beneath it, "Continue session" (idle) for the session started on #197, then Review stack… for #196 and #197 |
    | `<layout>-doing-acknowledge.png` | The 👍 picker from "Publish security.txt": two waiting comments in full, rendered as Markdown, both ticked |
    | `<layout>-doing-needs-reviewer.png` | The Needs a reviewer section: "Export invoices as CSV" with Request review and Merge in its sheet, "Log slow database queries" with a CI running chip |
-   | `<layout>-doing-ready.png` | The Ready to merge section: "Lazy-load product images" with an "optional checks failing" chip and "Compress API responses" with "required checks passed", both offering Merge [PRS-14]. "Sign the release artifacts" isn't here: it waits in Waiting for review with "blocked by repo rules" and no person [PRS-13] |
+   | `<layout>-doing-ready.png` | The Ready to merge section: "Cache exchange rates daily", approved by alice, with "⌛ bob · 1d" because bob was asked and hasn't reviewed yet [PRS-15]; "Lazy-load product images" with an "optional checks failing" chip and "Compress API responses" with "required checks passed", both offering Merge [PRS-14]. "Sign the release artifacts" isn't here: it waits in Waiting for review with "blocked by repo rules" and no person [PRS-13] |
    | `<layout>-doing-reviewers.png` | The reviewer picker from "Export invoices as CSV" (Needs a reviewer): Suggested by GitHub (carol, ticked), Recent on your PRs here, Teams, the login field, Request 1 reviewer |
    | `<layout>-doing-options.png` | The Options modal from "Address comments…" in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
    | `<layout>-doing-merge-confirm.png` | The Merge confirmation on the first Ready card, the a11y stack's |
@@ -66,7 +66,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-settings-fields-picked.png` | After setting Scope to Team: the shooter has checked config.json saved only that, leaving Priority out (still found by its name) and Effort's `order` kept |
    | `<layout>-setup.png` | The setup checklist, from a `config.json` that doesn't parse. The shooter restores it and presses Check again |
 
-   Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Sheets and modals are clipped to a band around the dialog, so their thumbnails stay readable. Look for:
+   Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Sheets and modals are clipped to a band around the dialog, so their thumbnails stay readable. Faces on cards and in sheets carry an icon tight against the picture saying what they are: ⌛ someone I wait on, ✏️ who opened it, the Changes requested icon for a review bot's comments. Quotes have none [ATT-19]. Look for:
    - text that's unreadable in either theme
    - chips or buttons that overflow on the phone
    - missing icons (an unknown icon renders nothing)

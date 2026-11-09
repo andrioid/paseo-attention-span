@@ -4,7 +4,7 @@ import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
 import { isClear } from "../shared/still";
@@ -600,7 +600,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const chips = sessions[0] ? [...own, agentSignal(sessions[0])] : own;
   // The group names one; the card names the rest [WAI-01].
   const others = group?.who ? (item.waitingOn ?? []).filter((who) => !samePerson(who, group.who!)) : [];
-  const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded={false} /> : null;
+  const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded={false} /> : null;
   const alsoOn = others.length ? <Text style={styles.muted}>also waiting on {others.map((who) => who.login).join(", ")}</Text> : null;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
@@ -720,7 +720,7 @@ function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item
         <>
           <Meta facts={meta} chips={chips} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
-          {item.waitingOn ? <WaitingOnLine people={item.waitingOn} expanded /> : null}
+          {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
         </>
       }
@@ -925,13 +925,61 @@ function ReviewerSheet({
   );
 }
 
+// What a face on a card is to it, where no quote says it: the icon of the tab or section that means the same, so whom I wait on
+// reads like Waiting, and whose comments are left like Changes requested [ATT-19].
+const ROLE_ICON: Record<PersonRole | "waiting", IconName> = { waiting: "hourglass", author: "pencil", changes: "changes" };
+
+// A line that says what it means in words on hover, and to screen readers; phones rely on the icon [ATT-19]. The words sit
+// beside the line in its flow, not floating over it, so a card's clipping can't cut them off: they wrap where space runs out.
+function Explained({ text, children }: { text: string; children: ReactNode }) {
+  const styles = useStyles();
+  const [hovered, setHovered] = useState(false);
+  return (
+    <View accessibilityLabel={text} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flexShrink: 0 }}>{children}</View>
+      {hovered ? (
+        <View style={{ flexShrink: 1, backgroundColor: styles.c.surface2, borderColor: styles.c.border, borderWidth: 1, borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 }}>
+          <Text style={{ color: styles.c.foreground, fontSize: 12 }}>{text}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// The icon sits tight against the faces it explains, apart from the name and time, so they read as one.
+function Badged({ role, children }: { role: keyof typeof ROLE_ICON; children: ReactNode }) {
+  const styles = useStyles();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+      <TablerIcon name={ROLE_ICON[role]} size={16} color={styles.c.foregroundMuted} />
+      {children}
+    </View>
+  );
+}
+
 // Who is waiting on me, or who I'm waiting on.
 function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>; expanded: boolean }) {
   const styles = useStyles();
+  const name = <Text style={{ color: styles.c.foreground, fontSize: 12, fontWeight: "600" }}>{person.login}</Text>;
+  // An author line says who, not when: its time meant something different on each tab [ATT-19].
+  if (!person.snippet && person.role) {
+    const text = person.role === "author" ? `Opened by ${person.login}` : `${person.login}'s comments are left to address, since your last push ${ago(person.since)} ago`;
+    return (
+      <Explained text={text}>
+        <View style={styles.row}>
+          <Badged role={person.role}>
+            <Avatar url={person.avatarUrl} bot={person.bot} />
+          </Badged>
+          {name}
+          {person.role === "author" ? null : <Text style={styles.muted}>· {ago(person.since)}</Text>}
+        </View>
+      </Explained>
+    );
+  }
   const line = (
     <View style={styles.row}>
       <Avatar url={person.avatarUrl} bot={person.bot} />
-      <Text style={{ color: styles.c.foreground, fontSize: 12, fontWeight: "600" }}>{person.login}</Text>
+      {name}
       <Text style={styles.muted}>· {ago(person.since)}</Text>
     </View>
   );
@@ -950,7 +998,8 @@ function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>
 const MAX_FACES = 5;
 
 // Who my work waits on: one by name, several by picture, named on hover, and each by name in the sheet [WAI-02].
-function WaitingOnLine({ people, expanded }: { people: WaitingOn[]; expanded: boolean }) {
+// On an issue they're who my question tagged; on a PR, reviewers since my last push or reply [WAI-02, ATT-19].
+function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked: boolean; expanded: boolean }) {
   const styles = useStyles();
   const [hovered, setHovered] = useState<string | null>(null);
   const name = (login: string) => (
@@ -959,33 +1008,42 @@ function WaitingOnLine({ people, expanded }: { people: WaitingOn[]; expanded: bo
     </Text>
   );
   const since = (at: string) => <Text style={styles.muted}>· {ago(at)}</Text>;
+  const explain = (logins: string[], at: string) => `Waiting on ${logins.join(", ")} since ${asked ? "you asked" : "your last push or reply"}, ${ago(at)} ago`;
   if (expanded || people.length === 1) {
     return (
       <View style={{ gap: 6 }}>
         {people.map((who) => (
-          <View key={who.login} style={styles.row}>
-            <Avatar url={who.avatarUrl} team={who.team} />
-            {name(who.login)}
-            {since(who.since)}
-          </View>
+          <Explained key={who.login} text={explain([who.login], who.since)}>
+            <View style={styles.row}>
+              <Badged role="waiting">
+                <Avatar url={who.avatarUrl} team={who.team} />
+              </Badged>
+              {name(who.login)}
+              {since(who.since)}
+            </View>
+          </Explained>
         ))}
       </View>
     );
   }
   const earliest = people.map((who) => who.since).sort()[0];
   return (
-    <View style={styles.row} accessibilityLabel={`Waiting on ${people.map((who) => who.login).join(", ")}`}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-        {people.slice(0, MAX_FACES).map((who) => (
-          <View key={who.login} onPointerEnter={() => setHovered(who.login)} onPointerLeave={() => setHovered((current) => (current === who.login ? null : current))}>
-            <Avatar url={who.avatarUrl} team={who.team} />
+    <Explained text={explain(people.map((who) => who.login), earliest)}>
+      <View style={styles.row}>
+        <Badged role="waiting">
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            {people.slice(0, MAX_FACES).map((who) => (
+              <View key={who.login} onPointerEnter={() => setHovered(who.login)} onPointerLeave={() => setHovered((current) => (current === who.login ? null : current))}>
+                <Avatar url={who.avatarUrl} team={who.team} />
+              </View>
+            ))}
+            {people.length > MAX_FACES ? <Text style={styles.muted}>+{people.length - MAX_FACES}</Text> : null}
           </View>
-        ))}
-        {people.length > MAX_FACES ? <Text style={styles.muted}>+{people.length - MAX_FACES}</Text> : null}
+        </Badged>
+        {hovered ? name(hovered) : null}
+        {since(earliest)}
       </View>
-      {hovered ? name(hovered) : null}
-      {since(earliest)}
-    </View>
+    </Explained>
   );
 }
 

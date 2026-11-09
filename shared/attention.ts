@@ -61,9 +61,13 @@ export interface Chip {
   icon?: "thumbUp";
 }
 
+export type PersonRole = "author" | "changes";
+
 // The person (or bot) I'm waiting on, or who is waiting on me.
 export interface Person {
   login: string;
+  // What they are to the item, where no quote says it: who opened it, or whose comments are left to address [ATT-19].
+  role?: PersonRole;
   avatarUrl?: string;
   bot: boolean;
   since: string;

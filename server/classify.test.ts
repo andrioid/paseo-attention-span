@@ -37,9 +37,18 @@ describe("doing", () => {
     expect(sections(attention.items)).toEqual([[9, "review"], [3, "ci"], [2, "ci"], [1, "ready"]]);
   });
 
-  it("REV-01: lists PRs requesting my review, showing the author", () => {
+  it("REV-01, ATT-19: lists PRs requesting my review, showing the author as the author", () => {
     const [item] = run({ reviews: [pr(9, { author: alice })] }).items;
-    expect(item).toMatchObject({ section: "review", actions: ["review"], person: { login: "alice", avatarUrl: alice.avatarUrl } });
+    expect(item).toMatchObject({ section: "review", actions: ["review"], person: { login: "alice", avatarUrl: alice.avatarUrl, role: "author" } });
+  });
+
+  it("ATT-19: a review bot's comments left to address say so; someone waiting on me is a quote, without a role", () => {
+    const [bots] = run({ mine: [pr(1, { reviewThreads: { nodes: [thread(bot, 1)] } })] }).items;
+    expect(bots).toMatchObject({ section: "changes", person: { login: "review bot", bot: true, role: "changes" } });
+    const [mentioned] = run({ mine: [pr(2)], mentions: [mention(2, [comment(alice, "@me which one?", 0.5)], { __typename: "PullRequest" })] }).items;
+    expect(mentioned.section).toBe("reply");
+    expect(mentioned.person).toMatchObject({ login: "alice" });
+    expect(mentioned.person?.role).toBeUndefined();
   });
 
   it("PRS-01, PRS-09: lists my PRs with failing checks with Fix, and Rerun beside it", () => {
@@ -435,6 +444,40 @@ describe("waiting", () => {
     expect(ci.waitingOn?.map((who) => who.login)).toEqual(["bob"]);
   });
 
+  it("PRS-15: an approved PR stays ready to merge, showing whom I asked that hasn't reviewed yet", () => {
+    const approvals = { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(1) }] };
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", latestReviews: approvals, reviewRequests: asked })] }).items;
+    expect(item).toMatchObject({ section: "ready", actions: ["merge"], wait: undefined });
+    expect(item.waitingOn).toEqual([{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }]);
+    const [nobody] = run({ mine: [pr(2, { reviewDecision: "APPROVED", latestReviews: approvals })] }).items;
+    expect(nobody.waitingOn).toBeUndefined();
+  });
+
+  it("PRS-15: any of my PRs in Doing shows whom I asked, people and teams but not bots, approved or not", () => {
+    const team = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: "https://avatars/t" };
+    const copilot = { __typename: "Bot", login: "copilot", avatarUrl: "https://avatars/c" };
+    const reviewRequests = { nodes: [{ requestedReviewer: alice }, { requestedReviewer: copilot }, { requestedReviewer: team }] };
+    const [item] = run({ mine: [pr(1, { reviewRequests }, "FAILURE")] }).items;
+    expect(item.section).toBe("ci");
+    expect(item.waitingOn?.map((who) => [who.login, who.team])).toEqual([["alice", false], ["acme/frontend", true]]);
+  });
+
+  it("PRS-15, PRS-13: a PR the repo's rules block still waits on nobody, so it's under no reviewer in Waiting", () => {
+    const attention = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED", reviewRequests: asked })] });
+    const [item] = attention.items;
+    expect(item.section).toBe("wait_review");
+    expect(item.waitingOn).toBeUndefined();
+  });
+
+  it("PRS-15, ATT-04: on a stack, only the bottom PR's requests show", () => {
+    const top = pr(2, { baseRefName: "branch-1", headRefName: "branch-2", reviewRequests: asked });
+    const { items } = run({ mine: [pr(1, { reviewDecision: "APPROVED" }), top] });
+    expect(items).toHaveLength(1);
+    const [item] = items;
+    expect(item).toMatchObject({ number: 1, section: "ready" });
+    expect(item.waitingOn).toBeUndefined();
+  });
+
   it("WAI-02: a question waits on who my comments tag since the last answer, outside quotes, from their first tag", () => {
     const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
     const team = '<a class="team-mention js-team-mention notranslate" data-hovercard-type="team" href="https://github.com/orgs/acme/teams/frontend">@acme/frontend</a>';
@@ -638,9 +681,9 @@ describe("history", () => {
     expect(items.map((item) => [item.number, item.children.map((c) => c.number)])).toEqual([[60, [61, 62]], [63, []]]);
   });
 
-  it("HIS-02: lists PRs I reviewed apart from my own work, with their author", () => {
+  it("HIS-02, ATT-19: lists PRs I reviewed apart from my own work, with their author", () => {
     const [item] = classifyHistory(search({ reviewed: [{ number: 63, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository: { nameWithOwner: REPO }, author: alice }] }));
-    expect(item).toMatchObject({ section: "reviewed", person: { login: "alice" } });
+    expect(item).toMatchObject({ section: "reviewed", person: { login: "alice", role: "author" } });
   });
 
   it("HIS-04: tells each finished item's kind from its type, labels or title, on a chip", () => {
