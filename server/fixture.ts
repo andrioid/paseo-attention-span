@@ -152,7 +152,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
 
   const data = search({
     mine: [
-      pr(101, { title: "Show delivery dates on the order page" }, "FAILURE"),
+      pr(101, { title: "Show delivery dates on the order page", reviewRequests: { nodes: [{ requestedReviewer: alice }, { requestedReviewer: bot }] } }, "FAILURE"),
       pr(102, { title: "Retry webhook deliveries with backoff", reviewThreads: { nodes: [thread(alice, 1), thread(bot, 2)] } }),
       pr(103, { title: "Fetch supplier price files nightly", reviewDecision: "APPROVED", closingIssuesReferences: closes(90, "Supplier prices are a week out of date") }),
       pr(104, { title: "Move price-file login into a service", isDraft: true, baseRefName: "branch-103", headRefName: "branch-104" }),
@@ -167,7 +167,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(111, { title: "Faster product search", reviewRequests: { nodes: [{ requestedReviewer: bob }] }, commits: commit("SUCCESS", 0.3) }),
       pr(112, { title: "Translate the checkout emails", reviewDecision: "CHANGES_REQUESTED", latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] }, commits: commit("SUCCESS", 1) }),
       pr(113, { title: "Upgrade the payment SDK", reviewRequests: { nodes: [{ requestedReviewer: bob }, { requestedReviewer: alice }] } }, "PENDING"),
-      pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED" }),
+      pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED", latestReviews: { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(1) }] }, reviewRequests: { nodes: [{ requestedReviewer: bob }] } }),
       pr(115, { title: "Split the settings page into tabs", isDraft: true, mergeable: "CONFLICTING" }),
       pr(116, { title: "Try a faster PDF renderer", isDraft: true }, "FAILURE"),
       pr(117, { title: "Harden the upload endpoint", reviewThreads: { nodes: [thread(bot, 1)] } }),

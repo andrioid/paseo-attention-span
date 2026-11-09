@@ -444,6 +444,33 @@ describe("waiting", () => {
     expect(ci.waitingOn?.map((who) => who.login)).toEqual(["bob"]);
   });
 
+  it("PRS-15: an approved PR stays ready to merge, showing whom I asked that hasn't reviewed yet", () => {
+    const approvals = { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(1) }] };
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", latestReviews: approvals, reviewRequests: asked })] }).items;
+    expect(item).toMatchObject({ section: "ready", actions: ["merge"], wait: undefined });
+    expect(item.waitingOn).toEqual([{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }]);
+    const [nobody] = run({ mine: [pr(2, { reviewDecision: "APPROVED", latestReviews: approvals })] }).items;
+    expect(nobody.waitingOn).toBeUndefined();
+  });
+
+  it("PRS-15: any of my PRs in Doing shows whom I asked, people and teams but not bots, approved or not", () => {
+    const team = { __typename: "Team", combinedSlug: "acme/frontend", avatarUrl: "https://avatars/t" };
+    const copilot = { __typename: "Bot", login: "copilot", avatarUrl: "https://avatars/c" };
+    const reviewRequests = { nodes: [{ requestedReviewer: alice }, { requestedReviewer: copilot }, { requestedReviewer: team }] };
+    const [item] = run({ mine: [pr(1, { reviewRequests }, "FAILURE")] }).items;
+    expect(item.section).toBe("ci");
+    expect(item.waitingOn?.map((who) => [who.login, who.team])).toEqual([["alice", false], ["acme/frontend", true]]);
+  });
+
+  it("PRS-15, ATT-04: on a stack, only the bottom PR's requests show", () => {
+    const top = pr(2, { baseRefName: "branch-1", headRefName: "branch-2", reviewRequests: asked });
+    const { items } = run({ mine: [pr(1, { reviewDecision: "APPROVED" }), top] });
+    expect(items).toHaveLength(1);
+    const [item] = items;
+    expect(item).toMatchObject({ number: 1, section: "ready" });
+    expect(item.waitingOn).toBeUndefined();
+  });
+
   it("WAI-02: a question waits on who my comments tag since the last answer, outside quotes, from their first tag", () => {
     const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
     const team = '<a class="team-mention js-team-mention notranslate" data-hovercard-type="team" href="https://github.com/orgs/acme/teams/frontend">@acme/frontend</a>';
