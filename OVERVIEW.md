@@ -12,6 +12,10 @@ This is the one you'll live in. It's split by reason: someone's waiting for your
 
 Each item shows up once, under whichever reason is most urgent. An issue and the PRs that close it count as one item, and so does a stack of PRs. A stack is one change wearing several PRs, so it shouldn't take up five rows.
 
+When there's nothing in it, you get a quiet horizon that follows the time of day instead of a blank page. It only shows up once a refresh has actually checked, so it never says you're clear when it doesn't know.
+
+![Doing, with nothing in it](docs/screenshots/desktop-dark-doing-clear.png)
+
 Mentions only count while the person is still waiting for you. Reply or react and it's gone. On your own issues and PRs, a new comment from the last 30 days shows up under **Answered** even if it doesn't tag you. On other people's threads only tags count. The point is to pick out the signal, and most of what happens in threads you once commented on isn't. If you do want those replies, turn on **Follow threads I've commented on** in Settings. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
 Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.

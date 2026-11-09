@@ -7,6 +7,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { ago, linkList, repoLabel } from "../shared/format";
+import { isClear } from "../shared/still";
 import { workEmoji } from "../shared/work";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
@@ -16,6 +17,7 @@ import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
 import { NextUpList } from "./next-up";
+import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
@@ -310,6 +312,8 @@ function AttentionList({
 
   // Each tab shows how fresh its own feed is.
   const feed = view.feeds[TAB_FEED[tab]];
+  // Calm only once a refresh that worked says Doing is empty [ATT-18].
+  const clear = isClear(view, !!attention.error);
   const refreshing = feed.refreshing || attention.isFetching;
   const counts: Record<TabId, number> = {
     history: view.history.filter((item) => item.section === "done").length,
@@ -373,7 +377,8 @@ function AttentionList({
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    // A clear Doing tab fills the screen, so its scene has room and the rest sits at the bottom [ATT-18].
+    <ScrollView style={styles.screen} contentContainerStyle={[styles.content, tab === "doing" && clear ? { flexGrow: 1 } : null]}>
       <View style={[styles.row, { justifyContent: "space-between", flexWrap: "wrap" }]}>
         <View style={styles.row}>
           {TABS.map(({ id, label, icon }) => (
@@ -421,9 +426,13 @@ function AttentionList({
       {tab === "history" ? <History items={view.history} actions={actions} /> : null}
       {tab === "doing" ? (
         <>
-          <Sections sections={view.doing} actions={actions} empty="Nothing needs you right now." />
+          {clear ? <Still /> : view.doing.length ? <Sections sections={view.doing} actions={actions} /> : !feed.fetchedAt && !feed.error ? <Loading text="Checking GitHub…" /> : null}
           {view.dismissedCount > undoable.filter((row) => row.dismissal).length ? (
-            <Pressable accessibilityRole="button" onPress={() => void run("restore", "Restore", async () => (attention.setView(await restore({})), setUndoable([])))}>
+            <Pressable
+              accessibilityRole="button"
+              style={clear ? { alignSelf: "center", opacity: 0.7 } : undefined}
+              onPress={() => void run("restore", "Restore", async () => (attention.setView(await restore({})), setUndoable([])))}
+            >
               <Text style={styles.muted}>{view.dismissedCount} dismissed · show them again</Text>
             </Pressable>
           ) : null}
@@ -493,6 +502,7 @@ function AttentionList({
 function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: string; count: number; active: boolean; onPress: () => void }) {
   const styles = useStyles();
   const color = active ? styles.c.foreground : styles.c.foregroundMuted;
+  // A soft round badge for the count, a shade brighter on the open tab; green marks only where I am.
   return (
     <Pressable
       accessibilityRole="tab"
@@ -501,12 +511,22 @@ function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: s
       onPress={onPress}
       style={[styles.row, { gap: 6, paddingVertical: 7, paddingHorizontal: styles.compact ? 9 : 12, borderRadius: 9, backgroundColor: active ? styles.c.surface2 : "transparent" }]}
     >
-      <TablerIcon name={icon} size={16} color={color} />
+      <TablerIcon name={icon} size={16} color={active ? styles.action : color} />
       {/* On phones only the active tab is labelled, so four tabs fit. */}
       {active || !styles.compact ? <Text style={{ color, fontSize: 14, fontWeight: active ? "600" : "400" }}>{label}</Text> : null}
-      <Text style={[styles.muted, { fontSize: 12 }]}>{count}</Text>
+      <View style={{ minWidth: 20, alignItems: "center", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 9, backgroundColor: tint(styles.c.foreground, active ? 0.14 : 0.08) }}>
+        <Text style={{ color, fontSize: 11, fontWeight: "500" }}>{count}</Text>
+      </View>
     </Pressable>
   );
+}
+
+// A theme colour, see-through, so a badge reads on any surface; colours that aren't #rrggbb fall back to none.
+function tint(color: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{6})/i.exec(color)?.[1];
+  if (!hex) return "transparent";
+  const [r, g, b] = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 interface Actions {
@@ -966,9 +986,7 @@ function WaitingOnLine({ people, expanded }: { people: WaitingOn[]; expanded: bo
   );
 }
 
-function Sections({ sections, actions, empty }: { sections: Section[]; actions: Actions; empty: string }) {
-  const styles = useStyles();
-  if (sections.length === 0) return <Text style={styles.text}>{empty}</Text>;
+function Sections({ sections, actions }: { sections: Section[]; actions: Actions }) {
   return sections.map((section) => (
     <View key={section.id}>
       <SectionHeader icon={SECTION_ICONS[section.id]} title={section.title} count={section.items.length} />

@@ -194,8 +194,9 @@ for (const layout of layouts) {
       // Copy a week, then one card's link, and keep what landed on the clipboard [HIS-03, ATT-15].
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:6767" });
       const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
-      await page.getByRole("button", { name: "Copy links from This week" }).click();
-      await page.getByText(/^Copied \d+ links? from This week$/).waitFor({ timeout: 5000 });
+      // The newest week with work in it: on a Monday, "This week" has none yet.
+      await page.getByRole("button", { name: /^Copy links from / }).first().click();
+      await page.getByText(/^Copied \d+ links? from /).waitFor({ timeout: 5000 });
       await shot("history-copied");
       const week = await clipboard();
       await page.getByRole("button", { name: /^Copy link to #\d+$/ }).first().click();
@@ -294,6 +295,21 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: "Dismiss" }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
+      // Dismiss the rest: a clear Doing tab shows its horizon, as on a real screen's height [ATT-18].
+      const details = page.getByRole("button", { name: /^Details for #/ });
+      for (let left = await details.count(); left > 0; left = await details.count()) {
+        await details.first().click();
+        await page.getByRole("button", { name: "Dismiss" }).last().click();
+        for (let i = 0; i < 50 && (await details.count()) === left; i++) await page.waitForTimeout(100);
+      }
+      const tall = page.viewportSize();
+      await page.setViewportSize({ width: tall.width, height: layout.isMobile ? 844 : 900 });
+      await page.getByRole("tab", { name: /Waiting/ }).first().click(); // clears the Undo rows
+      await doing();
+      await page.getByText("Nothing's on you.").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(1200); // it settles in
+      await page.screenshot({ path: `/out/${prefix}-doing-clear.png`, clip: { x: 0, y: 0, ...page.viewportSize() } });
+      await page.setViewportSize(tall);
       // Last, because it may open a session: an issue kept apart from its code [SES-07].
       // Start asks where the code lives, saves it to config.json, and the next start goes straight on.
       const nextUp = () => page.getByRole("tab", { name: /Next up/ }).first().click();
