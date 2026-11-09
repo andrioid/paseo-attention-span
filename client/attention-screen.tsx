@@ -929,18 +929,17 @@ function ReviewerSheet({
 // reads like Waiting, and whose comments are left like Changes requested [ATT-19].
 const ROLE_ICON: Record<PersonRole | "waiting", IconName> = { waiting: "hourglass", author: "pencil", changes: "changes" };
 
-// A line that says what it means in words on hover, and to screen readers; phones rely on the icon [ATT-19].
+// A line that says what it means in words on hover, and to screen readers; phones rely on the icon [ATT-19]. The words sit
+// beside the line in its flow, not floating over it, so a card's clipping can't cut them off: they wrap where space runs out.
 function Explained({ text, children }: { text: string; children: ReactNode }) {
   const styles = useStyles();
   const [hovered, setHovered] = useState(false);
   return (
-    <View accessibilityLabel={text} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={{ alignSelf: "flex-start" }}>
-      {children}
+    <View accessibilityLabel={text} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flexShrink: 0 }}>{children}</View>
       {hovered ? (
-        <View style={{ position: "absolute", top: -3, left: "100%", marginLeft: 8, backgroundColor: styles.c.surface2, borderColor: styles.c.border, borderWidth: 1, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 8, zIndex: 10 }}>
-          <Text style={{ color: styles.c.foreground, fontSize: 12 }} numberOfLines={1}>
-            {text}
-          </Text>
+        <View style={{ flexShrink: 1, backgroundColor: styles.c.surface2, borderColor: styles.c.border, borderWidth: 1, borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 }}>
+          <Text style={{ color: styles.c.foreground, fontSize: 12 }}>{text}</Text>
         </View>
       ) : null}
     </View>
