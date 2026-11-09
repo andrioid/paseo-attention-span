@@ -109,7 +109,7 @@ export class AttentionService {
   }
 
   // Which org issue fields Next up uses, chosen in settings [NXT-04]. Only the live feed has Next up.
-  async setNextUpFields(fields: Record<FieldRole, string | null>): Promise<void> {
+  async setNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<void> {
     this.config = await saveNextUpFields(fields);
     await this.refresh("live").catch(() => {});
   }

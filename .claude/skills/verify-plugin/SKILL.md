@@ -63,7 +63,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-settings-next-up.png` | The Next up section after adding `me/tool`: My repos on, `acme`, `me/tool` |
    | `<layout>-settings-org-picker.png` | The org picker open, offering only `globex` (`acme` is already added) |
    | `<layout>-settings-fields.png` | Next up fields: Priority and Scope "Picked by its name" (the preview config names only Effort), Effort as config.json has it |
-   | `<layout>-settings-fields-picked.png` | After setting Scope to Team: the shooter has checked config.json saved it and kept Effort's `order` |
+   | `<layout>-settings-fields-picked.png` | After setting Scope to Team: the shooter has checked config.json saved only that, leaving Priority out (still found by its name) and Effort's `order` kept |
    | `<layout>-setup.png` | The setup checklist, from a `config.json` that doesn't parse. The shooter restores it and presses Check again |
 
    Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Sheets and modals are clipped to a band around the dialog, so their thumbnails stay readable. Look for:

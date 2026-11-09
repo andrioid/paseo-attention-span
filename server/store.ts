@@ -86,14 +86,15 @@ export function saveNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine
   });
 }
 
-// Which org issue fields Next up uses, from settings [NXT-04]: null turns one off. A field kept as it was keeps its order.
-export function saveNextUpFields(fields: Record<FieldRole, string | null>): Promise<AttentionConfig> {
+// Which org issue fields Next up uses, from settings [NXT-04]: null turns one off, a role left out is kept as it is.
+// A field kept as it was keeps its order.
+export function saveNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<AttentionConfig> {
   return updateConfig((file) => {
     const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
     const chosen = Object.fromEntries(
-      FIELD_ROLES.map((role) => {
+      FIELD_ROLES.filter((role) => fields[role] !== undefined).map((role) => {
         const before = nextUp[role] as { field?: unknown } | null | undefined;
-        const field = fields[role];
+        const field = fields[role]!;
         return [role, field === null ? null : before && typeof before.field === "string" && sameField(before.field, field) ? { ...before, field } : { field }];
       }),
     );

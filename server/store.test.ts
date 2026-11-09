@@ -64,6 +64,13 @@ describe("settings", () => {
     expect(JSON.parse(await readFile(join(newDir(), "config.json"), "utf8")).nextUp.priority).toEqual({ field: "Priority" });
   });
 
+  it("NXT-04: choosing one field leaves the others as they are, so one never chosen is still found by its name", async () => {
+    await mkdir(newDir(), { recursive: true });
+    await writeFile(join(newDir(), "config.json"), JSON.stringify({ nextUp: { effort: { field: "Size" } } }));
+    await store.saveNextUpFields({ scope: "Team" });
+    expect(JSON.parse(await readFile(join(newDir(), "config.json"), "utf8")).nextUp).toEqual({ effort: { field: "Size" }, scope: { field: "Team" } });
+  });
+
   it("SRC-02: leaves a config.json that doesn't parse alone", async () => {
     await mkdir(newDir(), { recursive: true });
     for (const broken of ["{ not json", JSON.stringify({ refreshMinutes: "soon" })]) {

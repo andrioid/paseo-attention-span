@@ -111,7 +111,7 @@ function Coverage() {
               : "None chosen: using your Paseo projects."}
         </Text>
       </View>
-      <NextUpFields value={fields} disabled={saving} onChange={(next) => write({ fields: next }, () => saveFields(next))} />
+      <NextUpFields value={fields} disabled={saving} onChange={(role, field) => write({ fields: { ...fields, [role]: field } }, () => saveFields({ [role]: field }))} />
       <View style={{ gap: 8 }}>
         <SettingsSection title="Replies">
           <SettingsCard>
@@ -180,16 +180,18 @@ const ROLE_HINT: Record<FieldRole, string> = {
 
 // Which org issue fields rank and filter Next up [NXT-04], picked from the fields its orgs have. Until I pick, a field
 // named after the role is used, so an org with Priority and Effort needs no setup.
-function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fields"]; disabled: boolean; onChange: (next: Record<FieldRole, string | null>) => Promise<void> }) {
+function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fields"]; disabled: boolean; onChange: (role: FieldRole, field: string | null) => Promise<void> }) {
   const styles = useStyles();
   const fetchFields = useRpc(rpc.issueFields);
   const available = useQuery({ queryKey: FIELDS_QUERY_KEY, queryFn: () => fetchFields({}) });
   const fields: IssueField[] = available.data?.fields ?? [];
   const find = (name: string | null | undefined) => fields.find((field) => sameField(field.name, name ?? undefined));
-  // What each role uses now: the chosen field, or the one named after it if an org has it.
-  const current = Object.fromEntries(
-    FIELD_ROLES.map((role) => [role, role in value ? (value[role] ?? null) : (find(DEFAULT_FIELD[role])?.name ?? null)]),
-  ) as Record<FieldRole, string | null>;
+  // What each role uses now: the chosen field, or the one named after it if an org has it. Names match without case,
+  // so a field typed "priority" shows as GitHub's "Priority".
+  const current = (role: FieldRole): string | null => {
+    const chosen = role in value ? (value[role] ?? null) : DEFAULT_FIELD[role];
+    return find(chosen)?.name ?? (role in value ? chosen : null);
+  };
   const none = available.isLoading ? "Loading…" : "None";
 
   return (
@@ -197,7 +199,7 @@ function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fiel
       <SettingsSection title="Next up fields">
         <SettingsCard>
           {FIELD_ROLES.map((role) => {
-            const chosen = current[role];
+            const chosen = current(role);
             // A field no org has any more still shows, so it can be seen and changed.
             const missing = chosen && available.data && !find(chosen) ? [{ label: `${chosen} (not found)`, value: chosen }] : [];
             const hint = !(role in value) && chosen ? `${ROLE_HINT[role]}. Picked by its name` : ROLE_HINT[role];
@@ -210,7 +212,7 @@ function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fiel
                 value={chosen ?? ""}
                 options={[{ label: none, value: "" }, ...missing, ...fields.map((field) => ({ label: field.name, value: field.name }))]}
                 disabled={disabled || !available.data}
-                onValueChange={(field) => void onChange({ ...current, [role]: field || null })}
+                onValueChange={(field) => void onChange(role, field || null)}
               />
             );
           })}

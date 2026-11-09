@@ -287,13 +287,13 @@ for (const layout of layouts) {
         return { ...fold(), y: Math.max(0, box.y - 24), height: 420 };
       };
       await page.screenshot({ path: `/out/${prefix}-settings-fields.png`, clip: await fieldsBand() });
-      // Scope set to another field is saved; Effort keeps its hand-written order.
+      // Scope set to another field is saved; Priority, never picked, is left to its name, and Effort keeps its order.
       await page.getByText("Scope", { exact: true }).last().click();
       await page.getByText("Team", { exact: true }).last().click();
       await page.getByText("Team", { exact: true }).first().waitFor({ timeout: 10000 });
       await page.waitForTimeout(500);
       const withFields = JSON.parse(await readFile(configPath, "utf8"));
-      if (withFields.nextUp?.scope?.field !== "Team" || withFields.nextUp.priority?.field !== "Priority" || withFields.nextUp.effort?.order?.length !== 4)
+      if (withFields.nextUp?.scope?.field !== "Team" || "priority" in withFields.nextUp || withFields.nextUp.effort?.order?.length !== 4)
         throw new Error(`config.json after picking a field: ${JSON.stringify(withFields)}`);
       await page.screenshot({ path: `/out/${prefix}-settings-fields-picked.png`, clip: await fieldsBand() });
       // The setup checklist, from a config.json that doesn't parse; fixed, Check again brings the tabs back [SET-01].

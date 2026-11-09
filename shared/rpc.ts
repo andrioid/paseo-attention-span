@@ -30,7 +30,8 @@ export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.obj
 export const setNextUpSources = defineRpc({ name: "config.set-next-up", input: z.object({ mine: z.boolean(), orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
 // The org issue fields settings offers for Next up, and which one each role uses [NXT-04].
 export const issueFields = defineRpc({ name: "config.issue-fields", input: z.object({}), output: z.custom<{ fields: IssueField[] }>() });
-const fieldChoice = z.string().nullable();
+// Only the roles given change; one left out keeps what config.json says, including finding its field by name.
+const fieldChoice = z.string().nullable().optional();
 export const setNextUpFields = defineRpc({ name: "config.set-next-up-fields", input: z.object({ priority: fieldChoice, effort: fieldChoice, scope: fieldChoice }), output: done });
 // Replies on others' threads without a tag, from settings [ATT-17].
 export const setFollowThreads = defineRpc({ name: "config.set-follow-threads", input: z.object({ on: z.boolean() }), output: done });
