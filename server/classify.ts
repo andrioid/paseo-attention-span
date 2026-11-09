@@ -210,8 +210,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const changers = replied && !flags.ciPending ? bottom.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.author) : [];
     const asked = bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer));
     // In Doing, approved or not, whoever I asked that hasn't reviewed yet: people and teams, not bots. An approved PR stays
-    // mine to merge, but I see who meant to read it still hasn't. Waiting too long keeps Waiting's rule [PRS-15].
-    const outstanding = section !== "too_long" ? reviewers(asked.filter(isOther), waitingSince).filter((who) => !who.bot) : [];
+    // mine to merge, but I see who meant to read it still hasn't. Waiting too long keeps Waiting's rule, and a PR the repo's rules
+    // block waits on nobody, so neither lands under a reviewer in Waiting [PRS-15, PRS-13].
+    const outstanding = SECTIONS[section].tab === "doing" && section !== "too_long" ? reviewers(asked.filter(isOther), waitingSince).filter((who) => !who.bot) : [];
     const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : outstanding;
     // Why it waits, where the chips don't already say: approved ones say so, so do the rules that block them, and so does CI
     // running when nobody's on it [WAI-01].

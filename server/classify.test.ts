@@ -462,6 +462,13 @@ describe("waiting", () => {
     expect(item.waitingOn?.map((who) => [who.login, who.team])).toEqual([["alice", false], ["acme/frontend", true]]);
   });
 
+  it("PRS-15, PRS-13: a PR the repo's rules block still waits on nobody, so it's under no reviewer in Waiting", () => {
+    const attention = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED", reviewRequests: asked })] });
+    const [item] = attention.items;
+    expect(item.section).toBe("wait_review");
+    expect(item.waitingOn).toBeUndefined();
+  });
+
   it("PRS-15, ATT-04: on a stack, only the bottom PR's requests show", () => {
     const top = pr(2, { baseRefName: "branch-1", headRefName: "branch-2", reviewRequests: asked });
     const { items } = run({ mine: [pr(1, { reviewDecision: "APPROVED" }), top] });
