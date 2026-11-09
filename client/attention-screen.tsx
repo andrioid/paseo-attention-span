@@ -314,7 +314,9 @@ function AttentionList({
   const feed = view.feeds[TAB_FEED[tab]];
   // Calm only once a refresh that worked says Doing is empty [ATT-18].
   const clear = isClear(view, !!attention.error);
-  const refreshing = feed.refreshing || attention.isFetching;
+  // ⟳ turns for any refresh of this tab's feed, but only my own press locks it: the cached view can still say a background one runs after it's done.
+  const pressed = attention.isRefreshing(TAB_FEED[tab]);
+  const refreshing = feed.refreshing || attention.isFetching || pressed;
   const counts: Record<TabId, number> = {
     history: view.history.filter((item) => item.section === "done").length,
     doing: view.count,
@@ -389,7 +391,8 @@ function AttentionList({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Refresh now"
-            accessibilityState={{ busy: refreshing }}
+            accessibilityState={{ busy: refreshing, disabled: pressed }}
+            disabled={pressed}
             style={styles.row}
             onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}
           >
