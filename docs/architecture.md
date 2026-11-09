@@ -44,7 +44,7 @@ flowchart LR
 
 ## Tabs
 
-The tabs tell the story of my work, left to right: what I finished, what needs me, what waits on others, what's next. The screen opens on **Doing**, and the sidebar entry "Attention" shows Doing's count [ATT-09]. On phones only the active tab shows its label.
+The tabs tell the story of my work, left to right: what I finished, what needs me, what waits on others, what's next. The screen opens on **Doing**, and the sidebar entry "Attention" shows Doing's count [ATT-09]. On phones only the active tab shows its label. Each tab's count sits in a soft badge, and only the open tab's icon is green.
 
 | Tab | Shows |
 |---|---|
@@ -77,6 +77,8 @@ Top to bottom. Each item appears once, under its most urgent reason [ATT-02]. `s
 | Waiting too long | Waiting items older than `waitingTooLongDays` (default 3); it's mine to nudge [ATT-11] |
 | Needs a reviewer | My PRs nobody has been asked to review, even while CI runs [PRS-12]. Only what GitHub records counts as asked: a pending request, an approval or requested changes. GitHub drops a reviewer's request once they review, so a review that only commented, by a person or a bot, leaves it here to re-request; the repo, not us, decides whose approval counts |
 | My drafts | My drafts, with their own state tags [PRS-05, PRS-06] |
+
+**Nothing in Doing** shows a horizon instead of a list (`client/still.tsx`) [ATT-18], with "Nothing's on you. Enjoy the quiet." It follows the device's clock at fixed hours: a low sun in the morning (5–11), a high sun at midday (11–16), a setting sun in the evening (16–21), and a moon with a few stars at night, each in its own soft tint. It settles in on every arrival on the tab (the sky drifts up as it fades in, then its reflections, 700 ms; not with reduced motion), then holds still; when the hour changes while it's open, it crossfades. It shows only after a refresh that worked: before the first one there's a spinner, and after a failed one just the error. Items that are all dismissed count as clear; the "show them again" line sits faintly at the bottom.
 
 ## Rules
 
