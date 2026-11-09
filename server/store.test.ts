@@ -55,6 +55,15 @@ describe("settings", () => {
     expect(JSON.parse(await readFile(join(newDir(), "config.json"), "utf8"))).toEqual({ orgs: ["acme"], repos: ["me/tool"], nextUp: { repos: ["acme/shop"] }, extra: 1 });
   });
 
+  it("NXT-04: choosing fields keeps a field's hand-written order, and None is saved as null", async () => {
+    await mkdir(newDir(), { recursive: true });
+    const effort = { field: "Effort", order: ["Tiny", "Large"] };
+    await writeFile(join(newDir(), "config.json"), JSON.stringify({ nextUp: { repos: ["acme/shop"], effort, priority: { field: "Prio", order: ["A"] } } }));
+    const config = await store.saveNextUpFields({ priority: "Priority", effort: "effort", scope: null });
+    expect(config.nextUp).toMatchObject({ repos: ["acme/shop"], priority: { field: "Priority" }, effort: { field: "effort", order: ["Tiny", "Large"] }, scope: null });
+    expect(JSON.parse(await readFile(join(newDir(), "config.json"), "utf8")).nextUp.priority).toEqual({ field: "Priority" });
+  });
+
   it("SRC-02: leaves a config.json that doesn't parse alone", async () => {
     await mkdir(newDir(), { recursive: true });
     for (const broken of ["{ not json", JSON.stringify({ refreshMinutes: "soon" })]) {

@@ -1,3 +1,4 @@
+import { FIELD_ROLES } from "../shared/config";
 import type { ConfigStatus, CoverageCheck, CoverageKind, SetupStatus } from "../shared/setup";
 import { FIXTURE_MY_ORGS, FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
 import { FIXTURE, graphql, runGh } from "./gh";
@@ -22,9 +23,10 @@ async function ghStatus(): Promise<SetupStatus["gh"]> {
 export async function configStatus(): Promise<ConfigStatus> {
   try {
     const { orgs, repos, nextUp, followThreads } = await loadConfig();
-    return { error: null, orgs, repos, nextUp: { mine: nextUp.mine, orgs: nextUp.orgs, repos: nextUp.repos }, followThreads };
+    const fields = Object.fromEntries(FIELD_ROLES.flatMap((role) => (nextUp[role] === undefined ? [] : [[role, nextUp[role]?.field ?? null]])));
+    return { error: null, orgs, repos, nextUp: { mine: nextUp.mine, orgs: nextUp.orgs, repos: nextUp.repos }, fields, followThreads };
   } catch (error) {
-    return { error: (error as Error).message, orgs: [], repos: [], nextUp: { mine: false, orgs: [], repos: [] }, followThreads: false };
+    return { error: (error as Error).message, orgs: [], repos: [], nextUp: { mine: false, orgs: [], repos: [] }, fields: {}, followThreads: false };
   }
 }
 

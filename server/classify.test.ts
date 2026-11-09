@@ -805,6 +805,20 @@ describe("next up", () => {
     expect(searches).toEqual([{ source: "repo:acme/shop", query: "is:issue is:open no:assignee repo:acme/shop archived:false" }]);
   });
 
+  it("NXT-04: until I choose, uses the fields named Priority, Effort and Scope, whatever their case; null turns one off", () => {
+    const issues = { unclaimed: [pickable(1, { priority: "🏝 P3 Low", Scope: "🔙 Backend" }), pickable(2, { priority: "🏔 P1 High", Effort: "Small" })] };
+    const auto = run(issues, {}, { config: AttentionConfig.parse({}), fieldOptions: { PRIORITY: fieldOptions.Priority } });
+    expect(auto.unclaimed.map((issue) => [issue.number, issue.priority, issue.effort, issue.scope, issue.priorityRank])).toEqual([
+      [2, "🏔 P1 High", "Small", undefined, 1],
+      [1, "🏝 P3 Low", undefined, "🔙 Backend", 3],
+    ]);
+    const off = run(issues, {}, { config: AttentionConfig.parse({ nextUp: { priority: null, scope: { field: "Effort" } } }), fieldOptions });
+    expect(off.unclaimed.map((issue) => [issue.number, issue.priority, issue.scope])).toEqual([
+      [1, undefined, undefined],
+      [2, undefined, "Small"],
+    ]);
+  });
+
   it("NXT-04: looks in my own repos, whole orgs and single repos, one search each", () => {
     const config = AttentionConfig.parse({ nextUp: { mine: true, orgs: ["acme"], repos: ["other/tool"] } });
     expect(unclaimedSearches(config, [], "me")).toEqual({

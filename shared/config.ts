@@ -48,9 +48,11 @@ export const AttentionConfig = z.object({
       mine: z.boolean().default(false),
       orgs: z.array(z.string()).default([]),
       repos: z.array(z.string()).default([]),
-      priority: RankedField.optional(),
-      effort: RankedField.optional(),
-      scope: z.object({ field: z.string() }).optional(),
+      // Which org issue fields rank and filter the list [NXT-02, NXT-03]. Left out, the field named after the role is used if
+      // the org has one; null turns it off.
+      priority: RankedField.nullable().optional(),
+      effort: RankedField.nullable().optional(),
+      scope: z.object({ field: z.string() }).nullable().optional(),
     })
     .default({ mine: false, orgs: [], repos: [] }),
 });
@@ -68,6 +70,23 @@ export function nextUpSources({ nextUp }: Pick<AttentionConfig, "nextUp">): Next
     ...nextUp.orgs.map((org) => ({ id: `org:${org}`, label: org })),
     ...nextUp.repos.map((repo) => ({ id: `repo:${repo}`, label: repo })),
   ];
+}
+
+// What Next up uses org issue fields for, chosen in settings [NXT-04].
+export const FIELD_ROLES = ["priority", "effort", "scope"] as const;
+export type FieldRole = (typeof FIELD_ROLES)[number];
+// The field each role uses until I choose: one with the role's name, like "Priority".
+export const DEFAULT_FIELD: Record<FieldRole, string> = { priority: "Priority", effort: "Effort", scope: "Scope" };
+
+// The field a role uses: the chosen one, none if turned off, else the one named after it [NXT-04].
+export function nextUpField({ nextUp }: Pick<AttentionConfig, "nextUp">, role: FieldRole): { field: string; order?: string[] } | undefined {
+  const chosen = nextUp[role];
+  return chosen === undefined ? { field: DEFAULT_FIELD[role] } : (chosen ?? undefined);
+}
+
+// Org issue field names compare without case, as people type them in config.json.
+export function sameField(a: string | undefined, b: string | undefined): boolean {
+  return !!a && !!b && a.toLowerCase() === b.toLowerCase();
 }
 
 // "owner/name" of a Paseo project with a GitHub remote, from its project key.

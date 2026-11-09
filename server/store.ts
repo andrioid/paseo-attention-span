@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import type { Attention, Item, SectionId } from "../shared/attention";
-import { AttentionConfig } from "../shared/config";
+import { AttentionConfig, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
 import type { Pending } from "./view";
 
 // Local files in ~/.config/paseo-attention-span/ [PRIV-01].
@@ -83,6 +83,21 @@ export function saveNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine
   return updateConfig((file) => {
     const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
     return { ...file, nextUp: { ...nextUp, ...sources } };
+  });
+}
+
+// Which org issue fields Next up uses, from settings [NXT-04]: null turns one off. A field kept as it was keeps its order.
+export function saveNextUpFields(fields: Record<FieldRole, string | null>): Promise<AttentionConfig> {
+  return updateConfig((file) => {
+    const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
+    const chosen = Object.fromEntries(
+      FIELD_ROLES.map((role) => {
+        const before = nextUp[role] as { field?: unknown } | null | undefined;
+        const field = fields[role];
+        return [role, field === null ? null : before && typeof before.field === "string" && sameField(before.field, field) ? { ...before, field } : { field }];
+      }),
+    );
+    return { ...file, nextUp: { ...nextUp, ...chosen } };
   });
 }
 

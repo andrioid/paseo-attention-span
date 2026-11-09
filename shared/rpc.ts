@@ -2,7 +2,7 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import type { AttentionView, ItemDetails, ReviewerChoices, Target } from "./attention";
 import { SessionKind } from "./config";
-import type { ConfigStatus, CoverageCheck, SetupStatus } from "./setup";
+import type { ConfigStatus, CoverageCheck, IssueField, SetupStatus } from "./setup";
 import type { FeedbackInfo } from "./feedback";
 import type { ReadyProvider } from "./providers";
 import type { UpdateNotice } from "./update";
@@ -28,6 +28,10 @@ export const checkCoverage = defineRpc({ name: "config.check-coverage", input: z
 export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.object({ orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
 // Where Next up looks, chosen in settings [NXT-04]; orgs are picked from the ones I belong to.
 export const setNextUpSources = defineRpc({ name: "config.set-next-up", input: z.object({ mine: z.boolean(), orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
+// The org issue fields settings offers for Next up, and which one each role uses [NXT-04].
+export const issueFields = defineRpc({ name: "config.issue-fields", input: z.object({}), output: z.custom<{ fields: IssueField[] }>() });
+const fieldChoice = z.string().nullable();
+export const setNextUpFields = defineRpc({ name: "config.set-next-up-fields", input: z.object({ priority: fieldChoice, effort: fieldChoice, scope: fieldChoice }), output: done });
 // Replies on others' threads without a tag, from settings [ATT-17].
 export const setFollowThreads = defineRpc({ name: "config.set-follow-threads", input: z.object({ on: z.boolean() }), output: done });
 export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), output: z.object({ orgs: z.array(z.string()) }) });

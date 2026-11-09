@@ -276,7 +276,26 @@ for (const layout of layouts) {
       await page.screenshot({ path: `/out/${prefix}-settings-org-picker.png`, clip: fold() });
       await page.keyboard.press("Escape");
       const withSource = JSON.parse(await readFile(configPath, "utf8"));
-      if (withSource.nextUp?.repos?.[0] !== "me/tool" || !withSource.nextUp.mine || !withSource.nextUp.priority) throw new Error(`config.json after adding to Next up: ${JSON.stringify(withSource)}`);
+      if (withSource.nextUp?.repos?.[0] !== "me/tool" || !withSource.nextUp.mine || !withSource.nextUp.effort) throw new Error(`config.json after adding to Next up: ${JSON.stringify(withSource)}`);
+      // Next up's fields: Priority and Scope found by their names, Effort as config.json has it [NXT-04].
+      const fieldsHeading = page.getByText("Next up fields", { exact: true });
+      await page.getByText(/Picked by its name/).first().waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      // The viewport is tall, so clip a band from the section down rather than scroll to it.
+      const fieldsBand = async () => {
+        const box = await fieldsHeading.boundingBox();
+        return { ...fold(), y: Math.max(0, box.y - 24), height: 420 };
+      };
+      await page.screenshot({ path: `/out/${prefix}-settings-fields.png`, clip: await fieldsBand() });
+      // Scope set to another field is saved; Effort keeps its hand-written order.
+      await page.getByText("Scope", { exact: true }).last().click();
+      await page.getByText("Team", { exact: true }).last().click();
+      await page.getByText("Team", { exact: true }).first().waitFor({ timeout: 10000 });
+      await page.waitForTimeout(500);
+      const withFields = JSON.parse(await readFile(configPath, "utf8"));
+      if (withFields.nextUp?.scope?.field !== "Team" || withFields.nextUp.priority?.field !== "Priority" || withFields.nextUp.effort?.order?.length !== 4)
+        throw new Error(`config.json after picking a field: ${JSON.stringify(withFields)}`);
+      await page.screenshot({ path: `/out/${prefix}-settings-fields-picked.png`, clip: await fieldsBand() });
       // The setup checklist, from a config.json that doesn't parse; fixed, Check again brings the tabs back [SET-01].
       await writeFile(configPath, "{ broken");
       // Out of Paseo's settings: phones have only a back arrow, so start over from the app.

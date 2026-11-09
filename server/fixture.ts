@@ -1,5 +1,6 @@
 import type { AgentSummary, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { SessionKind } from "../shared/config";
+import type { IssueField } from "../shared/setup";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_ATTENTION_SPAN_FIXTURE=1).
@@ -12,6 +13,13 @@ export const FIXTURE_ORGS = ["acme"];
 export const FIXTURE_REPOS = [REPO, ISSUES_REPO, "acme/web", "me/tool"];
 // The orgs Next up's org picker offers in previews [NXT-04].
 export const FIXTURE_MY_ORGS = ["acme", "globex"];
+// The org issue fields settings offers for Next up [NXT-04].
+export const FIXTURE_ISSUE_FIELDS: IssueField[] = [
+  { name: "Effort", options: ["🐟 Tiny (< 4h)", "🐇 Small (0.5-2d)", "🐂 Medium (2-5d)", "🦑 Large (1-2w)"], orgs: ["acme"] },
+  { name: "Priority", options: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"], orgs: ["acme"] },
+  { name: "Scope", options: ["🔙 Backend", "🖌 Frontend", "🕵 Full-stack", "📱 Mobile app"], orgs: ["acme"] },
+  { name: "Team", options: ["Platform", "Payments"], orgs: ["acme"] },
+];
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
 
