@@ -172,6 +172,12 @@ export function checkoutPr(kind: SessionKind, target: Pick<Target, "number" | "h
   return kind === "review" && top && target.stack!.length > 1 ? { number: top.number, head: top.head } : { number: target.number, head: target.headRefName };
 }
 
+// The name of a session and its new workspace; a review says so, apart from work on my own PRs [SES-09].
+export function sessionTitle(kind: SessionKind, target: Pick<Target, "kind" | "number" | "title">): string {
+  const item = `${target.kind === "pr" ? "PR" : "Issue"} ${target.number}: ${target.title}`;
+  return (kind === "review" ? `Review ${item}` : item).slice(0, 120);
+}
+
 export interface SubRow {
   key: string;
   number: number;

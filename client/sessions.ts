@@ -1,5 +1,5 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
-import { type AgentSummary, checkoutPr, type Target } from "../shared/attention";
+import { type AgentSummary, checkoutPr, sessionTitle, type Target } from "../shared/attention";
 import { linkedSessions } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
@@ -163,7 +163,7 @@ export async function startSession(paseo: Paseo, input: StartSession): Promise<s
   const project = checkout.project;
   if (!project) throw new Error(noProjectMessage(checkout, target));
   const { agent: agentConfig } = await resolveAgentConfig(paseo, input.fetchProviders, input.kind, input.config, input.profileId);
-  const title = `${target.kind === "pr" ? "PR" : "Issue"} ${target.number}: ${target.title}`.slice(0, 120);
+  const title = sessionTitle(input.kind, target);
 
   const workspace = input.workspaceId
     ? paseo.workspaces.ref(input.workspaceId)
