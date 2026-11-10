@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AgentSummary, itemSessions, looseSessions } from "./attention";
+import { type AgentSummary, itemSessions, looseSessions, sessionTitle } from "./attention";
 
 const agent = (id: string, itemKey: string, lastActivityAt: string, requiresAttention = false): AgentSummary => ({
   id,
@@ -42,5 +42,19 @@ describe("looseSessions", () => {
 
   it("SES-03: leaves out sessions that sit in one of the item's action lines", () => {
     expect(looseSessions([kinded("a", "rebase")], ["rebase"])).toEqual([]);
+  });
+});
+
+describe("sessionTitle", () => {
+  const pr = { kind: "pr" as const, number: 123, title: "Faster product search" };
+  it("names a review as one [SES-09]", () => {
+    expect(sessionTitle("review", pr)).toBe("Review PR 123: Faster product search");
+  });
+  it("leaves work on my own PRs and issues unprefixed", () => {
+    expect(sessionTitle("fix", pr)).toBe("PR 123: Faster product search");
+    expect(sessionTitle("start", { kind: "issue", number: 95, title: "Customers forget unpaid invoices" })).toBe("Issue 95: Customers forget unpaid invoices");
+  });
+  it("keeps a long name within 120 characters", () => {
+    expect(sessionTitle("review", { ...pr, title: "x".repeat(200) })).toHaveLength(120);
   });
 });

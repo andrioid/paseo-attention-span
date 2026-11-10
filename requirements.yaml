@@ -84,6 +84,7 @@ functional:
       SES-06: start sessions even when no agent profiles are configured; so that Attention Span works before I've set anything up.
       SES-07: start a session on an issue in the repository its code lives in, chosen right there the first time; so that issues kept in a separate repository work without editing files.
       SES-08: see sessions started outside Attention Span on the item of the pull request their workspace is linked to, or of the session whose worktree they share, as "Continue session"; so that I don't start duplicate work.
+      SES-09: tell sessions reviewing someone else's pull request from work on my own in Paseo's sidebar, by a name like "Review PR 123: title"; so that I know which kind of work a workspace holds.
   next_up:
     As a developer, I can:
       NXT-01: see open issues nobody is assigned to, apart from the work that needs me; so that I can get an idea of what to do next.
