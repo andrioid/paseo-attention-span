@@ -19,7 +19,6 @@ export const SECTIONS = {
   changes: { tab: "doing", title: "Changes requested" },
   ready: { tab: "doing", title: "Ready to merge" },
   upstream: { tab: "doing", title: "Needs upstream" },
-  too_long: { tab: "doing", title: "Waiting too long" },
   // Nobody has the next move until I ask someone [PRS-12].
   needs_reviewer: { tab: "doing", title: "Needs a reviewer" },
   drafts: { tab: "doing", title: "My drafts" },
@@ -58,7 +57,9 @@ export interface Chip {
   text: string;
   tone: "good" | "bad" | "warn" | "neutral";
   // In place of the dot, where a picture says it better.
-  icon?: "thumbUp";
+  icon?: "thumbUp" | "hourglass";
+  // What it means in words, on hover and to screen readers [ATT-11, ATT-19].
+  hint?: string;
 }
 
 export type PersonRole = "author" | "changes";
@@ -88,14 +89,16 @@ export interface WaitingOn {
   since: string;
 }
 
-// What my waiting work waits for: on items in Waiting, and in Waiting too long, which Waiting shows too [WAI-01].
+// What my work waits for: on items in Waiting, and on my PRs in Doing that wait on reviewers too, which Waiting lists as
+// well [WAI-01, PRS-15].
 export interface Wait {
   // In a word or two: "review", "re-review", "question". None where the chips already say, like blocked by repo rules.
   reason?: string;
   // Since I asked, tagged, pushed or replied.
   since: string;
-  // Waiting too long only: what it waited for, for its chip in Doing [ATT-11].
-  overdue?: string;
+  // Waited at least waitingTooLongDays, where nudging is fair: not while the next step is mine, like failing CI, conflicts,
+  // changes to make or a reply I owe, nor while CI runs [ATT-11].
+  tooLong?: boolean;
 }
 
 // Waiting's work under someone it waits on, longest wait first; the last group, without anyone, is work no person holds up.
@@ -200,7 +203,7 @@ export interface Item {
   url: string;
   chips: Chip[];
   person?: Person;
-  // Waiting and Waiting too long only [WAI-02].
+  // Whom it waits on: in Waiting, and on my PRs in Doing whom I asked that hasn't reviewed yet [WAI-02, PRS-15].
   waitingOn?: WaitingOn[];
   wait?: Wait;
   actions: ActionId[];

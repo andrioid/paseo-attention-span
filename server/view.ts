@@ -94,7 +94,7 @@ export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean 
 
 // Waiting by who it waits on, so I know whom to nudge: whoever blocks the most first, ties by the longest wait, then bots, who
 // can't be nudged, and last the work no person holds up. Each one's work oldest first; the screen lifts work with an active
-// session. Waiting too long shows here too [WAI-01, WAI-03].
+// session. My PRs in Doing that wait on whom I asked are here too, so nudging them is one list [WAI-01, WAI-03, PRS-15].
 export function waitingGroups(items: Item[]): WaitingGroup[] {
   const oldest = (list: Item[]) => list.map((item) => item.wait?.since ?? "").sort()[0] ?? "";
   const people = new Map<string, WaitingGroup>();
@@ -122,6 +122,9 @@ export function waitingGroups(items: Item[]): WaitingGroup[] {
   return nobody.length ? [...groups, { items: nobody.sort(byWait) }] : groups;
 }
 
+// Waiting's work: its own sections, and my PRs in Doing while they wait on someone I asked [WAI-01, PRS-15].
+const inWaiting = (item: Item) => SECTIONS[item.section].tab === "waiting" || (SECTIONS[item.section].tab === "doing" && !!item.wait && !!item.waitingOn?.length);
+
 export function buildView(attention: Attention | null, history: Item[], dismissed: State["dismissed"], meta: ViewMeta): AttentionView {
   const items = [...(attention?.items ?? []), ...history];
   const visible = items.filter((item) => !isDismissed(item, dismissed));
@@ -135,7 +138,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     login: attention?.login ?? null,
     count: doing.reduce((sum, section) => sum + section.items.length, 0),
     doing,
-    waiting: waitingGroups(visible.filter((item) => item.section === "too_long" || SECTIONS[item.section].tab === "waiting")),
+    waiting: waitingGroups(visible.filter(inWaiting)),
     history: visible.filter((item) => SECTIONS[item.section].tab === "history"),
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],

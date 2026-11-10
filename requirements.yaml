@@ -27,7 +27,7 @@ functional:
       ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that I don't start duplicate work.
       ATT-08: dismiss an item until something new happens on it; so that FYIs stop taking up space.
       ATT-09: notice how many items need me from anywhere in Paseo; so that I don't have to open Attention Span to check.
-      ATT-11: see work that has waited on others for too long, and on my own issues however long ago that was; so that stalled work gets nudged.
+      ATT-11: see in Waiting which work has waited on others for too long, marked on its age and explained when I point at it, only where a nudge is fair (not while the next step is mine or CI is still running), and on my own issues however long ago that was; so that stalled work gets nudged, while Doing keeps only what I can act on.
       ATT-12: open any item on GitHub; so that I can do what Attention Span doesn't cover.
       ATT-13: tell at a glance which actions start an agent session and which change GitHub right away; so that I know what a tap will do.
       ATT-14: undo a change on GitHub right after making it, where GitHub allows; so that a mis-tap costs nothing without confirming every action.
@@ -64,7 +64,7 @@ functional:
       PRS-12: see my pull requests that nobody has been asked to review, and ask people or teams from there, or merge where nobody reviews; so that work doesn't sit as "waiting" when nobody has the next move.
       PRS-13: see an approved pull request that the repo's rules still block as waiting, without Merge; so that Merge is offered only when GitHub would allow it.
       PRS-14: have checks the repo doesn't require not hold up a pull request, where the repo requires others; so that a failing or slow optional check doesn't keep finished work from shipping.
-      PRS-15: see on my pull requests in Doing whom I asked to review and who hasn't yet, approved or not; so that I know someone I wanted to read it still hasn't before I merge or move on.
+      PRS-15: see on my pull requests in Doing whom I asked to review and who hasn't yet, approved or not, and find those pull requests in Waiting under each of them too; so that I know someone I wanted to read it still hasn't before I merge or move on, and can nudge them.
   upstream:
     As a developer, I can:
       UPS-01: see my pull requests that conflict with their base; so that pull requests needing updates from upstream are easy to fix.
@@ -100,7 +100,7 @@ functional:
       NXT-11: close an issue from Next up as completed or not planned, with an optional comment, and undo it; so that work that's done or won't be done stops being suggested.
   waiting:
     As a developer, I can:
-      WAI-01: see my work that is waiting on others, grouped by who it waits on with whoever blocks the most first, bots after people, and work no person holds up last, each group with work that has an active session first, and each card saying why it waits and for how long, including work that waited too long, where a pull request waits for review only once someone has been asked, and a thread only once my last words ask a question; so that I know that work is tracked and who is blocking me most.
+      WAI-01: see my work that is waiting on others, grouped by who it waits on with whoever blocks the most first, bots after people, and work no person holds up last, each group with work that has an active session first, and each card saying why it waits and for how long, including my pull requests in Doing that wait on whom I asked, where a pull request waits for review only once someone has been asked, and a thread only once my last words ask a question; so that I know that work is tracked and who is blocking me most.
       WAI-02: see who my waiting work waits on: reviewers I asked, reviewers who asked for changes and people I tagged in my unanswered question, and nobody where none of those apply; so that I know whom to nudge without guessing.
       WAI-03: copy the list of my work waiting on one person or team, oldest first, each line a Markdown link led by why and for how long, like "Review 2h: [title](link)"; so that nudging them is one paste they can skim.
   history:

@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, Meta, TablerIcon, toneColor, useStyles } from "./ui";
+import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
 //
@@ -79,7 +79,7 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
     <View style={first ? null : styles.divider}>
       <View style={styles.item}>
         <Mark {...mark} />
-        <View style={styles.body}>
+        <HintArea style={styles.body}>
           <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? `${title}, more`} onPress={onOpen} style={{ gap: 6 }}>
             <Text style={styles.title} numberOfLines={2}>
               {title}
@@ -90,7 +90,7 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
           {/* On phones the actions sit under the text, labelled, so mixed actions stay readable. */}
           {styles.compact ? actions : null}
           {confirm ? <ConfirmBar {...confirm} /> : null}
-        </View>
+        </HintArea>
         {styles.compact ? null : actions}
       </View>
       {overlay}

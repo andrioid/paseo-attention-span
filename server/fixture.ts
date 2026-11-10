@@ -167,7 +167,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(111, { title: "Faster product search", reviewRequests: { nodes: [{ requestedReviewer: bob }] }, commits: commit("SUCCESS", 0.3) }),
       pr(112, { title: "Translate the checkout emails", reviewDecision: "CHANGES_REQUESTED", latestReviews: { nodes: [{ author: alice, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2) }] }, commits: commit("SUCCESS", 1) }),
       pr(113, { title: "Upgrade the payment SDK", reviewRequests: { nodes: [{ requestedReviewer: bob }, { requestedReviewer: alice }] } }, "PENDING"),
-      pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED", latestReviews: { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(1) }] }, reviewRequests: { nodes: [{ requestedReviewer: bob }] } }),
+      pr(114, { title: "Cache exchange rates daily", reviewDecision: "APPROVED", latestReviews: { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(8) }] }, reviewRequests: { nodes: [{ requestedReviewer: bob }] }, commits: commit("SUCCESS", 9) }),
       pr(115, { title: "Split the settings page into tabs", isDraft: true, mergeable: "CONFLICTING" }),
       pr(116, { title: "Try a faster PDF renderer", isDraft: true }, "FAILURE"),
       pr(117, { title: "Harden the upload endpoint", reviewThreads: { nodes: [thread(bot, 1)] } }),
