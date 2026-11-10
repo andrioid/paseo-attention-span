@@ -119,7 +119,9 @@ describe("ready to merge and behind base", () => {
 
   it("PRS-13: blocked by a rule never counts as waiting too long, even after I replied", () => {
     const old = { reviewDecision: "APPROVED" as const, mergeStateStatus: "BLOCKED" as const, commits: commit("SUCCESS", 30), reviewThreads: { nodes: [thread(me, 20)] } };
-    expect(sections(run({ mine: [pr(1, old)] }).items)).toEqual([[1, "wait_review"]]);
+    const { items } = run({ mine: [pr(1, old)] });
+    expect(sections(items)).toEqual([[1, "wait_review"]]);
+    expect(items[0].wait?.tooLong).toBeUndefined();
   });
 
   it("PRS-13: what we already know explains a block, so it doesn't count as a rule", () => {
@@ -406,7 +408,7 @@ describe("waiting", () => {
     });
     expect(sections(attention.items)).toEqual([[1, "wait_review"], [2, "wait_ci"], [70, "wait_answer"]]);
     expect(attention.items[0]).toMatchObject({ waitingOn: [{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }], chips: [], wait: { reason: "review", since: daysAgo(1) } });
-    expect(attention.items[2].wait).toEqual({ reason: "question", since: daysAgo(1), overdue: undefined });
+    expect(attention.items[2].wait).toEqual({ reason: "question", since: daysAgo(1) });
   });
 
   it("WAI-01: says why each waits: a review, a re-review after my reply, or a question", () => {
@@ -447,7 +449,7 @@ describe("waiting", () => {
   it("PRS-15: an approved PR stays ready to merge, showing whom I asked that hasn't reviewed yet", () => {
     const approvals = { nodes: [{ author: alice, state: "APPROVED", submittedAt: daysAgo(1) }] };
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", latestReviews: approvals, reviewRequests: asked })] }).items;
-    expect(item).toMatchObject({ section: "ready", actions: ["merge"], wait: undefined });
+    expect(item).toMatchObject({ section: "ready", actions: ["merge"], wait: { reason: "review", since: daysAgo(1) } });
     expect(item.waitingOn).toEqual([{ login: "bob", avatarUrl: bob.avatarUrl, team: false, since: daysAgo(1) }]);
     const [nobody] = run({ mine: [pr(2, { reviewDecision: "APPROVED", latestReviews: approvals })] }).items;
     expect(nobody.waitingOn).toBeUndefined();
@@ -512,11 +514,33 @@ describe("waiting", () => {
     expect(item).toMatchObject({ section: "wait_answer", waitingOn: undefined });
   });
 
-  it("ATT-11: after 3 days it moves to Doing as Waiting too long", () => {
+  it("ATT-11: after 3 days work waits too long, and stays in Waiting, under whoever it waits on", () => {
     const attention = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })], involved: [issue(71, [comment(me, "any news?", 5)])] });
-    expect(sections(attention.items)).toEqual([[1, "too_long"], [71, "too_long"]]);
-    expect(attention.items[0].wait).toEqual({ reason: "review", since: daysAgo(4), overdue: "waiting for review" });
+    expect(sections(attention.items)).toEqual([[1, "wait_review"], [71, "wait_answer"]]);
+    expect(attention.items.map((item) => item.wait)).toEqual([
+      { reason: "review", since: daysAgo(4), tooLong: true },
+      { reason: "question", since: daysAgo(5), tooLong: true },
+    ]);
     expect(attention.items[0].waitingOn?.map((who) => who.login)).toEqual(["bob"]);
+    const fresh = run({ mine: [pr(2, { reviewRequests: asked, commits: commit("SUCCESS", 2) })] }).items[0];
+    expect(fresh.wait).toEqual({ reason: "review", since: daysAgo(2) });
+  });
+
+  it("ATT-11, PRS-15: my PR in Doing waits too long on whom I asked only when nudging them is fair", () => {
+    const old = (ci: string) => ({ reviewRequests: asked, commits: commit(ci, 5) });
+    const approved = run({ mine: [pr(1, { ...old("SUCCESS"), reviewDecision: "APPROVED" })] }).items[0];
+    expect(approved).toMatchObject({ section: "ready", wait: { reason: "review", since: daysAgo(5), tooLong: true } });
+    const unfair = run({
+      mine: [pr(2, old("FAILURE")), pr(3, { ...old("SUCCESS"), mergeable: "CONFLICTING" }), pr(4, { ...old("PENDING"), reviewDecision: "APPROVED" }), pr(5, old("PENDING")), pr(6, old("SUCCESS"))],
+      mentions: [mention(6, [comment(alice, "@me which one?", 0.5)], { __typename: "PullRequest" })],
+    }).items;
+    expect(unfair.map((item) => [item.number, item.section, item.wait?.tooLong])).toEqual([
+      [6, "reply", undefined],
+      [2, "ci", undefined],
+      [4, "ready", undefined],
+      [3, "upstream", undefined],
+      [5, "wait_ci", undefined],
+    ]);
   });
 });
 
@@ -573,8 +597,8 @@ describe("answered", () => {
 
   it("ATT-11: a question on my own issue stays however old; on someone else's, only while fresh", () => {
     const [item] = run({ asked: [issue(70, [comment(me, "still needed?", 45)], "Mine", { author: me })] }).items;
-    expect(item).toMatchObject({ section: "too_long" });
-    expect(item.wait).toEqual({ reason: "question", since: daysAgo(45), overdue: "waiting for an answer" });
+    expect(item).toMatchObject({ section: "wait_answer" });
+    expect(item.wait).toEqual({ reason: "question", since: daysAgo(45), tooLong: true });
     expect(run({ involved: [issue(71, [comment(me, "still needed?", 45)])] }).items).toEqual([]);
     expect(searchVariables(config, NOW).asked).not.toContain("updated:");
     expect(searchVariables(config, NOW).involved).toContain("involves:@me updated:>=");
@@ -586,7 +610,7 @@ describe("answered", () => {
 
   it("ATT-16: a thread both searches found is listed once", () => {
     const mine = issue(70, [comment(me, "still needed?", 5)], "Mine", { author: me });
-    expect(sections(run({ involved: [mine], asked: [mine] }).items)).toEqual([[70, "too_long"]]);
+    expect(sections(run({ involved: [mine], asked: [mine] }).items)).toEqual([[70, "wait_answer"]]);
   });
 
   it("ATT-03, ATT-16: an answer on an issue my PR closes leads its item", () => {
@@ -929,7 +953,7 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const attention = classify({ data, details, config, now: NOW });
-    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(16);
+    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(15);
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 6]);
   });

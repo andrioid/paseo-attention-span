@@ -24,7 +24,7 @@ import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from ".
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
-import { Avatar, Button, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
+import { Avatar, Button, Hint, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -118,7 +118,6 @@ const SECTION_ICONS: Record<SectionId, IconName> = {
   changes: "changes",
   ready: "merge",
   upstream: "branch",
-  too_long: "hourglass",
   needs_reviewer: "claim",
   drafts: "pencil",
   wait_review: "review",
@@ -569,17 +568,17 @@ type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | nu
 // A session on an item that has no session action of its own starts with this prompt; it's editable first.
 const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
 
-// How long it has waited, and why: in Waiting with a flag once it's too long, in Doing's Waiting too long as its own warning [WAI-01, ATT-11].
-function waitChips(item: Item, inWaiting: boolean): Chip[] {
+// Why it waits and how long, in Waiting only; Doing says what's mine to do. Once it has waited too long, where nudging is
+// fair, the age itself turns amber with ⌛ and says so in words [WAI-01, ATT-11].
+function waitChips(item: Item, inWaiting: boolean, tooLongDays: number): Chip[] {
   const { wait } = item;
-  if (!wait) return [];
+  if (!wait || !inWaiting) return [];
   const age = ago(wait.since);
-  if (!inWaiting) return wait.overdue ? [{ text: `${wait.overdue} · ${age}`, tone: "warn" }] : [];
-  return [
-    ...(wait.overdue ? [{ text: "waited too long", tone: "warn" as const }] : []),
-    ...(wait.reason ? [{ text: wait.reason, tone: "neutral" as const }] : []),
-    { text: age, tone: "neutral" },
-  ];
+  const reason: Chip[] = wait.reason ? [{ text: wait.reason, tone: "neutral" }] : [];
+  if (!wait.tooLong) return [...reason, { text: age, tone: "neutral" }];
+  const since = wait.reason === "question" ? "you asked" : "your last push or reply";
+  const limit = `${tooLongDays} day${tooLongDays === 1 ? "" : "s"}`;
+  return [...reason, { text: age, tone: "warn", icon: "hourglass", hint: `Waited too long: ${age} since ${since}, more than ${limit}` }];
 }
 
 // "Review 2h", "Question 3d": why and how long, to lead a line in a nudge [WAI-03].
@@ -596,7 +595,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const styles = useStyles();
   // An open session leads; without one, the item's own action does [SES-03].
   const sessions = itemSessions(actions.agents, item);
-  const own = [...waitChips(item, !!group), ...item.chips];
+  const own = [...waitChips(item, !!group, actions.config.waitingTooLongDays), ...item.chips];
   const chips = sessions[0] ? [...own, agentSignal(sessions[0])] : own;
   // The group names one; the card names the rest [WAI-01].
   const others = group?.who ? (item.waitingOn ?? []).filter((who) => !samePerson(who, group.who!)) : [];
@@ -929,23 +928,6 @@ function ReviewerSheet({
 // reads like Waiting, and whose comments are left like Changes requested [ATT-19].
 const ROLE_ICON: Record<PersonRole | "waiting", IconName> = { waiting: "hourglass", author: "pencil", changes: "changes" };
 
-// A line that says what it means in words on hover, and to screen readers; phones rely on the icon [ATT-19]. The words sit
-// beside the line in its flow, not floating over it, so a card's clipping can't cut them off: they wrap where space runs out.
-function Explained({ text, children }: { text: string; children: ReactNode }) {
-  const styles = useStyles();
-  const [hovered, setHovered] = useState(false);
-  return (
-    <View accessibilityLabel={text} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <View style={{ flexShrink: 0 }}>{children}</View>
-      {hovered ? (
-        <View style={{ flexShrink: 1, backgroundColor: styles.c.surface2, borderColor: styles.c.border, borderWidth: 1, borderRadius: 6, paddingVertical: 2, paddingHorizontal: 8 }}>
-          <Text style={{ color: styles.c.foreground, fontSize: 12 }}>{text}</Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 // The icon sits tight against the faces it explains, apart from the name and time, so they read as one.
 function Badged({ role, children }: { role: keyof typeof ROLE_ICON; children: ReactNode }) {
   const styles = useStyles();
@@ -965,7 +947,7 @@ function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>
   if (!person.snippet && person.role) {
     const text = person.role === "author" ? `Opened by ${person.login}` : `${person.login}'s comments are left to address, since your last push ${ago(person.since)} ago`;
     return (
-      <Explained text={text}>
+      <Hint text={text}>
         <View style={styles.row}>
           <Badged role={person.role}>
             <Avatar url={person.avatarUrl} bot={person.bot} />
@@ -973,7 +955,7 @@ function PersonQuote({ person, expanded }: { person: NonNullable<Item["person"]>
           {name}
           {person.role === "author" ? null : <Text style={styles.muted}>· {ago(person.since)}</Text>}
         </View>
-      </Explained>
+      </Hint>
     );
   }
   const line = (
@@ -1013,7 +995,7 @@ function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked
     return (
       <View style={{ gap: 6 }}>
         {people.map((who) => (
-          <Explained key={who.login} text={explain([who.login], who.since)}>
+          <Hint key={who.login} text={explain([who.login], who.since)}>
             <View style={styles.row}>
               <Badged role="waiting">
                 <Avatar url={who.avatarUrl} team={who.team} />
@@ -1021,14 +1003,14 @@ function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked
               {name(who.login)}
               {since(who.since)}
             </View>
-          </Explained>
+          </Hint>
         ))}
       </View>
     );
   }
   const earliest = people.map((who) => who.since).sort()[0];
   return (
-    <Explained text={explain(people.map((who) => who.login), earliest)}>
+    <Hint text={explain(people.map((who) => who.login), earliest)}>
       <View style={styles.row}>
         <Badged role="waiting">
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
@@ -1043,7 +1025,7 @@ function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked
         {hovered ? name(hovered) : null}
         {since(earliest)}
       </View>
-    </Explained>
+    </Hint>
   );
 }
 

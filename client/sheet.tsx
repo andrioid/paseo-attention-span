@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Chip, ItemDetails } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, KeepStyles, Loading, Signal, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
+import { Button, HintArea, KeepStyles, Loading, Signal, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
 
 // Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
@@ -30,7 +30,7 @@ export function ActionSheet({ title, top, entries, bottom, onClose }: { title: s
     <Modal title={title} open onOpenChange={(open) => (open ? null : onClose())}>
       <Modal.Content>
         <KeepStyles styles={styles}>
-          <View style={{ gap: 10 }}>{top}</View>
+          <HintArea style={{ gap: 10 }}>{top}</HintArea>
           <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
             {entries.map((entry, index) => (
               <Entry key={entry.key} entry={entry} first={index === 0} />

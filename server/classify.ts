@@ -20,7 +20,7 @@ import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, Li
 import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
-import { ISSUE_RULES, type IssueState, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
+import { ISSUE_RULES, type IssueState, nudgeable, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
@@ -196,23 +196,22 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       stale: s.stale,
       asked: s.asked,
       replied,
-      tooLong: daysSince(waitingSince, now) >= config.waitingTooLongDays,
     };
     // Every PR of mine has a section; the tests check that a rule always holds.
     const section = pick(PR_RULES, flags) ?? "wait_review";
-    const rule = PR_RULES[section];
-    const actions = rule?.actions?.(flags) ?? [];
+    const actions = PR_RULES[section]?.actions?.(flags) ?? [];
+    const tooLong = daysSince(waitingSince, now) >= config.waitingTooLongDays;
     const rulesBlocked = rulesBlock(flags);
     // Who it waits on, only from what GitHub records: who I asked, and while it waits for the reviewer after my reply, who
     // asked for changes; while CI runs, only who I asked. Someone who reviewed and wasn't asked again owes nothing. A rule,
     // not a person, holds up a PR the rules block [WAI-02, PRS-13].
-    const waits = !rulesBlocked && (section === "too_long" || SECTIONS[section].tab === "waiting");
+    const waits = !rulesBlocked && SECTIONS[section].tab === "waiting";
     const changers = replied && !flags.ciPending ? bottom.latestReviews.nodes.filter((review) => review.state === "CHANGES_REQUESTED").map((review) => review.author) : [];
     const asked = bottom.reviewRequests.nodes.map((request) => requested(request.requestedReviewer));
     // In Doing, approved or not, whoever I asked that hasn't reviewed yet: people and teams, not bots. An approved PR stays
-    // mine to merge, but I see who meant to read it still hasn't. Waiting too long keeps Waiting's rule, and a PR the repo's rules
-    // block waits on nobody, so neither lands under a reviewer in Waiting [PRS-15, PRS-13].
-    const outstanding = SECTIONS[section].tab === "doing" && section !== "too_long" ? reviewers(asked.filter(isOther), waitingSince).filter((who) => !who.bot) : [];
+    // mine to merge, but I see who meant to read it still hasn't, and it waits on them in Waiting too, for a nudge. A PR the
+    // repo's rules block waits on nobody [PRS-15, PRS-13].
+    const outstanding = SECTIONS[section].tab === "doing" ? reviewers(asked.filter(isOther), waitingSince).filter((who) => !who.bot) : [];
     const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : outstanding;
     // Why it waits, where the chips don't already say: approved ones say so, so do the rules that block them, and so does CI
     // running when nobody's on it [WAI-01].
@@ -243,8 +242,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       section,
       actions,
       chips,
-      // Waiting too long shows in Waiting too, under whoever it waits on [WAI-01].
-      wait: section === "too_long" || SECTIONS[section].tab === "waiting" ? { reason, since: waitingSince, overdue: section === "too_long" ? rule?.label?.(flags) : undefined } : undefined,
+      // In Waiting, and from Doing while it waits on whom I asked; too long once nudging them is fair [WAI-01, PRS-15, ATT-11].
+      wait: SECTIONS[section].tab === "waiting" || outstanding.length > 0 ? { reason, since: waitingSince, ...(tooLong && nudgeable(flags) && !rulesBlocked ? { tooLong } : {}) } : undefined,
       person:
         waiting ??
         (section === "answered" ? answer : undefined) ??
@@ -382,7 +381,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     });
   }
 
-  // Issues and others' PRs I'm in: answered, or waiting on others and then mine to nudge [WAI-01, ATT-11, ATT-16].
+  // Issues and others' PRs I'm in: answered, or waiting on others, too long after waitingTooLongDays [WAI-01, ATT-11, ATT-16].
   // My own PRs are listed above, or handed over and left out [PRS-08].
   for (const [key, issue] of threads) {
     const found = answers.get(key);
@@ -392,13 +391,13 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const section = pick(ISSUE_RULES, flags);
     if (!section) continue;
     listed.add(key);
-    const label = ISSUE_RULES[section]?.label?.(flags);
     const since = person?.since ?? mine;
+    const tooLong = daysSince(since, now) >= config.waitingTooLongDays;
     items.push({
       ...plain(issue, kind, section),
       person,
       waitingOn: section !== "answered" && tagged.length > 0 ? tagged : undefined,
-      wait: section === "answered" ? undefined : { reason: "question", since, overdue: label },
+      wait: section === "answered" ? undefined : { reason: "question", since, ...(tooLong ? { tooLong } : {}) },
       actions: section === "answered" ? replyActions(person) : [],
       // A new answer brings back a dismissed one [ATT-08].
       othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
@@ -452,7 +451,7 @@ export function threadState(
   thread: IssueNode,
   me: string,
   now: Date,
-  config: Pick<AttentionConfig, "mentionDays" | "waitingTooLongDays" | "followThreads">,
+  config: Pick<AttentionConfig, "mentionDays" | "followThreads">,
 ): { flags: IssueState; person?: Person; mine: string; tagged: WaitingOn[] } | null {
   const authored = thread.author?.login.toLowerCase() === me;
   const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
@@ -474,7 +473,6 @@ export function threadState(
     question: run.some((comment) => asksQuestion(comment.bodyHTML)),
     answered: unread.length > 0,
     fresh: recent(mine),
-    tooLong: daysSince(mine, now) >= config.waitingTooLongDays,
   };
   const tagged = flags.mineLast ? taggedSince(run, me, thread.url) : [];
   const last = unread.at(-1);

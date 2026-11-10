@@ -7,8 +7,6 @@ export interface Rule<S> {
   when: (s: S) => boolean;
   // The first is the card's main action.
   actions?: (s: S) => ActionId[];
-  // What it waits for, for Waiting too long's chip.
-  label?: (s: S) => string;
 }
 export type Rules<S> = { [K in SectionId]?: Rule<S> };
 
@@ -48,15 +46,15 @@ export interface PrState {
   asked: boolean;
   // I replied to the reviewer, or pushed after changes were requested.
   replied: boolean;
-  // Waited at least waitingTooLongDays [ATT-11].
-  tooLong: boolean;
 }
 
 // Approved and nothing I know of in the way, yet GitHub's rules still block it: signed commits, a required check that never
 // reported, a resolved-conversations rule, and the like. Nothing for me to do here, so it waits [PRS-13].
 export const rulesBlock = (s: PrState) => !s.draft && s.mergeBlocked && s.approved && !s.ciPending && !s.ciFailing && !s.changes && !s.conflicts;
 
-const waitingFor = (s: PrState) => (s.ciPending ? "CI running" : s.replied ? "waiting for the reviewer" : "waiting for review");
+// Fair to nudge whoever it waits on once it has waited too long: not while the next step is mine (failing CI, conflicts or a
+// stack out of sync, changes to make, a reply I owe), nor while CI runs, which a reviewer may fairly wait out [ATT-11].
+export const nudgeable = (s: PrState) => !s.draft && !s.waiting && !s.answer && !s.ciFailing && !s.ciPending && !s.changes && !s.blocked;
 
 // Merge only once CI passed against the current base [PRS-04, UPS-07]. Until then, auto-merge if the repo allows it [PRS-10].
 function readyActions(s: PrState): ActionId[] {
@@ -83,8 +81,6 @@ export const PR_RULES: Rules<PrState> = {
   // Blocked while CI runs counts as waiting on CI, which auto-merge covers [PRS-10, PRS-13].
   ready: { when: (s) => !s.draft && s.approved && !s.conflicts && !s.ciFailing && !s.changes && !(s.autoMerge && s.ciPending) && !rulesBlock(s), actions: readyActions },
   upstream: { when: (s) => !s.draft && s.blocked, actions: () => ["rebase"] },
-  // After too long it's mine to nudge [ATT-11]; a rule has no one to nudge [PRS-13].
-  too_long: { when: (s) => !s.draft && s.asked && s.tooLong && !rulesBlock(s), label: waitingFor },
   // Mine until I ask someone, even while CI runs. Merge, for repos where nobody reviews, once CI passed on the current base
   // and GitHub's rules allow it [PRS-12, PRS-04, PRS-13].
   needs_reviewer: {
@@ -92,10 +88,11 @@ export const PR_RULES: Rules<PrState> = {
     actions: (s) => (!s.ciFailing && !s.ciPending && s.behindBy === 0 && !s.mergeBlocked ? ["request_review", "merge"] : ["request_review"]),
   },
   drafts: { when: (s) => s.draft, actions: draftActions },
-  // Otherwise it waits on others: CI, the reviewer after my reply, or a review [WAI-01]. Blocked by rules waits with reviews [PRS-13].
-  wait_review: { when: (s) => !s.draft && s.asked && !s.ciPending && (!s.replied || rulesBlock(s)), label: waitingFor },
-  wait_reviewer: { when: (s) => !s.draft && s.asked && !s.ciPending && s.replied && !rulesBlock(s), label: waitingFor },
-  wait_ci: { when: (s) => !s.draft && s.asked && s.ciPending, label: waitingFor },
+  // Otherwise it waits on others: CI, the reviewer after my reply, or a review, however long; Waiting says when that's too
+  // long [WAI-01, ATT-11]. Blocked by rules waits with reviews [PRS-13].
+  wait_review: { when: (s) => !s.draft && s.asked && !s.ciPending && (!s.replied || rulesBlock(s)) },
+  wait_reviewer: { when: (s) => !s.draft && s.asked && !s.ciPending && s.replied && !rulesBlock(s) },
+  wait_ci: { when: (s) => !s.draft && s.asked && s.ciPending },
 };
 
 // ---- Issues and others' PRs I'm in [WAI-01, ATT-16] ----
@@ -113,8 +110,6 @@ export interface IssueState {
   answered: boolean;
   // My last comment is within mentionDays.
   fresh: boolean;
-  // My last comment is at least waitingTooLongDays old.
-  tooLong: boolean;
 }
 
 // An issue may match none, and then isn't listed: an answer I 👍'd needs nothing more, nor an old thread of someone else's.
@@ -123,7 +118,7 @@ export const ISSUE_RULES: Rules<IssueState> = {
   // A recent comment after mine, without mentioning me: mine until I reply, 👍 it or dismiss it [ATT-16].
   // On someone else's thread only when I've allowed replies without a tag [ATT-17].
   answered: { when: (s) => s.answered && (s.authored || s.follow) },
-  // Nobody answered for too long: mine to nudge. On my own issues however long ago, on others' only while fresh [ATT-11].
-  too_long: { when: (s) => s.mineLast && s.question && (s.authored || s.fresh) && s.tooLong, label: () => "waiting for an answer" },
+  // My question waits on an answer: on my own issues however long ago, on others' only while fresh. Waiting says when it's
+  // waited too long [WAI-01, ATT-11].
   wait_answer: { when: (s) => s.mineLast && s.question && (s.authored || s.fresh) },
 };

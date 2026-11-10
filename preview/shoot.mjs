@@ -84,7 +84,7 @@ for (const layout of layouts) {
         await page.waitForTimeout(800);
         await shot(tab.toLowerCase().replace(" ", "-"));
       }
-      // Work that waited too long shows in Doing too; clip to that section [ATT-11].
+      // Doing's sections, one band each.
       await page.getByRole("tab", { name: /Doing/ }).first().click();
       await page.waitForTimeout(800);
       const band = async (from, to) => {
@@ -98,7 +98,6 @@ for (const layout of layouts) {
         const x = Math.max(sidebar, Math.floor((await header(from).boundingBox()).x) - 48);
         return { x, y, width: layout.viewport.width - x - (x - sidebar), height: Math.min(end - y, MAX_HEIGHT) };
       };
-      await page.screenshot({ path: `/out/${prefix}-doing-too-long.png`, clip: await band("Waiting too long", "Needs a reviewer") });
       await page.screenshot({ path: `/out/${prefix}-doing-needs-reviewer.png`, clip: await band("Needs a reviewer", "My drafts") });
       // Optional checks failing or still running leave a PR ready [PRS-14].
       await page.screenshot({ path: `/out/${prefix}-doing-ready.png`, clip: await band("Ready to merge", "Needs upstream") });
@@ -115,6 +114,29 @@ for (const layout of layouts) {
         if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
+      // What a face and an amber age mean, in words on hover, floating over the card so nothing moves [ATT-19, ATT-11].
+      // A band around what's pointed at; touch has no hover.
+      const around = async (target) => {
+        const box = await target.boundingBox();
+        const sidebar = layout.isMobile ? 0 : 320;
+        return { x: sidebar, y: Math.max(0, Math.floor(box.y) - 90), width: layout.viewport.width - sidebar, height: 150 };
+      };
+      if (!layout.isMobile) {
+        const face = page.getByLabel(/^Waiting on bob since/).first();
+        await face.scrollIntoViewIfNeeded();
+        await face.hover();
+        await page.waitForTimeout(600);
+        await page.screenshot({ path: `/out/${prefix}-doing-hint.png`, clip: await around(face) });
+        await page.mouse.move(0, 0);
+        await page.getByRole("tab", { name: /Waiting/ }).first().click();
+        await page.waitForTimeout(800);
+        const age = page.getByLabel(/^Waited too long:/).first();
+        await age.scrollIntoViewIfNeeded();
+        await age.hover();
+        await page.waitForTimeout(600);
+        await page.screenshot({ path: `/out/${prefix}-waiting-too-long.png`, clip: await around(age) });
+        await page.mouse.move(0, 0);
+      }
       // Copy what waits on alice for a nudge, and keep what landed on the clipboard [WAI-03].
       // Then who a question waits on, each by name in its sheet [WAI-02].
       await page.getByRole("tab", { name: /Waiting/ }).first().click();

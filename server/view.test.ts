@@ -97,9 +97,9 @@ describe("waiting", () => {
     expect(liftActive(items, agents).map((i) => i.key)).toEqual(["d", "c", "a", "b"]);
   });
 
-  it("WAI-01, ATT-08: dismissing work that waited too long in Doing hides it from Waiting too", () => {
-    const overdue = { ...waiting("a", "too_long", "2026-10-01", [who("bob")]), othersActivityAt: "2026-10-01T00:00:00Z" };
-    const view = buildView(attention([overdue]), [], { a: { at: "2026-10-02T00:00:00Z", section: "too_long" } }, meta);
+  it("PRS-15, ATT-08: dismissing my PR in Doing hides it from Waiting too", () => {
+    const ready = { ...waiting("a", "ready", "2026-10-01", [who("bob")]), othersActivityAt: "2026-10-01T00:00:00Z" };
+    const view = buildView(attention([ready]), [], { a: { at: "2026-10-02T00:00:00Z", section: "ready" } }, meta);
     expect(view.waiting).toEqual([]);
   });
 
@@ -111,10 +111,16 @@ describe("waiting", () => {
     ]);
   });
 
-  it("WAI-01: work that waited too long shows in Waiting too, and counts once in Doing", () => {
-    const view = buildView(attention([waiting("a", "too_long", "2026-10-01", [who("bob")]), waiting("b", "wait_review", "2026-10-05", [who("bob")])]), [], {}, meta);
+  it("WAI-01, PRS-15: my PR in Doing that waits on whom I asked is in Waiting too, mixed in by wait, and counts once in Doing", () => {
+    const view = buildView(attention([waiting("a", "ready", "2026-10-01", [who("bob")]), waiting("b", "wait_review", "2026-10-05", [who("bob")])]), [], {}, meta);
     expect(view.count).toBe(1);
     expect(view.waiting.map((group) => group.items.map((i) => i.key))).toEqual([["a", "b"]]);
+  });
+
+  it("PRS-15: my PR in Doing that waits on nobody stays out of Waiting", () => {
+    const view = buildView(attention([{ ...item("a", "ready", "2026-10-01T00:00:00Z") }, { ...waiting("b", "ci", "2026-10-01"), waitingOn: undefined }]), [], {}, meta);
+    expect(view.count).toBe(2);
+    expect(view.waiting).toEqual([]);
   });
 });
 
