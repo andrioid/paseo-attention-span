@@ -44,6 +44,17 @@ describe("local files", () => {
     expect(state.dismissed).toEqual(dismissed);
     expect(state.live).toBeNull();
   });
+
+  it("ATT-11: a cache with an item in a section that's gone is dropped, so it can't break the screen", async () => {
+    await mkdir(newDir(), { recursive: true });
+    const old = { key: "acme/shop#1", section: "too_long" };
+    const live = { fetchedAt: "x", attention: { login: "me", items: [old], assigned: [], unclaimed: [] } };
+    await writeFile(join(newDir(), "state.json"), JSON.stringify({ live, history: { fetchedAt: "x", items: [{ ...old, section: "done" }, old] } }));
+    const state = await store.loadState();
+    expect([state.live, state.history]).toEqual([null, null]);
+    const fine = { ...live, attention: { ...live.attention, items: [{ ...old, section: "wait_review" }] } };
+    expect(store.State.parse({ live: fine }).live).toEqual(fine);
+  });
 });
 
 describe("settings", () => {

@@ -3,6 +3,7 @@ import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, type RefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type StyleProp, Text, View, type ViewStyle } from "react-native";
 import type { Chip } from "../shared/attention";
+import { HINT_GAP, type HintPlacement, hintPlacement } from "../shared/hint";
 import { ICONS, type IconName } from "./icons";
 
 // Shared look: theme colors only, tighter on compact layouts [REACH-01].
@@ -121,11 +122,6 @@ export function HintArea({ style, children }: { style?: StyleProp<ViewStyle>; ch
 
 // Resting the pointer this long shows a hint; passing over doesn't.
 const HINT_DELAY_MS = 300;
-const HINT_GAP = 8;
-// Less room than this beside the content, and the hint goes above it instead.
-const HINT_MIN_WIDTH = 160;
-
-type Placement = { side: "beside" | "above"; width: number };
 
 // What something means, in words: on hover after a moment, and always to screen readers. It floats over the layout rather
 // than in it, so showing it moves nothing, and it's sized to the room left in its HintArea: beside the content, wrapping
@@ -135,18 +131,15 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
   const bounds = useContext(HintBounds);
   const self = useRef<View>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [placement, setPlacement] = useState<HintPlacement | null>(null);
   useEffect(() => () => clearTimeout(timer.current), []);
   const show = () => {
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       self.current?.measureInWindow((x, _y, width) => {
-        const place = (right: number) => {
-          const beside = right - (x + width) - HINT_GAP;
-          setPlacement(beside >= HINT_MIN_WIDTH ? { side: "beside", width: beside } : { side: "above", width: Math.max(HINT_MIN_WIDTH, right - x) });
-        };
-        if (bounds?.current) bounds.current.measureInWindow((left, _top, boundsWidth) => place(left + boundsWidth));
-        else place(Dimensions.get("window").width - HINT_GAP);
+        const place = (left: number, right: number) => setPlacement(hintPlacement(x, width, left, right));
+        if (bounds?.current) bounds.current.measureInWindow((left, _top, boundsWidth) => place(left, left + boundsWidth));
+        else place(HINT_GAP, Dimensions.get("window").width - HINT_GAP);
       });
     }, HINT_DELAY_MS);
   };
@@ -155,7 +148,7 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
     setPlacement(null);
   };
   const where: ViewStyle =
-    placement?.side === "beside" ? { left: "100%", marginLeft: HINT_GAP, bottom: -2 } : { left: 0, bottom: "100%", marginBottom: 4 };
+    placement?.side === "beside" ? { left: "100%", marginLeft: HINT_GAP, bottom: -2 } : { left: placement?.offset ?? 0, bottom: "100%", marginBottom: 4 };
   return (
     // Raised while shown: every view is its own layer here, so the words would otherwise sit under whatever follows.
     <View ref={self} accessibilityLabel={text} onPointerEnter={show} onPointerLeave={hide} style={[inline ? null : { alignSelf: "flex-start" }, placement ? { zIndex: 10 } : null]}>

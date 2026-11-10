@@ -211,7 +211,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     // In Doing, approved or not, whoever I asked that hasn't reviewed yet: people and teams, not bots. An approved PR stays
     // mine to merge, but I see who meant to read it still hasn't, and it waits on them in Waiting too, for a nudge. A PR the
     // repo's rules block waits on nobody [PRS-15, PRS-13].
-    const outstanding = SECTIONS[section].tab === "doing" ? reviewers(asked.filter(isOther), waitingSince).filter((who) => !who.bot) : [];
+    const outstanding = SECTIONS[section].tab === "doing" && !rulesBlocked ? reviewers(asked.filter(isOther), waitingSince).filter((who) => !who.bot) : [];
     const waitingOn = waits ? reviewers([...changers, ...asked].filter(isOther), waitingSince) : outstanding;
     // Why it waits, where the chips don't already say: approved ones say so, so do the rules that block them, and so does CI
     // running when nobody's on it [WAI-01].
@@ -278,6 +278,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       stack,
       own,
       actions: [...new Set([...lead.actions, ...(other?.actions ?? [])])],
+      // Whom my PRs wait on stays, even where reviewing the rest of the stack leads, so they're in Waiting too [PRS-15].
+      waitingOn: lead.waitingOn ?? other?.waitingOn,
+      wait: lead.wait ?? other?.wait,
       chips: [...lead.chips, ...(stack.length > 1 ? [chip(`stack of ${stack.length}`)] : [])],
       othersActivityAt: latest(lead.othersActivityAt, other?.othersActivityAt),
     };
@@ -345,8 +348,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       url: lead?.url ?? bottom.url,
       chips: [...(lead ? [chip(`PR #${bottom.number}`)] : []), ...unit.chips],
       person: issueWaiting ?? unit.person,
-      waitingOn: issueWaiting ? undefined : unit.waitingOn,
-      wait: issueWaiting ? undefined : unit.wait,
+      // A reply on the issue is mine first, but its PRs still wait on whom I asked, in Waiting too; not too long while I owe
+      // that reply [PRS-15, ATT-11].
+      waitingOn: unit.waitingOn,
+      wait: issueWaiting && unit.wait ? { reason: unit.wait.reason, since: unit.wait.since } : unit.wait,
       actions: issueWaiting ? replyActions(issueWaiting) : unit.actions,
       children: lead ? grouped.flatMap((u) => u.stack.map((pr, i) => subRow(pr, i, u.stack))) : unit.stack.slice(1).map((pr, i) => subRow(pr, i + 1, unit.stack)),
       // Actions on GitHub act on my PRs, from my bottom one; Review checks out the top of the stack [ATT-04].

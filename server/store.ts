@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import type { Attention, Item, SectionId } from "../shared/attention";
+import { type Attention, type Item, type SectionId, SECTIONS } from "../shared/attention";
 import { AttentionConfig, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
 import type { Pending } from "./view";
 
@@ -13,6 +13,8 @@ export const DIR = CHOSEN_DIR ?? join(homedir(), ".config", "paseo-attention-spa
 const OLD_DIR = join(homedir(), ".config", "paseo-github-attention");
 const CONFIG = join(DIR, "config.json");
 const STATE = join(DIR, "state.json");
+
+const knownSections = (items: unknown): boolean => Array.isArray(items) && items.every((item) => Object.hasOwn(SECTIONS, (item as Item)?.section));
 
 export const State = z.object({
   // Item key -> others' activity and section when dismissed [ATT-08].
@@ -27,12 +29,19 @@ export const State = z.object({
   skippedUpdate: z.string().nullable().default(null).catch(null),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
   projectRepos: z.array(z.string()).default([]),
-  // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong.
+  // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong, like one with an item in a
+  // section that's gone (Waiting too long was one) [ATT-11].
   live: z
-    .object({ fetchedAt: z.string(), attention: z.custom<Attention>((value) => (value as Attention)?.unclaimed?.every?.((issue) => Array.isArray(issue.sources) && Array.isArray(issue.openPrs))) })
+    .object({
+      fetchedAt: z.string(),
+      attention: z.custom<Attention>(
+        (value) =>
+          knownSections((value as Attention)?.items) && (value as Attention).unclaimed?.every?.((issue) => Array.isArray(issue.sources) && Array.isArray(issue.openPrs)),
+      ),
+    })
     .nullable()
     .catch(null),
-  history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(Array.isArray) }).nullable().catch(null),
+  history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(knownSections) }).nullable().catch(null),
 });
 export type State = z.infer<typeof State>;
 

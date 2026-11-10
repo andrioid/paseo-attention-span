@@ -471,6 +471,27 @@ describe("waiting", () => {
     expect(item.waitingOn).toBeUndefined();
   });
 
+  it("PRS-15: whom my PR waits on survives grouping: under a stack I'm asked to review, and under an issue someone tagged me on", () => {
+    const approved = { reviewDecision: "APPROVED" as const, reviewRequests: asked, commits: commit("SUCCESS", 5) };
+    const stacked = run({ reviews: [pr(1, { author: alice, headRefName: "a-1" })], mine: [pr(2, { ...approved, baseRefName: "a-1", headRefName: "a-2" })] }).items;
+    expect(stacked).toHaveLength(1);
+    expect(stacked[0]).toMatchObject({ section: "review", wait: { reason: "review", tooLong: true } });
+    expect(stacked[0].waitingOn?.map((who) => who.login)).toEqual(["bob"]);
+    const closes = { nodes: [{ number: 50, title: "Issue 50", url: "https://x/50", repository: { nameWithOwner: REPO } }] };
+    const [led] = run({ mine: [pr(3, { ...approved, closingIssuesReferences: closes })], mentions: [mention(50, [comment(alice, "@me which shops?", 0.5)])] }).items;
+    expect(led).toMatchObject({ kind: "issue", section: "reply", wait: { reason: "review", since: daysAgo(5) } });
+    expect(led.waitingOn?.map((who) => who.login)).toEqual(["bob"]);
+    // I owe the reply first, so nudging bob isn't fair yet [ATT-11].
+    expect(led.wait?.tooLong).toBeUndefined();
+  });
+
+  it("PRS-15, PRS-13: a PR the repo's rules block waits on nobody, even when a mention brings it to Doing", () => {
+    const blocked = { reviewDecision: "APPROVED" as const, mergeStateStatus: "BLOCKED" as const, reviewRequests: asked };
+    const [item] = run({ mine: [pr(1, blocked)], mentions: [mention(1, [comment(alice, "@me ok?", 0.5)], { __typename: "PullRequest" })] }).items;
+    expect(item.section).toBe("reply");
+    expect([item.waitingOn, item.wait]).toEqual([undefined, undefined]);
+  });
+
   it("PRS-15, ATT-04: on a stack, only the bottom PR's requests show", () => {
     const top = pr(2, { baseRefName: "branch-1", headRefName: "branch-2", reviewRequests: asked });
     const { items } = run({ mine: [pr(1, { reviewDecision: "APPROVED" }), top] });
