@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
 import { type Place, PlaceText } from "./entity";
+import { cancelPendingOpen } from "./sheet";
 import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
@@ -70,7 +71,15 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
   const actions = (
     <View style={styles.wrap}>
       {primary ? (
-        <Button label={primary.label} accessibilityLabel={primary.accessibilityLabel} icon={primary.icon} variant="calm" busy={busy} onPress={primary.onPress} />
+        <Button
+          label={primary.label}
+          accessibilityLabel={primary.accessibilityLabel}
+          icon={primary.icon}
+          variant="calm"
+          busy={busy}
+          // A card's action wins over its sheet still waiting to open [ATT-06].
+          onPress={() => (cancelPendingOpen(), primary.onPress())}
+        />
       ) : busy ? (
         <ActivityIndicator size="small" color={styles.c.foregroundMuted} />
       ) : null}

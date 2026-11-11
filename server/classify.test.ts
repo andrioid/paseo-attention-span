@@ -5,7 +5,19 @@ import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, mergeStateQuery, mergeUnclaimed, missingProjectScope, requiredChecks, searchQuery, searchVariables, unclaimedSearches } from "./queries";
+import {
+  detailsQuery,
+  HISTORY_SEARCHES,
+  LIVE_SEARCHES,
+  mergeStateQuery,
+  mergeUnclaimed,
+  missingProjectScope,
+  projectStatusesQuery,
+  requiredChecks,
+  searchQuery,
+  searchVariables,
+  unclaimedSearches,
+} from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = AttentionConfig.parse({ orgs: ["acme"] });
@@ -17,9 +29,17 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(
   parts: Parameters<typeof search>[0],
   behind: Record<string, number> = {},
-  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; fieldColors?: Details["fieldColors"]; issues?: Details["issues"]; checks?: Details["checks"]; mergeState?: Details["mergeState"] } = {},
+  options: {
+    config?: AttentionConfig;
+    fieldOptions?: Details["fieldOptions"];
+    fieldColors?: Details["fieldColors"];
+    projectStatuses?: Details["projectStatuses"];
+    issues?: Details["issues"];
+    checks?: Details["checks"];
+    mergeState?: Details["mergeState"];
+  } = {},
 ) {
-  const details = { behind, fieldOptions: options.fieldOptions ?? {}, fieldColors: options.fieldColors ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {}, mergeState: options.mergeState ?? {} };
+  const details = { behind, fieldOptions: options.fieldOptions ?? {}, fieldColors: options.fieldColors ?? {}, projectStatuses: options.projectStatuses ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {}, mergeState: options.mergeState ?? {} };
   return classify({ data: search(parts), details, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
@@ -850,7 +870,9 @@ describe("mentions", () => {
 
 describe("next up", () => {
   const nextUp = { priority: { field: "Priority" }, effort: { field: "Effort", order: ["Tiny", "Small", "Medium", "Large"] }, scope: { field: "Scope" } };
-  const fieldOptions = { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] };
+  const priorities = ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"];
+  // As the details request reads them: per org [NXT-02].
+  const fieldOptions = { acme: { Priority: priorities } };
 
   it("NXT-01, NXT-02: orders unclaimed issues by priority, then effort, then age", () => {
     const attention = run(
@@ -898,27 +920,45 @@ describe("next up", () => {
     expect(byNumber).toEqual({ 1: "RED", 2: undefined });
   });
 
+  it("NXT-02: ranks each issue's priority by its own org's order, as two orgs may order the same field differently", () => {
+    const elsewhere = (number: number, priority: string) => ({ ...pickable(number, { Priority: priority }), repository: { nameWithOwner: "globex/api" } });
+    // globex lists Low first: its Low is its top priority, and acme's High its second.
+    const options = { acme: { Priority: priorities }, globex: { Priority: ["Low", "High"] } };
+    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2, "Low")] }, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions: options });
+    expect(attention.unclaimed.map((issue) => [issue.number, issue.priorityRank])).toEqual([
+      [2, 0],
+      [1, 1],
+    ]);
+  });
+
   it("NXT-12, NXT-03: puts each issue on its open projects with its Status, and lists those projects with every status in board order", () => {
-    const board = (id: string, title: string, closed = false) => ({ id, title, closed, field: { options: [{ name: "Backlog", color: "GRAY" as const }, { name: "Todo", color: "BLUE" as const }] } });
-    const item = (project: ReturnType<typeof board>, status?: string) => ({ project, status: status ? { name: status, color: "BLUE" as const } : null });
+    const board = (id: string, title: string, closed = false) => ({ id, title, closed });
+    const item = (project: ReturnType<typeof board> | null, status?: string) => ({ project, status: status ? { name: status, color: "BLUE" as const } : null });
+    const statuses = [{ name: "Backlog", color: "GRAY" as const }, { name: "Todo", color: "BLUE" as const }];
+    // Ten closed boards, cut short with more to come: whether it's on an open one is unknown.
+    const closedTen = Array.from({ length: 10 }, (_, i) => item(board(`P_old${i}`, "Old", true)));
     const attention = run(
       {
         unclaimed: [
-          { ...pickable(1, {}), projectItems: { nodes: [item(board("P_todo", "TODO"), "Todo"), item(board("P_old", "Old", true), "Todo"), null] } },
+          // A board the token can't see (an org's SSO) comes back empty and is left out.
+          { ...pickable(1, {}), projectItems: { nodes: [item(board("P_todo", "TODO"), "Todo"), item(board("P_old", "Old", true), "Todo"), item(null), null] } },
           { ...pickable(2, {}), projectItems: { nodes: [item(board("P_ideas", "Ideas"))] } },
-          { ...pickable(3, {}), projectItems: { nodes: [] } },
+          { ...pickable(3, {}), projectItems: { nodes: [], pageInfo: { hasNextPage: false } } },
           pickable(4, {}),
+          { ...pickable(5, {}), projectItems: { nodes: closedTen, pageInfo: { hasNextPage: true } } },
         ],
       },
       {},
+      { projectStatuses: { P_todo: statuses, P_ideas: statuses } },
     );
     const byNumber = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.projects]));
     expect(byNumber).toEqual({
       1: [{ id: "P_todo", title: "TODO", status: "Todo", color: "BLUE" }],
       2: [{ id: "P_ideas", title: "Ideas" }],
       3: [],
-      // Projects weren't asked for: unknown, not "on none".
+      // Projects weren't asked for, or GitHub cut the list short with none open: unknown, not "on none".
       4: undefined,
+      5: undefined,
     });
     expect(attention.projects?.map((project) => [project.title, project.statuses.map((status) => status.name)])).toEqual([
       ["Ideas", ["Backlog", "Todo"]],
@@ -928,7 +968,9 @@ describe("next up", () => {
       1: ["status:P_todo:Todo"],
       2: ["nostatus:P_ideas"],
       3: ["noproject"],
-      4: ["noproject"],
+      // Unknown matches no tick, so a project filter hides it rather than call it on no project.
+      4: [],
+      5: [],
     });
   });
 
@@ -938,6 +980,9 @@ describe("next up", () => {
     expect(searchQuery(["mine"], true, { projects: true })).not.toContain("projectItems");
     expect(missingProjectScope(new Error("Your token has not been granted the required scopes ... ['read:project']"))).toBe(true);
     expect(missingProjectScope(new Error("Bad credentials"))).toBe(false);
+    // Each board's statuses come once per board, not with every issue on it.
+    expect(searchQuery(["unclaimed"], false, { projects: true })).not.toContain("options");
+    expect(projectStatusesQuery(["P_todo", "P_ideas"]).match(/b\d: node/g)).toEqual(["b0: node", "b1: node"]);
   });
 
   it("NXT-06: lists issues assigned to me, ranked the same way", () => {
@@ -954,7 +999,7 @@ describe("next up", () => {
 
   it("NXT-04: until I choose, uses the fields named Priority, Effort and Scope, whatever their case; null turns one off", () => {
     const issues = { unclaimed: [pickable(1, { priority: "🏝 P3 Low", Scope: "🔙 Backend" }), pickable(2, { priority: "🏔 P1 High", Effort: "Small" })] };
-    const auto = run(issues, {}, { config: AttentionConfig.parse({}), fieldOptions: { PRIORITY: fieldOptions.Priority } });
+    const auto = run(issues, {}, { config: AttentionConfig.parse({}), fieldOptions: { acme: { PRIORITY: priorities } } });
     expect(auto.unclaimed.map((issue) => [issue.number, issue.priority, issue.effort, issue.scope, issue.priorityRank])).toEqual([
       [2, "🏔 P1 High", "Small", undefined, 1],
       [1, "🏝 P3 Low", undefined, "🔙 Backend", 3],

@@ -58,11 +58,13 @@ const FRAGMENTS: Record<string, string> = {
   closedByPullRequestsReferences(first: 5, includeClosedPrs: false) { nodes { number url state author { login } } }
 }`,
   // Needs read:project, so only asked for once the login is known to have it; without it GitHub fails the whole search [NXT-12].
-  // Archived items are off the board, so they don't count.
+  // Archived items are off the board, so they don't count. Each board's Status options come once per board, from
+  // projectStatusesQuery, not with every issue on it [GH-01]. hasNextPage says when the list was cut short.
   projects: `fragment projects on Issue {
   projectItems(first: 10, includeArchived: false) {
+    pageInfo { hasNextPage }
     nodes {
-      project { id title closed field(name: "Status") { ... on ProjectV2SingleSelectField { options { name color } } } }
+      project { id title closed }
       status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name color } }
     }
   }
@@ -232,11 +234,21 @@ const orgFields = (alias: string, org: string) => `${alias}: organization(login:
     }`;
 export type OrgFields = { issueFields?: { nodes: { name?: string; options?: { name: string; color?: GithubColor }[] }[] } } | null;
 
+// The Status options of the boards Next up's issues are on, in each board's order, once per board [NXT-03, GH-01].
+// Asked apart from the details request, so a board that can't be read costs only the filter's statuses.
+export function projectStatusesQuery(ids: string[]): string {
+  const fields = ids.map(
+    (id, index) => `b${index}: node(id: ${JSON.stringify(id)}) { ... on ProjectV2 { field(name: "Status") { ... on ProjectV2SingleSelectField { options { name color } } } } }`,
+  );
+  return `query ProjectStatuses {\n${fields.join("\n")}\n}`;
+}
+export type ProjectStatusesResult = Record<string, { field?: { options?: { name: string; color: GithubColor }[] } | null } | null>;
+
 // Answers only when the login may read projects; without read:project GitHub refuses it, which is how Next up tells [NXT-12].
 export const PROJECTS_PROBE = "query ProjectsProbe { viewer { projectsV2(first: 1) { totalCount } } }";
 
 // How GitHub says the login lacks read:project.
-export const missingProjectScope = (error: unknown): boolean => /read:project/i.test((error as Error)?.message ?? "");
+export const missingProjectScope = (error: unknown): boolean => /read:project/i.test(typeof error === "string" ? error : ((error as Error)?.message ?? ""));
 
 // The fields settings offers for Next up, from every org it might pick from [NXT-04]. An owner that's a person fails only its own field.
 export function issueFieldsQuery(orgs: string[]): string {

@@ -230,7 +230,9 @@ function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fiel
 }
 
 // Projects need the read:project scope, which gh doesn't ask for by default. Asked again each time Settings opens, so the
-// row turns On once the command has run [NXT-12].
+// row turns On once it's fixed. How to fix it depends on where gh's token comes from: its own login takes one command; a
+// token in GH_TOKEN or GITHUB_TOKEN, which gh reads first, needs that permission on GitHub; anything else, like an org's
+// SSO, gets GitHub's own words [NXT-12].
 const SCOPE_COMMAND = "gh auth refresh -s read:project";
 
 function ProjectsRow() {
@@ -238,12 +240,21 @@ function ProjectsRow() {
   const copy = useCopy();
   const check = useRpc(rpc.projectsAccess);
   const access = useQuery({ queryKey: PROJECTS_QUERY_KEY, queryFn: () => check({}), staleTime: 0 });
-  const hint = "Shows each issue's project and Status on its card, and adds them to the filter";
-  if (access.data?.access === "missing")
+  const status = access.data;
+  if (status?.state === "missing" && status.token === "gh")
     return <SettingsAction label="Projects" hint={`Needs the read:project scope. Run ${SCOPE_COMMAND} on this host`} actionLabel="Copy command" onPress={() => copy(SCOPE_COMMAND, "Copied the command")} />;
+  const hint =
+    status?.state === "missing"
+      ? `Your token comes from ${status.token}. Give it read:project (classic) or Projects: read (fine-grained), then restart the daemon`
+      : status?.state === "failed"
+        ? `Couldn't read projects: ${status.error}`
+        : status?.state === "unknown"
+          ? "Couldn't tell whether projects can be read"
+          : "Shows each issue's project and Status on its card, and adds them to the filter";
+  const on = status?.state === "on";
   return (
-    <SettingsRow label="Projects" hint={access.data?.access === "unknown" ? "Couldn't tell whether projects can be read" : hint} error={access.error ? (access.error as Error).message : null}>
-      <Text style={[styles.text, { color: access.data?.access === "on" ? styles.action : styles.c.foregroundMuted }]}>{access.data?.access === "on" ? "On" : access.isLoading ? "Checking…" : "Off"}</Text>
+    <SettingsRow label="Projects" hint={hint} error={access.error ? (access.error as Error).message : null}>
+      <Text style={[styles.text, { color: on ? styles.action : styles.c.foregroundMuted }]}>{on ? "On" : access.isLoading ? "Checking…" : "Off"}</Text>
     </SettingsRow>
   );
 }

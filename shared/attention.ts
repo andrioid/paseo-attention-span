@@ -239,8 +239,16 @@ export interface ProjectInfo {
   statuses: { name: string; color: GithubColor }[];
 }
 
-// Whether the gh login may read projects (read:project). Without it Next up leaves projects out and Settings says how [NXT-12].
-export type ProjectsAccess = "on" | "missing" | "unknown";
+// Whether Next up can read projects, and if not, why and how to fix it, for Settings [NXT-12]. Without them Next up just
+// leaves projects out.
+export interface ProjectsAccess {
+  // missing: the token lacks read:project; failed: GitHub refused or didn't answer for another reason; unknown: not asked yet.
+  state: "on" | "missing" | "failed" | "unknown";
+  // GitHub's own words when it failed for another reason, like an org's SSO.
+  error?: string;
+  // Where gh's token comes from: its own login, which `gh auth refresh` can widen, or an environment variable it reads first.
+  token: "gh" | "GH_TOKEN" | "GITHUB_TOKEN";
+}
 
 // An issue to pick up: assigned to me [NXT-06] or nobody [NXT-01].
 export interface NextUpIssue {
@@ -261,7 +269,8 @@ export interface NextUpIssue {
   priorityRank?: number;
   // The color the org gave its priority option; missing when the org colored none, so the card falls back on rank [NXT-10].
   priorityColor?: GithubColor;
-  // The open projects it's on; missing when projects can't be read [NXT-12].
+  // The open projects it's on [NXT-12]. Missing when projects can't be read, or when GitHub cut its list short with none open
+  // in what came: then which boards it's on is unknown, so it's neither on one nor on none.
   projects?: IssueProject[];
   // Open PRs that close it: someone may already be on it [NXT-10].
   openPrs: { number: number; url: string; author: string | null }[];
@@ -391,8 +400,9 @@ export function projectFilterId(project: { id: string } | null, status?: string 
   return status ? `status:${project.id}:${status}` : `nostatus:${project.id}`;
 }
 
-// The ticks an issue answers to: one per project it's on, or "noproject".
+// The ticks an issue answers to: one per project it's on, or "noproject". None when its projects are unknown, so a project
+// filter hides it rather than call it on no project.
 export function projectFilterIds(issue: Pick<NextUpIssue, "projects">): string[] {
-  const projects = issue.projects ?? [];
-  return projects.length ? projects.map((project) => projectFilterId(project, project.status)) : [projectFilterId(null)];
+  if (!issue.projects) return [];
+  return issue.projects.length ? issue.projects.map((project) => projectFilterId(project, project.status)) : [projectFilterId(null)];
 }

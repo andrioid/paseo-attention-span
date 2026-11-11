@@ -15,6 +15,15 @@ describe("LatestOnly", () => {
     expect(b.isCurrent()).toBe(false);
   });
 
+  it("ATT-06: another sheet taking over cancels what was waiting to open", () => {
+    const pending = new LatestOnly();
+    const cancelled: string[] = [];
+    const a = pending.start(() => cancelled.push("a"));
+    pending.cancel();
+    expect(cancelled).toEqual(["a"]);
+    expect(a.isCurrent()).toBe(false);
+  });
+
   it("ATT-06: a card that goes away while waiting leaves nothing pending, and doesn't cancel a newer one", () => {
     const pending = new LatestOnly();
     const a = pending.start(() => {});

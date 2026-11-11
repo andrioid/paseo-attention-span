@@ -42,7 +42,7 @@ export const setSources = defineRpc({ name: "next-up.sources", input: z.object({
 // And the project statuses [NXT-03].
 export const setProjectFilter = defineRpc({ name: "next-up.projects", input: z.object({ projects: z.array(z.string()) }), output: done });
 // Whether the gh login may read projects, asked again now, for Settings [NXT-12].
-export const projectsAccess = defineRpc({ name: "config.projects-access", input: z.object({}), output: z.custom<{ access: ProjectsAccess }>() });
+export const projectsAccess = defineRpc({ name: "config.projects-access", input: z.object({}), output: z.custom<ProjectsAccess>() });
 
 // GitHub changes, each from an explicit tap [SAFE-01], answered with the list after it.
 // `key` is the card it was done from, which shows the change until GitHub's search does [FRESH-02].

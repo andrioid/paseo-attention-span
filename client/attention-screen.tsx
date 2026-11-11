@@ -20,7 +20,7 @@ import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, type SheetEntry, useSheetOpener } from "./sheet";
+import { ActionSheet, cancelPendingOpen, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, type SheetEntry, useSheetOpener } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
@@ -618,6 +618,8 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const history = SECTIONS[item.section].tab === "history";
 
   function perform(action: ActionId) {
+    // An action opening its own sheet wins over a details sheet still waiting to open [ATT-06].
+    cancelPendingOpen();
     setSheet(null);
     if (action === "merge" || action === "close") setConfirm(action);
     else if (action === "acknowledge") setSheet("acknowledge");

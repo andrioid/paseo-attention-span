@@ -22,16 +22,20 @@ export const FIXTURE_ISSUE_FIELDS: IssueField[] = [
 ];
 // The org's colors for its priorities [NXT-10]; P3 is left gray, which shows untinted.
 const PRIORITY_COLORS: Record<string, GithubColor> = { "🌋 P0 Urgent": "RED", "🏔 P1 High": "ORANGE", "🏕P2 Medium": "YELLOW", "🏝 P3 Low": "GRAY" };
-// Two org projects with the board's built-in Status field [NXT-12].
-const TODO_BOARD = { id: "PVT_todo", title: "TODO", closed: false, field: { options: [s("Backlog", "GRAY"), s("Todo", "BLUE"), s("In progress", "YELLOW"), s("Done", "GREEN")] } };
-const IDEAS_BOARD = { id: "PVT_ideas", title: "Ideas", closed: false, field: { options: [s("New", "GRAY"), s("Exploring", "PINK"), s("Shaped", "PURPLE")] } };
+// Two org projects with the board's built-in Status field, its options as the details request reads them [NXT-12].
+const TODO_BOARD = { id: "PVT_todo", title: "TODO", closed: false };
+const IDEAS_BOARD = { id: "PVT_ideas", title: "Ideas", closed: false };
+const BOARD_STATUSES: Details["projectStatuses"] = {
+  [TODO_BOARD.id]: [s("Backlog", "GRAY"), s("Todo", "BLUE"), s("In progress", "YELLOW"), s("Done", "GREEN")],
+  [IDEAS_BOARD.id]: [s("New", "GRAY"), s("Exploring", "PINK"), s("Shaped", "PURPLE")],
+};
 function s(name: string, color: GithubColor) {
   return { name, color };
 }
 // An issue's place on a board: its Status, or none.
 function onBoard(board: typeof TODO_BOARD, status?: string): Pick<PickableNode, "projectItems"> {
-  const option = board.field.options.find((o) => o.name === status);
-  return { projectItems: { nodes: [{ project: board, status: option ?? null }] } };
+  const option = BOARD_STATUSES[board.id].find((o) => o.name === status);
+  return { projectItems: { nodes: [{ project: board, status: option ?? null }], pageInfo: { hasNextPage: false } } };
 }
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
@@ -296,8 +300,9 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     data,
     details: {
       behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 },
-      fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] },
+      fieldOptions: { acme: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] } },
       fieldColors: { acme: { Priority: PRIORITY_COLORS } },
+      projectStatuses: BOARD_STATUSES,
       issues: { [key(132)]: { number: 132, title: "The calendar can't be used with a keyboard", url: `https://github.com/${REPO}/issues/132`, repository } },
       checks: { [key(128)]: { required: 2, failing: 0, pending: 0 }, [key(129)]: { required: 1, failing: 0, pending: 0 } },
       mergeState: {},

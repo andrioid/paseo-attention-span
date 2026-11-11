@@ -4,6 +4,12 @@ export class LatestOnly {
   private current: { id: number; cancel: () => void } | null = null;
   private next = 0;
 
+  // Something else took over, like an action that opens its own sheet: whatever was waiting to open won't.
+  cancel(): void {
+    this.current?.cancel();
+    this.current = null;
+  }
+
   // A new pending open; the one before it, if still waiting, is cancelled.
   start(cancel: () => void): PendingOpen {
     this.current?.cancel();

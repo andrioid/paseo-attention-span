@@ -113,6 +113,12 @@ const OPEN_WAIT_MS = 1_500;
 // Every card's pending open, so the newest tap wins.
 const PENDING_OPENS = new LatestOnly();
 
+// Another way into a sheet, like a card's own action opening its picker, takes over from a card still waiting to open its
+// details sheet, which then doesn't open over it [ATT-06].
+export function cancelPendingOpen(): void {
+  PENDING_OPENS.cancel();
+}
+
 // Opens a card's sheet once its details are in, so the sheet doesn't change once open; meanwhile the card says it's
 // loading. Past OPEN_WAIT_MS it opens anyway and the skeletons hold the room; a failure opens it with its error line.
 // Resting the pointer on the card fetches them ahead, best effort [ATT-06, GH-01].
