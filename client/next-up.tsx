@@ -2,7 +2,7 @@ import { openExternalUrl } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { ago, shortValue } from "../shared/format";
+import { ago } from "../shared/format";
 import {
   type AgentSummary,
   type Chip,
@@ -15,14 +15,15 @@ import {
   projectFilterIds,
   type UnclaimedSource,
 } from "../shared/attention";
-import type { FieldRole, NextUpSource } from "../shared/config";
+import type { NextUpSource } from "../shared/config";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
 import { Modal } from "@getpaseo/plugin/client/ui";
-import { Button, githubColor, KeepStyles, Meta, Pill, SectionHeader, type Styles, TablerIcon, useHover, useStyles } from "./ui";
+import { githubColor, IssuePills, PlaceText } from "./entity";
+import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
@@ -279,60 +280,11 @@ function IssueList({ issues, claim, ...rowProps }: RowProps & { issues: NextUpIs
   );
 }
 
-// What tells me whether to pick it up: where it lives and how old it is, then its projects, priority, effort and scope as
-// pills [NXT-10]. The type is the mark. The sheet names each with its full value, as phones can't show a pill's hint.
-const fullFacts = (issue: NextUpIssue) => [
-  `${issue.repo}#${issue.number}`,
-  `${ago(issue.createdAt)} old`,
-  ...(issue.type ? [issue.type] : []),
-  ...(issue.projects ?? []).map((project) => `Project ${project.title}: ${project.status ?? "no status"}`),
-  ...FIELD_PILLS.flatMap(({ role, label }) => (issue[role] ? [`${label}: ${issue[role]}`] : [])),
-];
-
-// Each role's pill: its icon says what the value is [NXT-10].
-const FIELD_PILLS = [
-  { role: "priority", label: "Priority", icon: "flag" },
-  { role: "effort", label: "Effort", icon: "weight" },
-  { role: "scope", label: "Scope", icon: "layers" },
-] as const satisfies { role: FieldRole; label: string; icon: IconName }[];
-
 // An open PR that closes it means someone may already be on it [NXT-10].
 function prSignal(issue: NextUpIssue): Chip[] {
   const [first, ...more] = issue.openPrs;
   if (!first) return [];
   return [{ text: `PR by ${first.author ?? "someone"}${more.length ? ` +${more.length}` : ""}`, tone: "warn" }];
-}
-
-// Priority in the color the org gave it; where it colored none, the top priority is warm, the next accent, the rest quiet.
-function priorityColor(styles: Styles, issue: NextUpIssue): string | undefined {
-  if (issue.priorityColor) return githubColor(styles, issue.priorityColor);
-  return issue.priorityRank === 0 ? styles.c.statusWarning : issue.priorityRank === 1 ? styles.action : undefined;
-}
-
-// The projects it's on with their status in the board's color, then priority, effort and scope, each named by its icon [NXT-10, NXT-12].
-function Pills({ issue }: { issue: NextUpIssue }) {
-  const styles = useStyles();
-  const projects = issue.projects ?? [];
-  const fields = FIELD_PILLS.filter(({ role }) => issue[role]);
-  if (projects.length === 0 && fields.length === 0) return null;
-  return (
-    <View style={[styles.wrap, { gap: 4, marginTop: 2 }]}>
-      {projects.map((project) => (
-        <Pill
-          key={project.id}
-          icon="kanban"
-          label={project.title}
-          value={project.status}
-          color={githubColor(styles, project.color)}
-          hint={`Project ${project.title}: ${project.status ?? "no status"}`}
-        />
-      ))}
-      {fields.map(({ role, label, icon }) => {
-        const value = shortValue(issue[role]!);
-        return <Pill key={role} icon={icon} value={value} color={role === "priority" ? priorityColor(styles, issue) : undefined} hint={`${label}: ${value}`} />;
-      })}
-    </View>
-  );
 }
 
 // The type as the card's mark: red bugs, green features and epics, amber debt, the rest quiet.
@@ -355,7 +307,7 @@ function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onSt
       title={issue.title}
       accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
       meta={{ place: { repo: issue.repo, number: issue.number, login }, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
-      extra={<Pills issue={issue} />}
+      extra={<IssuePills issue={issue} />}
       onOpen={() => setSheet(true)}
       busy={busy.has(issue.key)}
       primary={
@@ -448,11 +400,14 @@ function IssueSheet({
       onClose={onClose}
       top={
         <>
-          <Meta facts={fullFacts(issue)} chips={prSignal(issue)} />
+          {/* The sheet always names the owner, even of my own repos. */}
+          <Meta lead={<PlaceText place={{ repo: issue.repo, number: issue.number, login: null }} />} facts={[`${ago(issue.createdAt)} old`, ...(issue.type ? [issue.type] : [])]} chips={prSignal(issue)} />
+          <IssuePills issue={issue} full />
         </>
       }
       entries={entries}
-      bottom={<DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel="PR" />}
+      // One line per open PR the card already knows closes it [ATT-06].
+      bottom={<DetailLines details={details.data} loading={details.isLoading} error={details.error} linkedLabel="PR" expected={issue.openPrs.length} />}
     />
   );
 }

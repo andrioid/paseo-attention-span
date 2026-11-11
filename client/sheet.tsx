@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Chip, ItemDetails } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, HintArea, KeepStyles, Loading, Signal, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
+import { Button, HintArea, KeepStyles, LINE_HEIGHT, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
 
 // Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
@@ -91,17 +91,19 @@ function Badge(chip: Chip) {
   );
 }
 
-// The PR's size and the linked issues or PRs, once fetched.
-export function DetailLines({ details, loading, error, linkedLabel }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string }) {
+// The PR's size and the linked issues or PRs, once fetched. Until then skeleton lines hold the room of the lines the card
+// expects (`expected`: a PR's size, the PRs it knows close an issue), so the sheet doesn't jump when they arrive [ATT-06].
+export function DetailLines({ details, loading, error, linkedLabel, expected }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string; expected: number }) {
   const styles = useStyles();
-  if (loading) return <Loading text="Loading details…" />;
-  if (!details) return error ? <Text style={styles.muted}>Couldn't load details: {(error as Error).message}</Text> : null;
+  const line = [styles.muted, { lineHeight: LINE_HEIGHT }];
+  if (loading) return <Skeleton lines={expected} label="Loading details" />;
+  if (!details) return error ? <Text style={line}>Couldn't load details: {(error as Error).message}</Text> : null;
   return (
     <>
-      {details.size ? <Text style={styles.muted}>{sizeText(details.size)}</Text> : null}
+      {details.size ? <Text style={line}>{sizeText(details.size)}</Text> : null}
       {details.linked.map((link) => (
         <Pressable key={link.url} accessibilityRole="link" onPress={() => void openExternalUrl(link.url)}>
-          <Text style={styles.muted} numberOfLines={1}>
+          <Text style={line} numberOfLines={1}>
             {linkedLabel} #{link.number} {link.title} · {link.state.toLowerCase()}
           </Text>
         </Pressable>

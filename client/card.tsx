@@ -3,7 +3,8 @@ import { type ReactNode, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, HintArea, Meta, type Place, TablerIcon, toneColor, useStyles } from "./ui";
+import { type Place, PlaceText } from "./entity";
+import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
 //
@@ -84,7 +85,7 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
             <Text style={styles.title} numberOfLines={2}>
               {title}
             </Text>
-            <Meta place={meta.place} facts={meta.when ? [meta.when] : []} chips={meta.signals} />
+            <Meta lead={<PlaceText place={meta.place} />} facts={meta.when ? [meta.when] : []} chips={meta.signals} />
             {extra}
           </Pressable>
           {/* On phones the actions sit under the text, labelled, so mixed actions stay readable. */}

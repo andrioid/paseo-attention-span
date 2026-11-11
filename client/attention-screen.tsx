@@ -16,6 +16,7 @@ import { blocks } from "../shared/setup";
 import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
+import { PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
@@ -711,7 +712,7 @@ function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item
     queryFn: () => actions.fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
     staleTime: 60_000,
   });
-  const meta = [`${item.repo}#${item.number}`, ...(item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [])];
+  const meta = item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [];
   // PRs already in the stack line link from there; list only the rest, like someone else's PR closing the same issue.
   const shown = new Set(item.children.map((child) => child.url));
   const extra = details.data && { ...details.data, linked: details.data.linked.filter((link) => !shown.has(link.url)) };
@@ -721,14 +722,16 @@ function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item
       onClose={handlers.onClose}
       top={
         <>
-          <Meta facts={meta} chips={chips} />
+          {/* Number first, as on the card; the sheet always names the owner, even of my own repos [ATT-20]. */}
+          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={chips} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
           {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
         </>
       }
       entries={sheetEntries(item, sessions, actions, handlers, details)}
-      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />}
+      // A PR has a size line; an issue's PRs are in its stack line already, so few lines come for it [ATT-06].
+      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} expected={item.kind === "pr" ? 1 : 0} />}
     />
   );
 }

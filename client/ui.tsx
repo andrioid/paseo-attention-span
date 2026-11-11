@@ -2,8 +2,7 @@ import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, type RefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type StyleProp, Text, View, type ViewStyle } from "react-native";
-import type { Chip, GithubColor } from "../shared/attention";
-import { repoLabel } from "../shared/format";
+import type { Chip } from "../shared/attention";
 import { HINT_GAP, type HintPlacement, hintPlacement } from "../shared/hint";
 import { ICONS, type IconName } from "./icons";
 
@@ -17,7 +16,7 @@ export function makeStyles(theme: Theme, compact: boolean) {
   return {
     c,
     compact,
-    // Themes don't say whether they're dark; their base surface does. Picks the shade of GitHub's colors that reads on it.
+    // Themes don't say whether they're dark; their base surface does. Picks the shade of a color that reads on it.
     dark: (luminance(c.surface0) ?? 0) < 0.5,
     // Action text and icons. The accent is a fill: as text on a dark theme it's 2.5:1; this green is 5–6:1 on every surface.
     action: c.statusSuccess,
@@ -63,25 +62,8 @@ export function mix(a: string, b: string, share: number): string {
   return `#${x.map((value, i) => Math.round(value * share + y[i] * (1 - share)).toString(16).padStart(2, "0")).join("")}`;
 }
 
-// The colors GitHub offers for options, as GitHub draws them on dark and on light [NXT-10].
-const GITHUB_COLORS: Record<GithubColor, { dark: string; light: string }> = {
-  GRAY: { dark: "#8b949e", light: "#6e7781" },
-  BLUE: { dark: "#4493f8", light: "#0969da" },
-  GREEN: { dark: "#3fb950", light: "#1a7f37" },
-  YELLOW: { dark: "#d29922", light: "#9a6700" },
-  ORANGE: { dark: "#db6d28", light: "#bc4c00" },
-  RED: { dark: "#f85149", light: "#cf222e" },
-  PINK: { dark: "#db61a2", light: "#bf3989" },
-  PURPLE: { dark: "#ab7df8", light: "#8250df" },
-};
-
-// An option's color for this theme. GRAY is what an option looks like when nobody chose a color, so it tints nothing.
-export function githubColor(styles: Styles, color: GithubColor | undefined): string | undefined {
-  return color && color !== "GRAY" ? GITHUB_COLORS[color]?.[styles.dark ? "dark" : "light"] : undefined;
-}
-
-// A fact about an item to pick up, as an icon half and a value half: the icon says what the value is, in words on hover and to
-// screen readers. A color softly fills the value half [NXT-10].
+// A fact as an icon half and a value half: the icon, with an optional label, says what the value is, in words on hover and
+// to screen readers. A color softly fills the value half. What goes in one is up to entity.tsx.
 export function Pill({ icon, label, value, color, hint }: { icon: IconName; label?: string; value?: string; color?: string; hint: string }) {
   const styles = useStyles();
   const text = { fontSize: 11, lineHeight: 16 };
@@ -135,6 +117,34 @@ export function SpinningIcon({ name, size = 16, color, spinning }: { name: IconN
     <Animated.View style={{ transform: [{ rotate }] }}>
       <TablerIcon name={name} size={size} color={color} />
     </Animated.View>
+  );
+}
+
+// Lines of quiet text that may arrive later keep this height, so a Skeleton can hold their place exactly.
+export const LINE_HEIGHT = 16;
+
+// Where lines of text will be once they've loaded: quiet bars, gently pulsing, each the height of the line it stands in for,
+// so nothing moves when the text replaces them. Widths vary so they read as text, not boxes.
+export function Skeleton({ lines, label }: { lines: number; label: string }) {
+  const styles = useStyles();
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const native = Platform.OS !== "web";
+    const half = (toValue: number) => Animated.timing(pulse, { toValue, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: native });
+    const loop = Animated.loop(Animated.sequence([half(1), half(0)]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  if (lines <= 0) return null;
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  return (
+    <View accessibilityLabel={label} style={{ gap: 10 }}>
+      {Array.from({ length: lines }, (_, index) => (
+        <View key={index} style={{ height: LINE_HEIGHT, justifyContent: "center" }}>
+          <Animated.View style={{ height: 10, borderRadius: 5, width: `${[42, 68, 55][index % 3]}%`, backgroundColor: styles.c.surface2, opacity }} />
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -230,38 +240,25 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
   );
 }
 
-// Which item a card is: its number, then its repo. My own repos go without their owner.
-export interface Place {
-  repo: string;
-  number: number;
-  login: string | null;
+// Quiet text that stands out a little within it, like an item's number among its facts.
+export function useStrongText() {
+  const styles = useStyles();
+  return { color: mix(styles.c.foreground, styles.c.foregroundMuted, 0.85), fontWeight: "500" as const };
 }
 
-// The line under a title: the item's number and repo, then facts as quiet text joined by "·", then signals [ATT-05].
-// The number leads on its own, and the repo's name stands out from its owner, so cards from several repos scan [ATT-20].
-export function Meta({ place, facts, chips }: { place?: Place; facts: string[]; chips: Chip[] }) {
+// The line under a title: what leads it (which item it is, as text), then facts as quiet text joined by "·", then
+// signals [ATT-05].
+export function Meta({ lead, facts, chips }: { lead?: ReactNode; facts: string[]; chips: Chip[] }) {
   const styles = useStyles();
   const quiet = (chip: Chip) => chip.tone === "neutral" && !chip.icon && !chip.hint;
   const text = [...facts, ...chips.filter(quiet).map((chip) => chip.text)];
   const signals = chips.filter((chip) => !quiet(chip));
-  const strong = { color: mix(styles.c.foreground, styles.c.foregroundMuted, 0.85), fontWeight: "500" as const };
-  // My own repos drop the owner, as repoLabel does; others show it quieter than the name.
-  const label = place ? repoLabel(place.repo, place.login) : "";
-  const cut = label.lastIndexOf("/") + 1;
-  const [owner, name] = [label.slice(0, cut), label.slice(cut)];
   return (
     <View style={[styles.wrap, { columnGap: 10, rowGap: 4 }]}>
-      {place || text.length ? (
+      {lead || text.length ? (
         <Text style={styles.muted}>
-          {place ? (
-            <>
-              <Text style={strong}>#{place.number}</Text>
-              {" · "}
-              {owner}
-              <Text style={strong}>{name}</Text>
-              {text.length ? " · " : null}
-            </>
-          ) : null}
+          {lead}
+          {lead && text.length ? " · " : null}
           {text.join(" · ")}
         </Text>
       ) : null}
