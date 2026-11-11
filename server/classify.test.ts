@@ -883,10 +883,19 @@ describe("next up", () => {
 
   it("NXT-10: tints priority with the org's colors, and leaves the card to rank it where the org colored none", () => {
     const issues = { unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), pickable(2, { Priority: "🏝 P3 Low" })] };
-    const colored = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { priority: { "🏔 P1 High": "ORANGE", "🏝 P3 Low": "GRAY" } } });
+    const colored = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { priority: { "🏔 P1 High": "ORANGE", "🏝 P3 Low": "GRAY" } } } });
     expect(colored.unclaimed.map((issue) => issue.priorityColor)).toEqual(["ORANGE", "GRAY"]);
-    const gray = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { Priority: { "🏔 P1 High": "GRAY", "🏝 P3 Low": "GRAY" } } });
+    const gray = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { Priority: { "🏔 P1 High": "GRAY", "🏝 P3 Low": "GRAY" } } } });
     expect(gray.unclaimed.map((issue) => issue.priorityColor)).toEqual([undefined, undefined]);
+  });
+
+  it("NXT-10: takes each issue's priority color from its own org, as two orgs may color the same field differently", () => {
+    const elsewhere = (number: number) => ({ ...pickable(number, { Priority: "🏔 P1 High" }), repository: { nameWithOwner: "globex/api" } });
+    const fieldColors = { acme: { Priority: { "🏔 P1 High": "RED" as const } }, globex: { Priority: { "🏔 P1 High": "GRAY" as const } } };
+    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2)] }, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors });
+    const byNumber = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.priorityColor]));
+    // globex colored nothing, so its card falls back on rank rather than taking acme's red.
+    expect(byNumber).toEqual({ 1: "RED", 2: undefined });
   });
 
   it("NXT-12, NXT-03: puts each issue on its open projects with its Status, and lists those projects with every status in board order", () => {

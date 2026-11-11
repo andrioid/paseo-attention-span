@@ -297,7 +297,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     details: {
       behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 },
       fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] },
-      fieldColors: { Priority: PRIORITY_COLORS },
+      fieldColors: { acme: { Priority: PRIORITY_COLORS } },
       issues: { [key(132)]: { number: 132, title: "The calendar can't be used with a keyboard", url: `https://github.com/${REPO}/issues/132`, repository } },
       checks: { [key(128)]: { required: 2, failing: 0, pending: 0 }, [key(129)]: { required: 1, failing: 0, pending: 0 } },
       mergeState: {},

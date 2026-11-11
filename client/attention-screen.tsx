@@ -20,7 +20,7 @@ import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, type SheetEntry, useSheetOpener } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, type SheetEntry, useSheetOpener } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
@@ -713,10 +713,8 @@ interface SheetHandlers {
 // `checks` asks for failing checks too, for Rerun.
 function itemDetailsQuery(item: Item, fetchDetails: FetchDetails): DetailsQuery {
   const checks = item.actions.includes("rerun");
-  return {
-    queryKey: ["attention-span", "details", item.key, checks],
-    queryFn: () => fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
-  };
+  const subject = { kind: item.kind, repo: item.repo, number: item.number };
+  return { queryKey: detailsKey(subject, item.target, checks), queryFn: () => fetchDetails({ subject, target: item.target, checks }) };
 }
 
 function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {

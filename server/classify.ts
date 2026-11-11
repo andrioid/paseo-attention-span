@@ -590,14 +590,18 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
     const index = order.findIndex((name) => value.toLowerCase().includes(name.toLowerCase()));
     return index < 0 ? Infinity : index;
   };
-  // The org's color for a priority, where it colored any of them; otherwise the card ranks it by color itself [NXT-10].
-  const colors = priority ? Object.entries(details.fieldColors ?? {}).find(([name]) => sameField(name, priority.field))?.[1] : undefined;
-  const colored = !!colors && Object.values(colors).some((color) => color !== "GRAY");
+  // The color the issue's own org gave its priority, where that org colored any of them; otherwise the card ranks it by
+  // color itself [NXT-10].
+  const colorsOf = (node: PickableNode) => {
+    const fields = details.fieldColors?.[node.repository.nameWithOwner.split("/")[0].toLowerCase()] ?? {};
+    const colors = priority ? Object.entries(fields).find(([name]) => sameField(name, priority.field))?.[1] : undefined;
+    return colors && Object.values(colors).some((color) => color !== "GRAY") ? colors : undefined;
+  };
   return nodes
     .map((node) => {
       const rank = position(valueOf(node, priority?.field), priority);
       const priorityValue = valueOf(node, priority?.field);
-      const priorityColor = colored && priorityValue ? colors![priorityValue] : undefined;
+      const priorityColor = priorityValue ? colorsOf(node)?.[priorityValue] : undefined;
       return {
         key: prKey(node),
         repo: node.repository.nameWithOwner,

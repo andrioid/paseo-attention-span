@@ -61,6 +61,7 @@ export class AttentionService {
   private followUps: Partial<Record<FeedId, ReturnType<typeof setTimeout>>> = {};
   private intervalMinutes = 0;
   private projects: { access: ProjectsAccess; checkedAt: number } = { access: "unknown", checkedAt: 0 };
+  private projectsProbe: Promise<ProjectsAccess> | null = null;
   // The app's connection to Paseo, from its last request; background refreshes have none of their own.
   private paseo: PluginHandlerContext["paseo"] | null = null;
 
@@ -295,19 +296,26 @@ export class AttentionService {
     return classifyHistory(await graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES), this.variables(HISTORY_SEARCHES, now)));
   }
 
-  // Whether the gh login may read projects, asked at most hourly, or now when Settings asks [NXT-12]. A failure that isn't
-  // about the scope keeps the last answer.
+  // Whether the gh login may read projects, asked at most hourly, or now when Settings asks [NXT-12]. Any attempt counts
+  // toward the hour, so an outage doesn't add a probe to every refresh; one that fails for another reason than the scope
+  // keeps the last answer. Settings and a refresh asking at once share one probe [GH-01].
   async projectsAccess(force = false): Promise<ProjectsAccess> {
     if (FIXTURE) return "on";
+    if (this.projectsProbe) return this.projectsProbe;
     if (!force && Date.now() - this.projects.checkedAt < PROJECTS_CHECK_MS) return this.projects.access;
-    try {
-      await graphql(PROJECTS_PROBE);
-      this.projects = { access: "on", checkedAt: Date.now() };
-    } catch (error) {
-      if (missingProjectScope(error)) this.projects = { access: "missing", checkedAt: Date.now() };
-      else console.error("Couldn't tell whether projects can be read:", (error as Error).message);
-    }
-    return this.projects.access;
+    this.projectsProbe = (async () => {
+      let access = this.projects.access;
+      try {
+        await graphql(PROJECTS_PROBE);
+        access = "on";
+      } catch (error) {
+        if (missingProjectScope(error)) access = "missing";
+        else console.error("Couldn't tell whether projects can be read:", (error as Error).message);
+      }
+      this.projects = { access, checkedAt: Date.now() };
+      return access;
+    })().finally(() => (this.projectsProbe = null));
+    return this.projectsProbe;
   }
 
   // One request per search, in parallel. The details request starts once the searches it needs are back [GH-01].
@@ -366,6 +374,8 @@ export class AttentionService {
     // A reference to a repo I can't see fails only its own field.
     const result = await graphql<Record<string, Result>>(query);
     for (const [alias, value] of Object.entries(result)) {
+      // Org fields come back as o0, o1, … in the order the orgs were asked for.
+      const org = /^o\d+$/.test(alias) ? (orgs[Number(alias.slice(1))] as string).toLowerCase() : null;
       const behindBy = value?.ref?.compare?.behindBy;
       if (typeof behindBy === "number") details.behind[compares[alias]] = behindBy;
       const contexts = value?.pullRequest?.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes;
@@ -373,7 +383,7 @@ export class AttentionService {
       for (const field of value?.issueFields?.nodes ?? []) {
         if (!field.name || !field.options) continue;
         details.fieldOptions[field.name] ??= field.options.map((o) => o.name);
-        details.fieldColors[field.name] ??= Object.fromEntries(field.options.flatMap((o) => (o.color ? [[o.name, o.color]] : [])));
+        if (org) (details.fieldColors[org] ??= {})[field.name] = Object.fromEntries(field.options.flatMap((o) => (o.color ? [[o.name, o.color]] : [])));
       }
       const issue = value?.issueOrPullRequest; // empty for a PR
       if (issue?.state === "OPEN") details.issues[prKey(issue)] = { number: issue.number, title: issue.title, url: issue.url, repository: issue.repository };

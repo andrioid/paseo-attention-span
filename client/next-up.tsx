@@ -20,7 +20,7 @@ import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, type SheetEntry, useSheetOpener } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, type SheetEntry, useSheetOpener } from "./sheet";
 import { Modal } from "@getpaseo/plugin/client/ui";
 import { githubColor, IssuePills, PlaceText } from "./entity";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
@@ -289,10 +289,8 @@ function prSignal(issue: NextUpIssue): Chip[] {
 
 // What an issue's sheet fetches when it opens; its card fetches the same ahead, so the sheet opens complete [ATT-06].
 function issueDetailsQuery(issue: NextUpIssue, fetchDetails: FetchDetails): DetailsQuery {
-  return {
-    queryKey: ["attention-span", "details", issue.key, false],
-    queryFn: () => fetchDetails({ subject: { kind: "issue", repo: issue.repo, number: issue.number }, checks: false }),
-  };
+  const subject = { kind: "issue" as const, repo: issue.repo, number: issue.number };
+  return { queryKey: detailsKey(subject, undefined, false), queryFn: () => fetchDetails({ subject, checks: false }) };
 }
 
 // The type as the card's mark: red bugs, green features and epics, amber debt, the rest quiet.

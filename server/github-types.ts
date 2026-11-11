@@ -147,8 +147,9 @@ export interface Details {
   behind: Record<string, number>;
   // Issue field name -> its options in order.
   fieldOptions: Record<string, string[]>;
-  // Issue field name -> option name -> the color the org gave it [NXT-10].
-  fieldColors: Record<string, Record<string, GithubColor>>;
+  // Org (lower case) -> issue field name -> option name -> the color that org gave it. Per org, as two orgs may both have a
+  // Priority field and color it differently [NXT-10].
+  fieldColors: Record<string, Record<string, Record<string, GithubColor>>>;
   // "owner/name#number" -> the open issue my PRs' descriptions refer to; PRs and closed issues are left out [ATT-03].
   issues: Record<string, LinkedIssue>;
   // "owner/name#number" -> the checks the repo requires on my PR's last commit, as far as they've reported [PRS-14].

@@ -3,7 +3,8 @@ import { Modal } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { Chip, ItemDetails } from "../shared/attention";
+import { type Chip, type ItemDetails, ownStack, type Target } from "../shared/attention";
+import { LatestOnly, type PendingOpen } from "../shared/opening";
 import type { IconName } from "./icons";
 import { Button, HintArea, KeepStyles, LINE_HEIGHT, REST_MS, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
 
@@ -98,25 +99,51 @@ export interface DetailsQuery {
   queryFn: () => Promise<ItemDetails>;
 }
 
+// Details keyed by everything the fetch reads: the item, the PR its actions apply to, and with `checks` the PRs of my stack,
+// so the same issue in Doing (acting on its PR) and in Next up (no PR) don't share what each fetched [ATT-06].
+export function detailsKey(subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean): readonly unknown[] {
+  const pr = target?.kind === "pr" ? `${target.repo}#${target.number}` : null;
+  return ["attention-span", "details", subject.kind, `${subject.repo}#${subject.number}`, pr, checks, checks && target ? ownStack(target).map((p) => p.number) : []];
+}
+
 // Fetched details stay fresh this long, so a sheet opened again, or after its card was pointed at, opens at once.
 export const DETAILS_STALE_MS = 60_000;
 // Tapped, a card waits this long at most for its details before its sheet opens anyway.
 const OPEN_WAIT_MS = 1_500;
+// Every card's pending open, so the newest tap wins.
+const PENDING_OPENS = new LatestOnly();
 
 // Opens a card's sheet once its details are in, so the sheet doesn't change once open; meanwhile the card says it's
 // loading. Past OPEN_WAIT_MS it opens anyway and the skeletons hold the room; a failure opens it with its error line.
 // Resting the pointer on the card fetches them ahead, best effort [ATT-06, GH-01].
+// Another card tapped while one waits supersedes it, so only one sheet opens.
 export function useSheetOpener(query: DetailsQuery, show: () => void) {
   const client = useQueryClient();
   const [opening, setOpening] = useState(false);
   const rest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(rest.current), []);
+  const pending = useRef<PendingOpen | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(rest.current);
+      pending.current?.done();
+    };
+  }, []);
   const fetch = () => client.fetchQuery({ ...query, staleTime: DETAILS_STALE_MS });
   const open = () => {
     if (opening) return;
     setOpening(true);
+    const turn = PENDING_OPENS.start(() => alive.current && setOpening(false));
+    pending.current = turn;
     const waited = new Promise((done) => setTimeout(done, OPEN_WAIT_MS));
-    void Promise.race([fetch().catch(() => undefined), waited]).then(() => (setOpening(false), show()));
+    void Promise.race([fetch().catch(() => undefined), waited]).then(() => {
+      if (!turn.isCurrent() || !alive.current) return;
+      turn.done();
+      setOpening(false);
+      show();
+    });
   };
   const hover = {
     onHoverIn: () => {
