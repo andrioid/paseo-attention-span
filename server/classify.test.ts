@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { type Item, itemSessions, SECTIONS } from "../shared/attention";
+import { type Item, itemSessions, projectFilterIds, SECTIONS } from "../shared/attention";
 import { linkedSessions } from "../shared/linked-sessions";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
-import { detailsQuery, HISTORY_SEARCHES, LIVE_SEARCHES, mergeStateQuery, mergeUnclaimed, requiredChecks, searchQuery, searchVariables, unclaimedSearches } from "./queries";
+import {
+  detailsQuery,
+  HISTORY_SEARCHES,
+  LIVE_SEARCHES,
+  mergeStateQuery,
+  mergeUnclaimed,
+  missingProjectScope,
+  projectStatusesQuery,
+  requiredChecks,
+  searchQuery,
+  searchVariables,
+  unclaimedSearches,
+} from "./queries";
 
 const NOW = new Date("2026-10-28T12:00:00Z"); // a Wednesday
 const config = AttentionConfig.parse({ orgs: ["acme"] });
@@ -17,9 +29,17 @@ const sections = (items: Item[]) => items.map((item) => [item.number, item.secti
 function run(
   parts: Parameters<typeof search>[0],
   behind: Record<string, number> = {},
-  options: { config?: AttentionConfig; fieldOptions?: Record<string, string[]>; issues?: Details["issues"]; checks?: Details["checks"]; mergeState?: Details["mergeState"] } = {},
+  options: {
+    config?: AttentionConfig;
+    fieldOptions?: Details["fieldOptions"];
+    fieldColors?: Details["fieldColors"];
+    projectStatuses?: Details["projectStatuses"];
+    issues?: Details["issues"];
+    checks?: Details["checks"];
+    mergeState?: Details["mergeState"];
+  } = {},
 ) {
-  const details = { behind, fieldOptions: options.fieldOptions ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {}, mergeState: options.mergeState ?? {} };
+  const details = { behind, fieldOptions: options.fieldOptions ?? {}, fieldColors: options.fieldColors ?? {}, projectStatuses: options.projectStatuses ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {}, mergeState: options.mergeState ?? {} };
   return classify({ data: search(parts), details, config: options.config ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
@@ -850,7 +870,9 @@ describe("mentions", () => {
 
 describe("next up", () => {
   const nextUp = { priority: { field: "Priority" }, effort: { field: "Effort", order: ["Tiny", "Small", "Medium", "Large"] }, scope: { field: "Scope" } };
-  const fieldOptions = { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] };
+  const priorities = ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"];
+  // As the details request reads them: per org [NXT-02].
+  const fieldOptions = { acme: { Priority: priorities } };
 
   it("NXT-01, NXT-02: orders unclaimed issues by priority, then effort, then age", () => {
     const attention = run(
@@ -881,6 +903,88 @@ describe("next up", () => {
     expect(attention.unclaimed[1]).toMatchObject({ priorityRank: undefined, openPrs: [] });
   });
 
+  it("NXT-10: tints priority with the org's colors, and leaves the card to rank it where the org colored none", () => {
+    const issues = { unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), pickable(2, { Priority: "🏝 P3 Low" })] };
+    const colored = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { priority: { "🏔 P1 High": "ORANGE", "🏝 P3 Low": "GRAY" } } } });
+    expect(colored.unclaimed.map((issue) => issue.priorityColor)).toEqual(["ORANGE", "GRAY"]);
+    const gray = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { Priority: { "🏔 P1 High": "GRAY", "🏝 P3 Low": "GRAY" } } } });
+    expect(gray.unclaimed.map((issue) => issue.priorityColor)).toEqual([undefined, undefined]);
+  });
+
+  it("NXT-10: takes each issue's priority color from its own org, as two orgs may color the same field differently", () => {
+    const elsewhere = (number: number) => ({ ...pickable(number, { Priority: "🏔 P1 High" }), repository: { nameWithOwner: "globex/api" } });
+    const fieldColors = { acme: { Priority: { "🏔 P1 High": "RED" as const } }, globex: { Priority: { "🏔 P1 High": "GRAY" as const } } };
+    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2)] }, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors });
+    const byNumber = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.priorityColor]));
+    // globex colored nothing, so its card falls back on rank rather than taking acme's red.
+    expect(byNumber).toEqual({ 1: "RED", 2: undefined });
+  });
+
+  it("NXT-02: ranks each issue's priority by its own org's order, as two orgs may order the same field differently", () => {
+    const elsewhere = (number: number, priority: string) => ({ ...pickable(number, { Priority: priority }), repository: { nameWithOwner: "globex/api" } });
+    // globex lists Low first: its Low is its top priority, and acme's High its second.
+    const options = { acme: { Priority: priorities }, globex: { Priority: ["Low", "High"] } };
+    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2, "Low")] }, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions: options });
+    expect(attention.unclaimed.map((issue) => [issue.number, issue.priorityRank])).toEqual([
+      [2, 0],
+      [1, 1],
+    ]);
+  });
+
+  it("NXT-12, NXT-03: puts each issue on its open projects with its Status, and lists those projects with every status in board order", () => {
+    const board = (id: string, title: string, closed = false) => ({ id, title, closed });
+    const item = (project: ReturnType<typeof board> | null, status?: string) => ({ project, status: status ? { name: status, color: "BLUE" as const } : null });
+    const statuses = [{ name: "Backlog", color: "GRAY" as const }, { name: "Todo", color: "BLUE" as const }];
+    // Ten closed boards, cut short with more to come: whether it's on an open one is unknown.
+    const closedTen = Array.from({ length: 10 }, (_, i) => item(board(`P_old${i}`, "Old", true)));
+    const attention = run(
+      {
+        unclaimed: [
+          // A board the token can't see (an org's SSO) comes back empty and is left out.
+          { ...pickable(1, {}), projectItems: { nodes: [item(board("P_todo", "TODO"), "Todo"), item(board("P_old", "Old", true), "Todo"), item(null), null] } },
+          { ...pickable(2, {}), projectItems: { nodes: [item(board("P_ideas", "Ideas"))] } },
+          { ...pickable(3, {}), projectItems: { nodes: [], pageInfo: { hasNextPage: false } } },
+          pickable(4, {}),
+          { ...pickable(5, {}), projectItems: { nodes: closedTen, pageInfo: { hasNextPage: true } } },
+        ],
+      },
+      {},
+      { projectStatuses: { P_todo: statuses, P_ideas: statuses } },
+    );
+    const byNumber = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.projects]));
+    expect(byNumber).toEqual({
+      1: [{ id: "P_todo", title: "TODO", status: "Todo", color: "BLUE" }],
+      2: [{ id: "P_ideas", title: "Ideas" }],
+      3: [],
+      // Projects weren't asked for, or GitHub cut the list short with none open: unknown, not "on none".
+      4: undefined,
+      5: undefined,
+    });
+    expect(attention.projects?.map((project) => [project.title, project.statuses.map((status) => status.name)])).toEqual([
+      ["Ideas", ["Backlog", "Todo"]],
+      ["TODO", ["Backlog", "Todo"]],
+    ]);
+    expect(Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, projectFilterIds(issue)]))).toEqual({
+      1: ["status:P_todo:Todo"],
+      2: ["nostatus:P_ideas"],
+      3: ["noproject"],
+      // Unknown matches no tick, so a project filter hides it rather than call it on no project.
+      4: [],
+      5: [],
+    });
+  });
+
+  it("NXT-12, GH-01: reads projects only in Next up's searches, and only when asked to", () => {
+    expect(searchQuery(["unclaimed"])).not.toContain("projectItems");
+    expect(searchQuery(["unclaimed"], false, { projects: true }).match(/^fragment \w+/gm)).toEqual(["fragment pickable", "fragment projects"]);
+    expect(searchQuery(["mine"], true, { projects: true })).not.toContain("projectItems");
+    expect(missingProjectScope(new Error("Your token has not been granted the required scopes ... ['read:project']"))).toBe(true);
+    expect(missingProjectScope(new Error("Bad credentials"))).toBe(false);
+    // Each board's statuses come once per board, not with every issue on it.
+    expect(searchQuery(["unclaimed"], false, { projects: true })).not.toContain("options");
+    expect(projectStatusesQuery(["P_todo", "P_ideas"]).match(/b\d: node/g)).toEqual(["b0: node", "b1: node"]);
+  });
+
   it("NXT-06: lists issues assigned to me, ranked the same way", () => {
     const attention = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
     expect(attention.assigned.map((issue) => issue.number)).toEqual([8, 7]);
@@ -895,7 +999,7 @@ describe("next up", () => {
 
   it("NXT-04: until I choose, uses the fields named Priority, Effort and Scope, whatever their case; null turns one off", () => {
     const issues = { unclaimed: [pickable(1, { priority: "🏝 P3 Low", Scope: "🔙 Backend" }), pickable(2, { priority: "🏔 P1 High", Effort: "Small" })] };
-    const auto = run(issues, {}, { config: AttentionConfig.parse({}), fieldOptions: { PRIORITY: fieldOptions.Priority } });
+    const auto = run(issues, {}, { config: AttentionConfig.parse({}), fieldOptions: { acme: { PRIORITY: priorities } } });
     expect(auto.unclaimed.map((issue) => [issue.number, issue.priority, issue.effort, issue.scope, issue.priorityRank])).toEqual([
       [2, "🏔 P1 High", "Small", undefined, 1],
       [1, "🏝 P3 Low", undefined, "🔙 Backend", 3],
@@ -976,7 +1080,7 @@ describe("GitHub requests", () => {
     const attention = classify({ data, details, config, now: NOW });
     expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(15);
     expect(doing(attention).length).toBeGreaterThan(5);
-    expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 6]);
+    expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 7]);
   });
 });
 

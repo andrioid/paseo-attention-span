@@ -43,7 +43,7 @@ export async function itemDetails(subject: Subject, target: Target | undefined, 
   const linked = "nodes { number title url state }";
   const query = `query {
   s: ${repository(subject.repo)} { issueOrPullRequest(number: ${subject.number}) {
-    ... on Issue { closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { ${linked} } }
+    ... on Issue { closedByPullRequestsReferences(first: 5, includeClosedPrs: false) { ${linked} } }
     ... on PullRequest { closingIssuesReferences(first: 5) { ${linked} } }
   } }
 ${numbers.map((number, index) => `  p${index}: ${repository(pr!.repo)} { pullRequest(number: ${number}) { number additions deletions changedFiles ${checks ? contexts : ""} } }`).join("\n")}
@@ -67,7 +67,8 @@ ${numbers.map((number, index) => `  p${index}: ${repository(pr!.repo)} { pullReq
 
   return {
     size: own ? { additions: own.additions, deletions: own.deletions, files: own.changedFiles } : undefined,
-    linked: (node?.closingIssuesReferences ?? node?.closedByPullRequestsReferences)?.nodes ?? [],
+    // An issue's open PRs only, as its card knows them, so the sheet holds the right room for them; closed ones are on GitHub [ATT-06].
+    linked: node?.closingIssuesReferences?.nodes ?? (node?.closedByPullRequestsReferences?.nodes ?? []).filter((link) => link.state === "OPEN"),
     failing,
   };
 }

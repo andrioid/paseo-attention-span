@@ -25,6 +25,8 @@ export const State = z.object({
   scopes: z.array(z.string()).default([]),
   // Sources ticked in Next up's filter; none means all [NXT-09].
   sources: z.array(z.string()).default([]),
+  // Project statuses ticked in Next up's filter; none means all [NXT-03].
+  projectFilter: z.array(z.string()).default([]),
   // The update notice put off with Not now, by the version it offered [UPD-01].
   skippedUpdate: z.string().nullable().default(null).catch(null),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].

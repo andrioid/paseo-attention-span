@@ -7,6 +7,7 @@ export interface ViewMeta {
   feeds: Record<FeedId, FeedStatus>;
   scopes: string[];
   sources: string[];
+  projectFilter: string[];
   config: AttentionConfig;
   pending: number;
 }
@@ -143,6 +144,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],
     unclaimedFrom: attention?.unclaimedFrom ?? "config",
+    projects: attention?.projects ?? [],
     dismissedCount: items.length - visible.length,
   };
 }

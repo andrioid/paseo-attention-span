@@ -7,11 +7,12 @@ import * as rpc from "../shared/rpc";
 import { DEFAULT_FIELD, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
 import type { ConfigStatus, CoverageKind, IssueField } from "../shared/setup";
 import { VIEW_QUERY_KEY } from "./data";
-import { Button, StylesProvider, useStyles } from "./ui";
+import { Button, StylesProvider, useCopy, useStyles } from "./ui";
 
 const COVERAGE_QUERY_KEY = ["attention-span", "coverage"] as const;
 const MY_ORGS_QUERY_KEY = ["attention-span", "my-orgs"] as const;
 const FIELDS_QUERY_KEY = ["attention-span", "issue-fields"] as const;
+const PROJECTS_QUERY_KEY = ["attention-span", "projects-access"] as const;
 // A caption belongs to the card above it, so it sits closer to that card than to the next heading.
 const CAPTION = { marginTop: -24, marginBottom: 16 };
 
@@ -216,6 +217,7 @@ function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fiel
               />
             );
           })}
+          <ProjectsRow />
         </SettingsCard>
       </SettingsSection>
       <Text style={[styles.muted, CAPTION]}>
@@ -224,6 +226,39 @@ function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fiel
           : "Org issue fields from the organizations Next up looks in. Values rank in the order the organization lists them."}
       </Text>
     </View>
+  );
+}
+
+// Projects need the read:project scope, which gh doesn't ask for by default. Asked again each time Settings opens, so the
+// row turns On once it's fixed. How to fix it depends on where gh's token comes from: its own login takes one command; a
+// token in GH_TOKEN or GITHUB_TOKEN, which gh reads first, needs that permission on GitHub; anything else, like an org's
+// SSO, gets GitHub's own words [NXT-12].
+const SCOPE_COMMAND = "gh auth refresh -s read:project";
+
+function ProjectsRow() {
+  const styles = useStyles();
+  const copy = useCopy();
+  const check = useRpc(rpc.projectsAccess);
+  const access = useQuery({ queryKey: PROJECTS_QUERY_KEY, queryFn: () => check({}), staleTime: 0 });
+  const status = access.data;
+  if (status?.state === "missing" && status.token === "gh")
+    return <SettingsAction label="Projects" hint={`Needs the read:project scope. Run ${SCOPE_COMMAND} on this host`} actionLabel="Copy command" onPress={() => copy(SCOPE_COMMAND, "Copied the command")} />;
+  const hint =
+    status?.state === "missing"
+      ? `Your token comes from ${status.token}. Give it read:project (classic) or Projects: read (fine-grained), then restart the daemon`
+      : status?.state === "failed"
+        ? `Couldn't read projects: ${status.error}`
+        : status?.state === "unknown"
+          ? "Couldn't tell whether projects can be read"
+          : // On, but some went wrong last time, like boards an org's SSO hides: in GitHub's words, so it can be fixed.
+            status?.warning || status?.error
+            ? `On, but GitHub said: ${status.warning ?? status.error}`
+            : "Shows each issue's project and Status on its card, and adds them to the filter";
+  const on = status?.state === "on";
+  return (
+    <SettingsRow label="Projects" hint={hint} error={access.error ? (access.error as Error).message : null}>
+      <Text style={[styles.text, { color: on ? styles.action : styles.c.foregroundMuted }]}>{on ? "On" : access.isLoading ? "Checking…" : "Off"}</Text>
+    </SettingsRow>
   );
 }
 

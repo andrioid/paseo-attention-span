@@ -51,11 +51,13 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-waiting-too-long.png` | Desktop only: pointing at the amber "⌛ 9d" on "Cache exchange rates daily" in Waiting floats "Waited too long: 9d since your last push or reply, more than 3 days" over the line, wrapped to the room left beside the actions [ATT-11] |
    | `<layout>-waiting-copied.png` | After Copy list on alice: the "Copied 3 links for alice" toast. `<layout>-waiting-clipboard.txt` holds what was copied |
    | `<layout>-waiting-sheet.png` | The sheet of "Invoice totals round wrong": alice and bob by name |
-   | `<layout>-next-up.png` | Assigned, then all of Unclaimed. Cards: a tinted type badge, "acme/shop #160 · 40d old" (my own `me/tool` shows as "tool #165"), tags (P0 Urgent warm, P1 High accent), "PR by alice" on #161 |
+   | `<layout>-next-up.png` | Assigned, then all of Unclaimed. Cards: a tinted type badge, "#160 · acme/shop · 40d old" with the number and repo name brighter (my own `me/tool` shows as "#165 · tool"), then pills: the project with its status (TODO \| Todo in blue, Backlog plain because it's gray), priority in the org's color (P0 Urgent red, P1 High orange, P3 Low plain), effort and scope plain; "Dark mode for the planner" is on Ideas with no status, "Devcontainers" on no project. "PR by alice" on #161 |
    | `<layout>-next-up-sheet.png` | The sheet of "Orders export times out for big shops": "Continue session" with an "idle" badge, Unclaim, Open issue on GitHub, a muted "Start another session…", Close issue |
    | `<layout>-next-up-close.png` | Close issue on "Merge the two import commands": the confirm bar with a comment field, Completed, Not planned, Cancel |
    | `<layout>-next-up-filter.png` | The Filter sheet: Source (My repos, acme) and Scope checkboxes, Backend ticked |
    | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope; the button reads "Filter · 1" |
+   | `<layout>-next-up-filter-projects.png` | The Filter sheet with Project between Source and Scope: Ideas ticked whole (New, Exploring, Shaped, No status under it), TODO partly ticked (–) with only Todo; statuses no unclaimed issue has are dimmed; No project last |
+   | `<layout>-next-up-projects.png` | Unclaimed filtered to TODO's Todo and all of Ideas: #160, #163, #164, #166; the button reads "Filter · 2" |
    | `<layout>-next-up-source.png` | Unclaimed filtered to the My repos source: only "Devcontainers for pull requests" |
    | `<layout>-next-up-code-repo.png` | Start on "Price list import skips quoted rows" (in `acme/issues`, no checkout): the picker asking where its code lives |
    | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping; the start then fails with "No agent provider is ready", as expected in the container |
@@ -64,7 +66,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-settings.png` | After adding `acme/web`: the shooter has checked config.json kept `orgs` and `nextUp` |
    | `<layout>-settings-next-up.png` | The Next up section after adding `me/tool`: My repos on, `acme`, `me/tool` |
    | `<layout>-settings-org-picker.png` | The org picker open, offering only `globex` (`acme` is already added) |
-   | `<layout>-settings-fields.png` | Next up fields: Priority and Scope "Picked by its name" (the preview config names only Effort), Effort as config.json has it |
+   | `<layout>-settings-fields.png` | Next up fields: Priority and Scope "Picked by its name" (the preview config names only Effort), Effort as config.json has it, then Projects "On" (fixture mode can always read projects; the missing-scope row with Copy command isn't shown) |
    | `<layout>-settings-fields-picked.png` | After setting Scope to Team: the shooter has checked config.json saved only that, leaving Priority out (still found by its name) and Effort's `order` kept |
    | `<layout>-setup.png` | The setup checklist, from a `config.json` that doesn't parse. The shooter restores it and presses Check again |
 

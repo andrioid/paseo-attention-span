@@ -53,6 +53,8 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.myOrgs, async () => ({ orgs: await myOrgs() }));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(() => ({ ok: true as const })));
+  server.handle(rpc.projectsAccess, () => ready(() => attention.projectsAccess(true)));
   server.handle(rpc.updateBranch, ({ key, target }) => act(key, () => updateBranch(target), chip("updating")));
   server.handle(rpc.mergePullRequest, ({ key, target }) => act(key, () => mergePullRequest(target), { kind: "finished" }));
   server.handle(rpc.closePullRequest, ({ key, target, comment }) => act(key, () => closePullRequest(target, comment), { kind: "gone" }));

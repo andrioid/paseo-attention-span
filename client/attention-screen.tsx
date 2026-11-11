@@ -1,12 +1,12 @@
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { Markdown, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
-import { ago, linkList, repoLabel } from "../shared/format";
+import { ago, linkList } from "../shared/format";
 import { isClear } from "../shared/still";
 import { workEmoji } from "../shared/work";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -16,10 +16,11 @@ import { blocks } from "../shared/setup";
 import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
+import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
+import { ActionSheet, cancelPendingOpen, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, useSheetOpener } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
@@ -194,6 +195,7 @@ function AttentionList({
   const restore = useRpc(rpc.restoreDismissed);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
+  const saveProjects = useRpc(rpc.setProjectFilter);
   const closeIssue = useRpc(rpc.closeIssue);
   const reopenIssue = useRpc(rpc.reopenIssue);
   const update = useRpc(rpc.updateBranch);
@@ -399,7 +401,7 @@ function AttentionList({
             <Text style={styles.muted}>{feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
           </Pressable>
           {openSettings ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={() => (cancelPendingOpen(), openSettings())} hitSlop={8}>
               <TablerIcon name="settings" size={16} />
             </Pressable>
           ) : null}
@@ -449,12 +451,15 @@ function AttentionList({
           selected={view.scopes}
           sources={nextUpSources(view.config)}
           selectedSources={view.sources}
-          // One setView for both, so clearing scopes and sources together can't put either back.
+          projects={view.projects}
+          selectedProjects={view.projectFilter}
+          // One setView for all, so clearing them together can't put any back.
           onFilter={(change) => {
             attention.setView({ ...view, ...change });
             const failed = (error: Error) => toast.error(`Saving the filter failed: ${error.message}`);
             if (change.scopes) saveScopes({ scopes: change.scopes }).catch(failed);
             if (change.sources) saveSources({ sources: change.sources }).catch(failed);
+            if (change.projectFilter) saveProjects({ projects: change.projectFilter }).catch(failed);
           }}
           agents={actions.agents}
           login={view.login}
@@ -606,11 +611,15 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const main = item.actions[0];
   // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
-  const open = () => setSheet("item");
+  // The sheet opens once its details are in; meanwhile › spins [ATT-06].
+  const opener = useSheetOpener(itemDetailsQuery(item, actions.fetchDetails), () => setSheet("item"));
+  const open = opener.open;
   const copy = useCopy();
   const history = SECTIONS[item.section].tab === "history";
 
   function perform(action: ActionId) {
+    // An action opening its own sheet wins over a details sheet still waiting to open [ATT-06].
+    cancelPendingOpen();
     setSheet(null);
     if (action === "merge" || action === "close") setConfirm(action);
     else if (action === "acknowledge") setSheet("acknowledge");
@@ -631,7 +640,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       mark={stateMark(item)}
       title={item.title}
       meta={{
-        place: `${repoLabel(item.repo, actions.login)} #${item.number}`,
+        place: { repo: item.repo, number: item.number, login: actions.login },
         when: item.closedAt ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago` : undefined,
         signals: chips,
       }}
@@ -646,6 +655,8 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
         ) : null
       }
       onOpen={open}
+      opening={opener.opening}
+      hover={opener.hover}
       busy={actions.busy.has(item.key)}
       primary={
         sessions[0]
@@ -700,14 +711,17 @@ interface SheetHandlers {
 }
 
 // What the card already knows on top, then every action, then what's fetched when it opens, so nothing jumps as it loads [ATT-06, GH-01].
-function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
+// What an item's sheet fetches when it opens; its card fetches the same ahead, so the sheet opens complete [ATT-06].
+// `checks` asks for failing checks too, for Rerun.
+function itemDetailsQuery(item: Item, fetchDetails: FetchDetails): DetailsQuery {
   const checks = item.actions.includes("rerun");
-  const details = useQuery({
-    queryKey: ["attention-span", "details", item.key, checks],
-    queryFn: () => actions.fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
-    staleTime: 60_000,
-  });
-  const meta = [`${item.repo}#${item.number}`, ...(item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [])];
+  const subject = { kind: item.kind, repo: item.repo, number: item.number };
+  return { queryKey: detailsKey(subject, item.target, checks), queryFn: () => fetchDetails({ subject, target: item.target, checks }) };
+}
+
+function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
+  const details = useQuery({ ...itemDetailsQuery(item, actions.fetchDetails), staleTime: DETAILS_STALE_MS });
+  const meta = item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [];
   // PRs already in the stack line link from there; list only the rest, like someone else's PR closing the same issue.
   const shown = new Set(item.children.map((child) => child.url));
   const extra = details.data && { ...details.data, linked: details.data.linked.filter((link) => !shown.has(link.url)) };
@@ -717,14 +731,16 @@ function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item
       onClose={handlers.onClose}
       top={
         <>
-          <Meta facts={meta} chips={chips} />
+          {/* Number first, as on the card; the sheet always names the owner, even of my own repos [ATT-20]. */}
+          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={chips} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
           {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
         </>
       }
       entries={sheetEntries(item, sessions, actions, handlers, details)}
-      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} />}
+      // The PR its actions apply to has a size line; an issue's PRs are in its stack line already, so few more come [ATT-06].
+      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} expected={item.target.kind === "pr" ? 1 : 0} />}
     />
   );
 }
@@ -1167,7 +1183,7 @@ function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: bo
             <Text style={{ color: styles.c.foreground, fontSize: 13 }} numberOfLines={1}>
               {row.title}
             </Text>
-            <Meta facts={[`#${row.number}`]} chips={row.chips} />
+            <Meta lead={<NumberText number={row.number} />} facts={[]} chips={row.chips} />
           </View>
           {links ? (
             <View style={{ justifyContent: "center", paddingHorizontal: 4 }}>

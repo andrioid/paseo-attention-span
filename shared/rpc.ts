@@ -1,6 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import type { AttentionView, ItemDetails, ReviewerChoices, Target } from "./attention";
+import type { AttentionView, ItemDetails, ProjectsAccess, ReviewerChoices, Target } from "./attention";
 import { SessionKind } from "./config";
 import type { ConfigStatus, CoverageCheck, IssueField, SetupStatus } from "./setup";
 import type { FeedbackInfo } from "./feedback";
@@ -39,6 +39,10 @@ export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), o
 // Remember the scopes and sources ticked in Next up's filter [NXT-03, NXT-09].
 export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });
 export const setSources = defineRpc({ name: "next-up.sources", input: z.object({ sources: z.array(z.string()) }), output: done });
+// And the project statuses [NXT-03].
+export const setProjectFilter = defineRpc({ name: "next-up.projects", input: z.object({ projects: z.array(z.string()) }), output: done });
+// Whether the gh login may read projects, asked again now, for Settings [NXT-12].
+export const projectsAccess = defineRpc({ name: "config.projects-access", input: z.object({}), output: z.custom<ProjectsAccess>() });
 
 // GitHub changes, each from an explicit tap [SAFE-01], answered with the list after it.
 // `key` is the card it was done from, which shows the change until GitHub's search does [FRESH-02].

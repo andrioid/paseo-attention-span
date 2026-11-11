@@ -16,6 +16,8 @@ export function makeStyles(theme: Theme, compact: boolean) {
   return {
     c,
     compact,
+    // Themes don't say whether they're dark; their base surface does. Picks the shade of a color that reads on it.
+    dark: (luminance(c.surface0) ?? 0) < 0.5,
     // Action text and icons. The accent is a fill: as text on a dark theme it's 2.5:1; this green is 5–6:1 on every surface.
     action: c.statusSuccess,
     screen: { flex: 1, backgroundColor: c.surface0 },
@@ -36,6 +38,52 @@ export function makeStyles(theme: Theme, compact: boolean) {
   };
 }
 export type Styles = ReturnType<typeof makeStyles>;
+
+// "#rgb", "#rrggbb" or "rgb(…)" as 0–255 channels; null for anything else.
+function channels(color: string): [number, number, number] | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim())?.[1];
+  if (hex) {
+    const full = hex.length === 3 ? [...hex].map((ch) => ch + ch).join("") : hex;
+    return [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16)) as [number, number, number];
+  }
+  const rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(color.trim());
+  return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : null;
+}
+
+function luminance(color: string): number | null {
+  const rgb = channels(color);
+  return rgb ? (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 : null;
+}
+
+// `a` with `share` of it kept and the rest `b`; just `a` when either isn't a color this can read.
+export function mix(a: string, b: string, share: number): string {
+  const [x, y] = [channels(a), channels(b)];
+  if (!x || !y) return a;
+  return `#${x.map((value, i) => Math.round(value * share + y[i] * (1 - share)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// A fact as an icon half and a value half: the icon, with an optional label, says what the value is, in words on hover and
+// to screen readers. A color softly fills the value half. What goes in one is up to entity.tsx.
+export function Pill({ icon, label, value, color, hint }: { icon: IconName; label?: string; value?: string; color?: string; hint: string }) {
+  const styles = useStyles();
+  const text = { fontSize: 11, lineHeight: 16 };
+  return (
+    <Hint text={hint} inline>
+      <View accessibilityLabel={hint} style={{ flexDirection: "row", alignItems: "stretch", borderWidth: 1, borderColor: styles.c.border, borderRadius: 999, overflow: "hidden" }}>
+        <View style={[styles.row, { gap: 4, paddingLeft: 7, paddingRight: label ? 7 : 6 }]}>
+          <TablerIcon name={icon} size={12} />
+          {label ? <Text style={[text, { color: styles.c.foregroundMuted }]}>{label}</Text> : null}
+        </View>
+        {value ? (
+          <View style={{ borderLeftWidth: 1, borderLeftColor: styles.c.border, paddingHorizontal: 7, justifyContent: "center" }}>
+            {color ? <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: color, opacity: 0.08 }} /> : null}
+            <Text style={[text, { color: color ? mix(color, styles.c.foreground, 0.75) : mix(styles.c.foreground, styles.c.foregroundMuted, 0.8) }]}>{value}</Text>
+          </View>
+        ) : null}
+      </View>
+    </Hint>
+  );
+}
 
 const StylesContext = createContext<Styles | null>(null);
 export const useStyles = () => useContext(StylesContext)!;
@@ -69,6 +117,34 @@ export function SpinningIcon({ name, size = 16, color, spinning }: { name: IconN
     <Animated.View style={{ transform: [{ rotate }] }}>
       <TablerIcon name={name} size={size} color={color} />
     </Animated.View>
+  );
+}
+
+// Lines of quiet text that may arrive later keep this height, so a Skeleton can hold their place exactly.
+export const LINE_HEIGHT = 16;
+
+// Where lines of text will be once they've loaded: quiet bars, gently pulsing, each the height of the line it stands in for,
+// so nothing moves when the text replaces them. Widths vary so they read as text, not boxes.
+export function Skeleton({ lines, label }: { lines: number; label: string }) {
+  const styles = useStyles();
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const native = Platform.OS !== "web";
+    const half = (toValue: number) => Animated.timing(pulse, { toValue, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: native });
+    const loop = Animated.loop(Animated.sequence([half(1), half(0)]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  if (lines <= 0) return null;
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  return (
+    <View accessibilityLabel={label} style={{ gap: 10 }}>
+      {Array.from({ length: lines }, (_, index) => (
+        <View key={index} style={{ height: LINE_HEIGHT, justifyContent: "center" }}>
+          <Animated.View style={{ height: 10, borderRadius: 5, width: `${[42, 68, 55][index % 3]}%`, backgroundColor: styles.c.surface2, opacity }} />
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -120,8 +196,9 @@ export function HintArea({ style, children }: { style?: StyleProp<ViewStyle>; ch
   );
 }
 
-// Resting the pointer this long shows a hint; passing over doesn't.
-const HINT_DELAY_MS = 300;
+// Resting the pointer this long shows a hint, or fetches a card's details ahead; passing over does neither.
+export const REST_MS = 300;
+const HINT_DELAY_MS = REST_MS;
 
 // What something means, in words: on hover after a moment, and always to screen readers. It floats over the layout rather
 // than in it, so showing it moves nothing, and it's sized to the room left in its HintArea: beside the content, wrapping
@@ -164,15 +241,28 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
   );
 }
 
-// The line under a title: facts as quiet text joined by "·", then signals [ATT-05].
-export function Meta({ facts, chips }: { facts: string[]; chips: Chip[] }) {
+// Quiet text that stands out a little within it, like an item's number among its facts.
+export function useStrongText() {
+  const styles = useStyles();
+  return { color: mix(styles.c.foreground, styles.c.foregroundMuted, 0.85), fontWeight: "500" as const };
+}
+
+// The line under a title: what leads it (which item it is, as text), then facts as quiet text joined by "·", then
+// signals [ATT-05].
+export function Meta({ lead, facts, chips }: { lead?: ReactNode; facts: string[]; chips: Chip[] }) {
   const styles = useStyles();
   const quiet = (chip: Chip) => chip.tone === "neutral" && !chip.icon && !chip.hint;
   const text = [...facts, ...chips.filter(quiet).map((chip) => chip.text)];
   const signals = chips.filter((chip) => !quiet(chip));
   return (
     <View style={[styles.wrap, { columnGap: 10, rowGap: 4 }]}>
-      {text.length ? <Text style={styles.muted}>{text.join(" · ")}</Text> : null}
+      {lead || text.length ? (
+        <Text style={styles.muted}>
+          {lead}
+          {lead && text.length ? " · " : null}
+          {text.join(" · ")}
+        </Text>
+      ) : null}
       {signals.map((chip) => (
         <Signal key={chip.text} {...chip} />
       ))}
@@ -268,7 +358,8 @@ export function useCopy() {
     );
 }
 
-// Choice chips for options and filters: the only pills, because they're tappable.
+// Choice chips for options and filters: tappable, filled when chosen. Next up's fact pills (Pill) aren't tappable, and lead
+// with an icon half instead.
 export function Toggle({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   const { c } = useStyles();
   return (

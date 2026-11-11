@@ -1,10 +1,12 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { Modal } from "@getpaseo/plugin/client/ui";
-import type { ReactNode } from "react";
+import { Modal as PaseoModal, type ModalComponent, type ModalProps } from "@getpaseo/plugin/client/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { Chip, ItemDetails } from "../shared/attention";
+import { type Chip, type ItemDetails, ownStack, type Target } from "../shared/attention";
+import { LatestOnly, type PendingOpen } from "../shared/opening";
 import type { IconName } from "./icons";
-import { Button, HintArea, KeepStyles, Loading, Signal, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
+import { Button, HintArea, KeepStyles, LINE_HEIGHT, REST_MS, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
 
 // Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
@@ -91,17 +93,96 @@ function Badge(chip: Chip) {
   );
 }
 
-// The PR's size and the linked issues or PRs, once fetched.
-export function DetailLines({ details, loading, error, linkedLabel }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string }) {
+// What a sheet fetches when it opens; the card and its sheet share it, so what the card fetched the sheet reuses.
+export interface DetailsQuery {
+  queryKey: readonly unknown[];
+  queryFn: () => Promise<ItemDetails>;
+}
+
+// Details keyed by everything the fetch reads: the item, the PR its actions apply to, and with `checks` the PRs of my stack,
+// so the same issue in Doing (acting on its PR) and in Next up (no PR) don't share what each fetched [ATT-06].
+export function detailsKey(subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean): readonly unknown[] {
+  const pr = target?.kind === "pr" ? `${target.repo}#${target.number}` : null;
+  return ["attention-span", "details", subject.kind, `${subject.repo}#${subject.number}`, pr, checks, checks && target ? ownStack(target).map((p) => p.number) : []];
+}
+
+// Fetched details stay fresh this long, so a sheet opened again, or after its card was pointed at, opens at once.
+export const DETAILS_STALE_MS = 60_000;
+// Tapped, a card waits this long at most for its details before its sheet opens anyway.
+const OPEN_WAIT_MS = 1_500;
+// Every card's pending open, so the newest tap wins.
+const PENDING_OPENS = new LatestOnly();
+
+// Another way into a sheet, like a card's own action opening its picker, takes over from a card still waiting to open its
+// details sheet, which then doesn't open over it [ATT-06].
+export function cancelPendingOpen(): void {
+  PENDING_OPENS.cancel();
+}
+
+// Every dialog and sheet in the plugin: Paseo's Modal, which also takes over from a card still waiting to open its details
+// sheet as it appears, so Filter, feedback or any other dialog never ends up under one that opened late [ATT-06]. A
+// details sheet opening for itself is done waiting by then, so it cancels nothing.
+function TakingOverModal(props: ModalProps) {
+  useEffect(cancelPendingOpen, []);
+  return <PaseoModal {...props} />;
+}
+export const Modal: ModalComponent = Object.assign(TakingOverModal, { Content: PaseoModal.Content });
+
+// Opens a card's sheet once its details are in, so the sheet doesn't change once open; meanwhile the card says it's
+// loading. Past OPEN_WAIT_MS it opens anyway and the skeletons hold the room; a failure opens it with its error line.
+// Resting the pointer on the card fetches them ahead, best effort [ATT-06, GH-01].
+// Another card tapped while one waits supersedes it, so only one sheet opens.
+export function useSheetOpener(query: DetailsQuery, show: () => void) {
+  const client = useQueryClient();
+  const [opening, setOpening] = useState(false);
+  const rest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pending = useRef<PendingOpen | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      clearTimeout(rest.current);
+      pending.current?.done();
+    };
+  }, []);
+  const fetch = () => client.fetchQuery({ ...query, staleTime: DETAILS_STALE_MS });
+  const open = () => {
+    if (opening) return;
+    setOpening(true);
+    const turn = PENDING_OPENS.start(() => alive.current && setOpening(false));
+    pending.current = turn;
+    const waited = new Promise((done) => setTimeout(done, OPEN_WAIT_MS));
+    void Promise.race([fetch().catch(() => undefined), waited]).then(() => {
+      if (!turn.isCurrent() || !alive.current) return;
+      turn.done();
+      setOpening(false);
+      show();
+    });
+  };
+  const hover = {
+    onHoverIn: () => {
+      clearTimeout(rest.current);
+      rest.current = setTimeout(() => void fetch().catch(() => undefined), REST_MS);
+    },
+    onHoverOut: () => clearTimeout(rest.current),
+  };
+  return { opening, open, hover };
+}
+
+// The PR's size and the linked issues or PRs, once fetched. Until then skeleton lines hold the room of the lines the card
+// expects (`expected`: a PR's size, the PRs it knows close an issue), so the sheet doesn't jump when they arrive [ATT-06].
+export function DetailLines({ details, loading, error, linkedLabel, expected }: { details?: ItemDetails; loading: boolean; error: unknown; linkedLabel: string; expected: number }) {
   const styles = useStyles();
-  if (loading) return <Loading text="Loading details…" />;
-  if (!details) return error ? <Text style={styles.muted}>Couldn't load details: {(error as Error).message}</Text> : null;
+  const line = [styles.muted, { lineHeight: LINE_HEIGHT }];
+  if (loading) return <Skeleton lines={expected} label="Loading details" />;
+  if (!details) return error ? <Text style={line}>Couldn't load details: {(error as Error).message}</Text> : null;
   return (
     <>
-      {details.size ? <Text style={styles.muted}>{sizeText(details.size)}</Text> : null}
+      {details.size ? <Text style={line}>{sizeText(details.size)}</Text> : null}
       {details.linked.map((link) => (
         <Pressable key={link.url} accessibilityRole="link" onPress={() => void openExternalUrl(link.url)}>
-          <Text style={styles.muted} numberOfLines={1}>
+          <Text style={line} numberOfLines={1}>
             {linkedLabel} #{link.number} {link.title} · {link.state.toLowerCase()}
           </Text>
         </Pressable>

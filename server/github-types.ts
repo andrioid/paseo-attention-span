@@ -1,5 +1,7 @@
 // Shapes returned by the queries in queries.ts.
 
+import type { GithubColor } from "../shared/attention";
+
 type Nodes<T> = { nodes: T[] };
 type Repo = { nameWithOwner: string; defaultBranchRef?: { name: string } | null };
 
@@ -103,8 +105,17 @@ export interface PickableNode {
   issueFieldValues: Nodes<{ name?: string; field?: { name: string } }>;
   // Open PRs that close it, so a card can say someone is on it [NXT-10].
   closedByPullRequestsReferences?: Nodes<{ number: number; url: string; state: string; author: { login: string } | null }>;
+  // Only when projects can be read: the projects it's on, with the board's Status field and where it is on it [NXT-12].
+  projectItems?: Nodes<ProjectItemNode | null> & { pageInfo?: { hasNextPage: boolean } };
   // Added after the search: the Next up sources that found it [NXT-09].
   sources?: string[];
+}
+
+export interface ProjectItemNode {
+  // Null for a board the token can't see, like one in an org that enforces SSO.
+  project: { id: string; title: string; closed: boolean } | null;
+  // The built-in Status field's value; empty when the item has none.
+  status: { name?: string; color?: GithubColor } | null;
 }
 
 // One request per search, merged [GH-01].
@@ -135,8 +146,14 @@ export type SearchResult = LiveResult & HistoryResult;
 export interface Details {
   // "owner/name#number" -> commits the head is behind its base.
   behind: Record<string, number>;
-  // Issue field name -> its options in order.
-  fieldOptions: Record<string, string[]>;
+  // Org (lower case) -> issue field name -> its options in that org's order. Per org, as two orgs may order a Priority
+  // field differently [NXT-02].
+  fieldOptions: Record<string, Record<string, string[]>>;
+  // Org (lower case) -> issue field name -> option name -> the color that org gave it. Per org, as two orgs may both have a
+  // Priority field and color it differently [NXT-10].
+  fieldColors: Record<string, Record<string, Record<string, GithubColor>>>;
+  // Project id -> its Status options in the board's order, for Next up's filter [NXT-03].
+  projectStatuses: Record<string, { name: string; color: GithubColor }[]>;
   // "owner/name#number" -> the open issue my PRs' descriptions refer to; PRs and closed issues are left out [ATT-03].
   issues: Record<string, LinkedIssue>;
   // "owner/name#number" -> the checks the repo requires on my PR's last commit, as far as they've reported [PRS-14].

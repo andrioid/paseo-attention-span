@@ -267,6 +267,22 @@ for (const layout of layouts) {
       const label = await page.getByRole("button", { name: /^Filter/ }).first().getAttribute("aria-label");
       if (label !== "Filter") throw new Error(`Filter button after Clear: ${label}`);
       await shot("next-up-cleared");
+      // Projects with their statuses nested under them [NXT-03, NXT-12]: all of Ideas, and TODO's Todo only, so TODO shows
+      // partly ticked. Names are exact, as "TODO" and "Todo" differ only in case.
+      await page.getByRole("button", { name: /^Filter/ }).click();
+      await page.getByText("Project", { exact: true }).waitFor({ timeout: 10000 });
+      await page.getByRole("checkbox", { name: "Ideas", exact: true }).click();
+      await page.getByRole("checkbox", { name: "Todo", exact: true }).click();
+      await page.waitForTimeout(300);
+      const projectTicks = await page.getByRole("checkbox", { checked: true }).count();
+      // Ideas itself, its three statuses and No status, and Todo; TODO is only partly ticked, which doesn't count.
+      if (projectTicks !== 6) throw new Error(`Expected 6 ticked for all of Ideas and TODO's Todo, got ${projectTicks}`);
+      await modalShot("next-up-filter-projects");
+      await done();
+      await shot("next-up-projects");
+      await page.getByRole("button", { name: /^Filter/ }).click();
+      await page.getByRole("button", { name: "Clear" }).click();
+      await done();
       // Settings from the gear: a typo is caught, then a repo is added and saved to config.json [SRC-02].
       await doing();
       await page.getByRole("button", { name: "Attention Span settings" }).click();
@@ -306,7 +322,7 @@ for (const layout of layouts) {
       // The viewport is tall, so clip a band from the section down rather than scroll to it.
       const fieldsBand = async () => {
         const box = await fieldsHeading.boundingBox();
-        return { ...fold(), y: Math.max(0, box.y - 24), height: 420 };
+        return { ...fold(), y: Math.max(0, box.y - 24), height: 500 };
       };
       await page.screenshot({ path: `/out/${prefix}-settings-fields.png`, clip: await fieldsBand() });
       // Scope set to another field is saved; Priority, never picked, is left to its name, and Effort keeps its order.
