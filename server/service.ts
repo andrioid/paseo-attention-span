@@ -42,6 +42,8 @@ const PROBE_TIMEOUT_MS = 10_000;
 // A search with projects, or a batch of boards' statuses, waits this long at most before the refresh goes on without them.
 const PROJECTS_SEARCH_TIMEOUT_MS = 20_000;
 const BOARDS_PER_REQUEST = 50;
+// Batches of boards asked at once, so many boards don't burst requests [GH-01].
+const BOARD_BATCHES_AT_ONCE = 2;
 
 // Where gh's token comes from: an environment variable, which gh reads before its own login, or that login [NXT-12].
 const tokenSource = (): ProjectsAccess["token"] => (process.env.GH_TOKEN ? "GH_TOKEN" : process.env.GITHUB_TOKEN ? "GITHUB_TOKEN" : "gh");
@@ -362,9 +364,15 @@ export class AttentionService {
     const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
     const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked")]);
     const afterThem = forDetails.then((parts) => this.details(merge(parts), projects, problems));
-    const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
-    if (projects) this.projectsWarning = projectsWarning(problems);
-    return { data: merge([...first, ...rest]), details };
+    try {
+      const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
+      if (projects) this.projectsWarning = projectsWarning(problems);
+      return { data: merge([...first, ...rest]), details };
+    } catch (error) {
+      // Another search failing doesn't lose what went wrong with projects so far; it can't say they went well either.
+      if (projects && problems.length) this.projectsWarning = projectsWarning(problems);
+      throw error;
+    }
   }
 
   private variables(names: readonly Exclude<SearchName, "unclaimed">[], now: Date): Record<string, string> {
@@ -415,21 +423,21 @@ export class AttentionService {
 
   // Each board's Status options, once per board [NXT-03, GH-01]. A board that can't be read lists no statuses; the whole
   // request failing costs only the filter's statuses, never the refresh.
-  // Bounded in time, so it can't hold up the refresh, and in size, a batch of boards per request.
+  // Bounded in time, so it can't hold up the refresh, in size, a batch of boards per request, and in how many go at once.
   private async projectStatuses(ids: string[], problems: string[]): Promise<Details["projectStatuses"]> {
     const batches = Array.from({ length: Math.ceil(ids.length / BOARDS_PER_REQUEST) }, (_, i) => ids.slice(i * BOARDS_PER_REQUEST, (i + 1) * BOARDS_PER_REQUEST));
-    const results = await Promise.all(
-      batches.map(async (batch) => {
-        try {
-          const { data, errors } = await graphqlResult<ProjectStatusesResult>(projectStatusesQuery(batch), {}, { timeoutMs: PROJECTS_SEARCH_TIMEOUT_MS });
-          if (errors.length) problems.push(errors.join("; "));
-          return batch.flatMap((id, index) => (data?.[`b${index}`]?.field?.options ? [[id, data[`b${index}`]!.field!.options!] as const] : []));
-        } catch (error) {
-          problems.push((error as Error).message);
-          return [];
-        }
-      }),
-    );
+    const read = async (batch: string[]) => {
+      try {
+        const { data, errors } = await graphqlResult<ProjectStatusesResult>(projectStatusesQuery(batch), {}, { timeoutMs: PROJECTS_SEARCH_TIMEOUT_MS });
+        if (errors.length) problems.push(errors.join("; "));
+        return batch.flatMap((id, index) => (data?.[`b${index}`]?.field?.options ? [[id, data[`b${index}`]!.field!.options!] as const] : []));
+      } catch (error) {
+        problems.push((error as Error).message);
+        return [];
+      }
+    };
+    const results: Awaited<ReturnType<typeof read>>[] = [];
+    for (let at = 0; at < batches.length; at += BOARD_BATCHES_AT_ONCE) results.push(...(await Promise.all(batches.slice(at, at + BOARD_BATCHES_AT_ONCE).map(read))));
     if (problems.length) console.error("Reading projects:", problems.join("; "));
     return Object.fromEntries(results.flat());
   }
