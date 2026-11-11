@@ -6,6 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
+import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
 import { ago, linkList } from "../shared/format";
 import { isClear } from "../shared/still";
 import { workEmoji } from "../shared/work";
@@ -20,12 +21,12 @@ import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, cancelPendingOpen, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, useSheetOpener } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FadeIn, Modal, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
-import { Avatar, Button, Hint, KeepStyles, Loading, Meta, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStyles } from "./ui";
+import { Avatar, Button, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -98,17 +99,70 @@ function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): string {
   }[action];
 }
 
-// Which checks failed, and whether they were rerun before: flaky or real? [PRS-09]
-function rerunEntry(failing: FailingChecks[] | undefined, loading: boolean): { detail: string; runIds: number[] } {
-  if (loading) return { detail: "Checking which checks failed…", runIds: [] };
-  if (!failing) return { detail: "Couldn't find the failing checks", runIds: [] };
-  if (failing.length === 0) return { detail: "No failed checks on the latest commit", runIds: [] };
-  const names = failing
-    .map((f) => `${failing.length > 1 ? `#${f.pr}: ` : ""}${f.checks.map((check) => `${check.name}${check.rerunnable ? "" : " (not Actions, can't rerun)"}`).join(", ")}`)
-    .join(" · ");
-  const runs = failing.flatMap((f) => f.runs);
-  const reruns = Math.max(0, ...runs.map((run) => run.attempt - 1));
-  return { detail: `${names} · ${reruns ? `rerun ${reruns === 1 ? "once" : `${reruns} times`} already` : "not rerun yet"}`, runIds: runs.map((run) => run.id) };
+// Rerun failed jobs as a sheet line: which checks failed and whether they were rerun before, flaky or real? [PRS-09]
+// It can be pressed before the checks are in: the sheet closes, and the rerun goes ahead once they are.
+function rerunEntry(label: string, details: SheetDetails | undefined, rerun: (runIds?: number[]) => void): SheetEntry {
+  const base = { key: "rerun", icon: ACTION_ICONS.rerun, label, live: true };
+  if (!details || details.isLoading) return { ...base, detail: "Checking which checks failed…", onPress: () => rerun() };
+  const failing = details.data?.failing;
+  if (!failing) return { ...base, detail: "Couldn't find the failing checks", disabled: true, onPress: () => {} };
+  const summary = summarizeRerun(failing);
+  if (summary.failed === 0) return { ...base, detail: "No failed checks on the latest commit", disabled: true, onPress: () => {} };
+  if (summary.runIds.length === 0)
+    return { ...base, detail: `${summary.failed} failed, none in GitHub Actions, so none can be rerun here`, hint: failingList(failing), disabled: true, onPress: () => {} };
+  return { ...base, detailNode: <RerunDetail failing={failing} arrived={!!details.arrived} />, hint: failingList(failing), onPress: () => rerun(summary.runIds) };
+}
+
+// What an item's sheet has fetched, as its lines need it; `arrived` once it came in while the sheet was open.
+interface SheetDetails {
+  data?: { failing: FailingChecks[] };
+  isLoading: boolean;
+  arrived?: boolean;
+}
+
+// "7 failed · lint, e2e ×3, unit ×2 · ↻ rerun once": the count and names quiet, as the card's red already says CI failed; checks
+// that can't rerun dimmer; the history amber once rerun, a hint it may not be flaky. One line on desktop, where the names give way
+// and the hint has them all; two on phones, which can't point at a hint [PRS-09].
+function RerunDetail({ failing, arrived }: { failing: FailingChecks[]; arrived: boolean }) {
+  const styles = useStyles();
+  const summary = summarizeRerun(failing);
+  const strong = useStrongText();
+  // Dimmer than the quiet text, on the line's own background, so it reads in any theme.
+  const dimmer = { color: mix(styles.c.foregroundMuted, styles.c.surface2, 0.55) };
+  const stack = summary.prs.length > 1;
+  const names = summary.prs.map(({ pr, groups }, index) => (
+    <Text key={pr}>
+      {index > 0 ? " · " : null}
+      {stack ? <Text style={strong}>#{pr} </Text> : null}
+      {groups.map((group, at) => (
+        <Text key={`${group.name}-${group.rerunnable}`} style={group.rerunnable ? null : dimmer}>
+          {at > 0 ? ", " : null}
+          {groupLabel(group)}
+        </Text>
+      ))}
+    </Text>
+  ));
+  const history = (
+    <Text style={summary.reruns ? { color: styles.c.statusWarning, fontWeight: "500" } : null}>{summary.reruns ? `↻ ${rerunHistory(summary.reruns)}` : rerunHistory(0)}</Text>
+  );
+  const line = [styles.muted, { lineHeight: LINE_HEIGHT }];
+  return (
+    <FadeIn active={arrived}>
+      {styles.compact ? (
+        <Text style={line} numberOfLines={2}>
+          {summary.failed} failed · {names} · {history}
+        </Text>
+      ) : (
+        <View style={{ flexDirection: "row", minWidth: 0 }}>
+          <Text style={line}>{summary.failed} failed · </Text>
+          <Text style={[line, { flexShrink: 1 }]} numberOfLines={1}>
+            {names}
+          </Text>
+          <Text style={line}> · {history}</Text>
+        </View>
+      )}
+    </FadeIn>
+  );
 }
 
 const SECTION_ICONS: Record<SectionId, IconName> = {
@@ -353,7 +407,19 @@ function AttentionList({
         change(item.key, "Auto-merge", () => setAutoMerge({ key: item.key, target, on: true }), `PR ${target.number} merges once checks pass`, () => setAutoMerge({ key: item.key, target, on: false }));
     },
     // [PRS-09]
-    rerun: (item, runIds) => change(item.key, "Rerun", () => rerunFailed({ key: item.key, repo: item.target.repo, runIds }), `Rerunning the failed jobs of PR ${item.target.number}`),
+    rerun: (item, known) => {
+      if (!known) toast.show("Finding the failed jobs to rerun…");
+      change(
+        item.key,
+        "Rerun",
+        async () => {
+          const runIds = known ?? summarizeRerun((await queryClient.fetchQuery({ ...itemDetailsQuery(item, fetchDetails), staleTime: DETAILS_STALE_MS })).failing).runIds;
+          if (runIds.length === 0) throw new Error("no failed GitHub Actions jobs to rerun");
+          return rerunFailed({ key: item.key, repo: item.target.repo, runIds });
+        },
+        `Rerunning the failed jobs of PR ${item.target.number}`,
+      );
+    },
     // [PRS-12]
     requestReviewers: (item, reviewers) => {
       const { target } = item;
@@ -401,7 +467,7 @@ function AttentionList({
             <Text style={styles.muted}>{feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
           </Pressable>
           {openSettings ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={() => (cancelPendingOpen(), openSettings())} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
               <TablerIcon name="settings" size={16} />
             </Pressable>
           ) : null}
@@ -549,7 +615,8 @@ interface Actions {
   fetchProviders: FetchProviders;
   act: (item: Item, action: ActionId) => void;
   requestReviewers: (item: Item, reviewers: string[]) => void;
-  rerun: (item: Item, runIds: number[]) => void;
+  // Without run ids, it finds them first: Rerun pressed before the sheet had the failing checks.
+  rerun: (item: Item, runIds?: number[]) => void;
   acknowledge: (item: Item, commentIds: string[]) => void;
   confirm: (item: Item, action: "merge" | "close", comment?: string) => void;
   dismiss: (item: Item) => void;
@@ -600,7 +667,8 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const styles = useStyles();
   // An open session leads; without one, the item's own action does [SES-03].
   const sessions = itemSessions(actions.agents, item);
-  const own = [...waitChips(item, !!group, actions.config.waitingTooLongDays), ...item.chips];
+  const waits = waitChips(item, !!group, actions.config.waitingTooLongDays);
+  const own = [...waits, ...item.chips];
   const chips = sessions[0] ? [...own, agentSignal(sessions[0])] : own;
   // The group names one; the card names the rest [WAI-01].
   const others = group?.who ? (item.waitingOn ?? []).filter((who) => !samePerson(who, group.who!)) : [];
@@ -611,15 +679,13 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const main = item.actions[0];
   // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
-  // The sheet opens once its details are in; meanwhile › spins [ATT-06].
-  const opener = useSheetOpener(itemDetailsQuery(item, actions.fetchDetails), () => setSheet("item"));
-  const open = opener.open;
+  // The sheet opens at once; what it fetches fills in [ATT-06].
+  const open = () => setSheet("item");
+  const prefetch = usePrefetchOnRest(itemDetailsQuery(item, actions.fetchDetails));
   const copy = useCopy();
   const history = SECTIONS[item.section].tab === "history";
 
   function perform(action: ActionId) {
-    // An action opening its own sheet wins over a details sheet still waiting to open [ATT-06].
-    cancelPendingOpen();
     setSheet(null);
     if (action === "merge" || action === "close") setConfirm(action);
     else if (action === "acknowledge") setSheet("acknowledge");
@@ -655,8 +721,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
         ) : null
       }
       onOpen={open}
-      opening={opener.opening}
-      hover={opener.hover}
+      hover={prefetch}
       busy={actions.busy.has(item.key)}
       primary={
         sessions[0]
@@ -688,7 +753,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       }
       overlay={
         <>
-          {sheet === "item" ? <ItemSheet item={item} chips={own} sessions={sessions} actions={actions} {...handlers} /> : null}
+          {sheet === "item" ? <ItemSheet item={item} waitChips={waits} sessions={sessions} actions={actions} {...handlers} /> : null}
           {sheet === "acknowledge" ? <AcknowledgeSheet item={item} onReact={(ids) => (setSheet(null), actions.acknowledge(item, ids))} onClose={() => setSheet(null)} /> : null}
           {sheet === "reviewers" || sheet === "reviewers-after-ready" ? (
             <ReviewerSheet
@@ -711,17 +776,29 @@ interface SheetHandlers {
 }
 
 // What the card already knows on top, then every action, then what's fetched when it opens, so nothing jumps as it loads [ATT-06, GH-01].
-// What an item's sheet fetches when it opens; its card fetches the same ahead, so the sheet opens complete [ATT-06].
-// `checks` asks for failing checks too, for Rerun.
+// What an item's sheet fetches when it opens; resting the pointer on its card fetches the same ahead. `checks` asks for
+// failing checks too, for Rerun.
 function itemDetailsQuery(item: Item, fetchDetails: FetchDetails): DetailsQuery {
   const checks = item.actions.includes("rerun");
   const subject = { kind: item.kind, repo: item.repo, number: item.number };
   return { queryKey: detailsKey(subject, item.target, checks), queryFn: () => fetchDetails({ subject, target: item.target, checks }) };
 }
 
-function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
+// An issue's chips are about the PR its actions apply to, which its stack line shows; the sheet says each once, on that PR's
+// row, and keeps on top only what the row doesn't say. "PR #103" and "stack of 2" are the stack line itself [ATT-04, ATT-06].
+function sheetMetaChips(item: Item, targetRow: SubRow | undefined): Chip[] {
+  if (!targetRow) return item.chips;
+  const onRow = new Set(targetRow.chips.map((chip) => chip.text));
+  return item.chips.filter((chip) => !/^PR #\d+$/.test(chip.text) && !/^stack of \d+$/.test(chip.text) && !onRow.has(chip.text));
+}
+
+function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: Item; waitChips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
   const details = useQuery({ ...itemDetailsQuery(item, actions.fetchDetails), staleTime: DETAILS_STALE_MS });
-  const meta = item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [];
+  const arrived = useArrived(details.isLoading);
+  const elsewhere = item.target.number !== item.number || item.target.kind !== item.kind;
+  // The row of the PR its actions apply to, where it's in the stack line: marked there instead of named on top.
+  const targetRow = elsewhere ? item.children.find((child) => child.url === item.target.url) : undefined;
+  const meta = elsewhere && !targetRow ? [`actions apply to PR #${item.target.number}`] : [];
   // PRs already in the stack line link from there; list only the rest, like someone else's PR closing the same issue.
   const shown = new Set(item.children.map((child) => child.url));
   const extra = details.data && { ...details.data, linked: details.data.linked.filter((link) => !shown.has(link.url)) };
@@ -732,26 +809,36 @@ function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item
       top={
         <>
           {/* Number first, as on the card; the sheet always names the owner, even of my own repos [ATT-20]. */}
-          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={chips} />
+          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={[...waitChips, ...sheetMetaChips(item, targetRow)]} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
           {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
-          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links /> : null}
+          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links target={targetRow?.key} /> : null}
         </>
       }
-      entries={sheetEntries(item, sessions, actions, handlers, details)}
-      // The PR its actions apply to has a size line; an issue's PRs are in its stack line already, so few more come [ATT-06].
-      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} expected={item.target.kind === "pr" ? 1 : 0} />}
+      entries={sheetEntries(item, sessions, actions, handlers, { data: details.data, isLoading: details.isLoading, arrived })}
+      // The PR its actions apply to has a size line, named where it isn't the item; an issue's PRs are in its stack line
+      // already, so few more come [ATT-06].
+      bottom={
+        <DetailLines
+          details={extra}
+          loading={details.isLoading}
+          error={details.error}
+          linkedLabel={item.kind === "issue" ? "PR" : "Closes"}
+          expected={item.target.kind === "pr" ? 1 : 0}
+          sizeOf={elsewhere ? item.target.number : undefined}
+        />
+      }
     />
   );
 }
 
-// Everything an item's sheet offers, each saying what it will do [ATT-06]. Rerun's line needs the fetched checks.
+// Everything an item's sheet offers, each saying what it will do [ATT-06]. Rerun's line says more once the checks are in.
 function sheetEntries(
   item: Item,
   sessions: AgentSummary[],
   actions: Actions,
   { onPerform, onClose }: SheetHandlers,
-  details?: { data?: { failing: FailingChecks[] }; isLoading: boolean },
+  details?: SheetDetails,
 ): SheetEntry[] {
   const inDoing = SECTIONS[item.section].tab === "doing";
   const close = (then: () => void) => () => (onClose(), then());
@@ -771,10 +858,10 @@ function sheetEntries(
       if (running.length) entries.push(...running.map((agent) => sessionEntry(agent, sessionLabel(kind, item), open)));
       else entries.push({ key: action, icon: "agent", label: `${label}…`, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: withOptions(label, kind) });
     } else if (action === "rerun") {
-      const { detail, runIds } = rerunEntry(details?.data?.failing, details?.isLoading ?? true);
-      entries.push({ key: action, icon: ACTION_ICONS.rerun, label, detail, disabled: runIds.length === 0, onPress: close(() => actions.rerun(item, runIds)) });
+      entries.push(rerunEntry(label, details, (runIds) => close(() => actions.rerun(item, runIds))()));
     } else {
-      entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), onPress: () => onPerform(action) });
+      // Closing it sits apart, below the work, with Dismiss [ATT-06].
+      entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), housekeeping: action === "close", onPress: () => onPerform(action) });
     }
   }
   // Anything Attention Span doesn't cover [ATT-12], and its link to share [ATT-15].
@@ -788,7 +875,7 @@ function sheetEntries(
   });
   // Nothing's left to start on once it's merged or closed.
   if (!item.closedAt) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
-  if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", onPress: close(() => actions.dismiss(item)) });
+  if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) });
   return entries;
 }
 
@@ -1167,13 +1254,13 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
 }
 
 // Stacked or linked PRs as a connected line; collapsed, only those needing attention [ATT-03, ATT-04].
-// In the sheet each row opens its PR on GitHub [ATT-12].
-function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: boolean; links?: boolean }) {
+// In the sheet each row opens its PR on GitHub [ATT-12], and the PR an issue's actions apply to is tinted and says so [ATT-06].
+function StackLine({ rows, merged, links = false, target }: { rows: SubRow[]; merged: boolean; links?: boolean; target?: string }) {
   const styles = useStyles();
   return (
     <View>
       {rows.map((row, index) => (
-        <StackRow key={row.key} url={row.url} number={row.number} link={links}>
+        <StackRow key={row.key} url={row.url} number={row.number} link={links} target={row.key === target}>
           <View style={{ width: 16, alignItems: "center" }}>
             <View style={{ width: 2, flex: 1, backgroundColor: index === 0 ? "transparent" : styles.c.border }} />
             <TablerIcon name={merged ? "merge" : row.draft ? "draft" : "pr"} size={14} color={merged ? styles.c.statusSuccess : row.draft ? styles.c.foregroundMuted : styles.c.statusSuccess} />
@@ -1183,7 +1270,10 @@ function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: bo
             <Text style={{ color: styles.c.foreground, fontSize: 13 }} numberOfLines={1}>
               {row.title}
             </Text>
-            <Meta lead={<NumberText number={row.number} />} facts={[]} chips={row.chips} />
+            <View style={[styles.wrap, { columnGap: 10, rowGap: 2 }]}>
+              <Meta lead={<NumberText number={row.number} />} facts={[]} chips={row.chips} />
+              {row.key === target ? <Text style={{ color: styles.action, fontSize: 12, fontWeight: "600" }}>actions apply here</Text> : null}
+            </View>
           </View>
           {links ? (
             <View style={{ justifyContent: "center", paddingHorizontal: 4 }}>
@@ -1196,17 +1286,18 @@ function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: bo
   );
 }
 
-function StackRow({ url, number, link, children }: { url: string; number: number; link: boolean; children: ReactNode }) {
+function StackRow({ url, number, link, target = false, children }: { url: string; number: number; link: boolean; target?: boolean; children: ReactNode }) {
   const styles = useStyles();
   const { hovered, hover } = useHover();
-  if (!link) return <View style={[styles.row, { alignItems: "stretch" }]}>{children}</View>;
+  const tinted = target ? { backgroundColor: tint(styles.action, 0.1), borderRadius: 6 } : null;
+  if (!link) return <View style={[styles.row, { alignItems: "stretch" }, tinted]}>{children}</View>;
   return (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={`Open PR #${number} on GitHub`}
       onPress={() => void openExternalUrl(url)}
       {...hover}
-      style={({ pressed }) => [styles.row, { alignItems: "stretch", borderRadius: 6, backgroundColor: pressed || hovered ? styles.c.surface2 : "transparent" }]}
+      style={({ pressed }) => [styles.row, { alignItems: "stretch", borderRadius: 6, backgroundColor: pressed || hovered ? styles.c.surface2 : target ? tint(styles.action, 0.1) : "transparent" }]}
     >
       {children}
     </Pressable>

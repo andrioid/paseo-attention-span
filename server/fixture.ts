@@ -354,6 +354,22 @@ export function fixtureDetails(subject: { kind: "pr" | "issue"; repo: string; nu
   return {
     size: pr ? { additions: 84 + (pr.number % 7) * 13, deletions: 12 + (pr.number % 5), files: 2 + (pr.number % 4) } : undefined,
     linked: subject.number === 120 ? [{ number: 200, title: "Customers can't tell when the shop is down", url: `https://github.com/${REPO}/issues/200`, state: "OPEN" }] : [],
-    failing: checks && pr ? [{ pr: pr.number, checks: [{ name: "lint", rerunnable: true }, { name: "e2e (chromium)", rerunnable: true }], runs: [{ id: 9001, attempt: 1 }] }] : [],
+    // A matrix's jobs, a check from outside Actions, and a run rerun once already: "5 failed · lint, e2e ×3, Vercel · ↻ rerun once" [PRS-09].
+    failing:
+      checks && pr
+        ? [
+            {
+              pr: pr.number,
+              checks: [
+                { name: "lint", rerunnable: true },
+                { name: "e2e (chromium)", rerunnable: true },
+                { name: "e2e (firefox)", rerunnable: true },
+                { name: "e2e (webkit)", rerunnable: true },
+                { name: "Vercel", rerunnable: false },
+              ],
+              runs: [{ id: 9001, attempt: 2 }],
+            },
+          ]
+        : [],
   };
 }

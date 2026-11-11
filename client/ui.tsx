@@ -124,10 +124,17 @@ export function SpinningIcon({ name, size = 16, color, spinning }: { name: IconN
 export const LINE_HEIGHT = 16;
 
 // Where lines of text will be once they've loaded: quiet bars, gently pulsing, each the height of the line it stands in for,
-// so nothing moves when the text replaces them. Widths vary so they read as text, not boxes.
-export function Skeleton({ lines, label }: { lines: number; label: string }) {
+// so nothing moves when the text replaces them. Widths vary so they read as text, not boxes. With `delayMs` the bars show only
+// after that long, holding their room meanwhile, so a quick answer doesn't flash them.
+export function Skeleton({ lines, label, delayMs = 0 }: { lines: number; label: string; delayMs?: number }) {
   const styles = useStyles();
   const pulse = useRef(new Animated.Value(0)).current;
+  const [shown, setShown] = useState(delayMs <= 0);
+  useEffect(() => {
+    if (delayMs <= 0) return;
+    const timer = setTimeout(() => setShown(true), delayMs);
+    return () => clearTimeout(timer);
+  }, [delayMs]);
   useEffect(() => {
     const native = Platform.OS !== "web";
     const half = (toValue: number) => Animated.timing(pulse, { toValue, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: native });
@@ -138,7 +145,7 @@ export function Skeleton({ lines, label }: { lines: number; label: string }) {
   if (lines <= 0) return null;
   const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
   return (
-    <View accessibilityLabel={label} style={{ gap: 10 }}>
+    <View accessibilityLabel={label} style={{ gap: 10, opacity: shown ? 1 : 0 }}>
       {Array.from({ length: lines }, (_, index) => (
         <View key={index} style={{ height: LINE_HEIGHT, justifyContent: "center" }}>
           <Animated.View style={{ height: 10, borderRadius: 5, width: `${[42, 68, 55][index % 3]}%`, backgroundColor: styles.c.surface2, opacity }} />
