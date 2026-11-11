@@ -668,8 +668,6 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   // An open session leads; without one, the item's own action does [SES-03].
   const sessions = itemSessions(actions.agents, item);
   const waits = waitChips(item, !!group, actions.config.waitingTooLongDays);
-  const own = [...waits, ...item.chips];
-  const chips = sessions[0] ? [...own, agentSignal(sessions[0])] : own;
   // The group names one; the card names the rest [WAI-01].
   const others = group?.who ? (item.waitingOn ?? []).filter((who) => !samePerson(who, group.who!)) : [];
   const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded={false} /> : null;
@@ -677,8 +675,14 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
   const main = item.actions[0];
-  // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
-  const children = item.children.filter((child) => child.attention || isRed(child.chips));
+  // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04]. Once it shows any, it shows the PR an
+  // issue's actions apply to as well, tinted, and says that PR's facts there rather than in its meta, as the sheet does [ATT-06].
+  const target = targetUrl(item);
+  const needing = item.children.some((child) => child.attention || isRed(child.chips));
+  const children = needing ? item.children.filter((child) => child.attention || isRed(child.chips) || child.url === target) : [];
+  const targetRow = children.find((child) => child.url === target);
+  const shown = [...waits, ...stackMetaChips(item, targetRow)];
+  const chips = sessions[0] ? [...shown, agentSignal(sessions[0])] : shown;
   // The sheet opens at once; what it fetches fills in [ATT-06].
   const open = () => setSheet("item");
   const prefetch = usePrefetchOnRest(itemDetailsQuery(item, actions.fetchDetails));
@@ -716,7 +720,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
             {item.person ? <PersonQuote person={item.person} expanded={false} /> : null}
             {waitingOn}
             {alsoOn}
-            {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} /> : null}
+            {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} target={targetRow?.key} /> : null}
           </>
         ) : null
       }
@@ -784,9 +788,13 @@ function itemDetailsQuery(item: Item, fetchDetails: FetchDetails): DetailsQuery 
   return { queryKey: detailsKey(subject, item.target, checks), queryFn: () => fetchDetails({ subject, target: item.target, checks }) };
 }
 
-// An issue's chips are about the PR its actions apply to, which its stack line shows; the sheet says each once, on that PR's
-// row, and keeps on top only what the row doesn't say. "PR #103" and "stack of 2" are the stack line itself [ATT-04, ATT-06].
-function sheetMetaChips(item: Item, targetRow: SubRow | undefined): Chip[] {
+// The PR an item's actions apply to, where that isn't the item itself, like an issue's PR.
+const targetUrl = (item: Item) => (item.target.number !== item.number || item.target.kind !== item.kind ? item.target.url : undefined);
+
+// An issue's chips are about the PR its actions apply to. Where its stack line shows that PR, each is said once, on that PR's
+// row, and the meta keeps only what the row doesn't say; "PR #103" and "stack of 2" are the stack line itself. The sheet always
+// shows the row; a card only when a PR in the stack needs attention [ATT-04, ATT-06].
+function stackMetaChips(item: Item, targetRow: SubRow | undefined): Chip[] {
   if (!targetRow) return item.chips;
   const onRow = new Set(targetRow.chips.map((chip) => chip.text));
   return item.chips.filter((chip) => !/^PR #\d+$/.test(chip.text) && !/^stack of \d+$/.test(chip.text) && !onRow.has(chip.text));
@@ -795,7 +803,7 @@ function sheetMetaChips(item: Item, targetRow: SubRow | undefined): Chip[] {
 function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: Item; waitChips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
   const details = useQuery({ ...itemDetailsQuery(item, actions.fetchDetails), staleTime: DETAILS_STALE_MS });
   const arrived = useArrived(details.isLoading);
-  const elsewhere = item.target.number !== item.number || item.target.kind !== item.kind;
+  const elsewhere = !!targetUrl(item);
   // The row of the PR its actions apply to, where it's in the stack line: marked there instead of named on top.
   const targetRow = elsewhere ? item.children.find((child) => child.url === item.target.url) : undefined;
   const meta = elsewhere && !targetRow ? [`actions apply to PR #${item.target.number}`] : [];
@@ -809,7 +817,7 @@ function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: 
       top={
         <>
           {/* Number first, as on the card; the sheet always names the owner, even of my own repos [ATT-20]. */}
-          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={[...waitChips, ...sheetMetaChips(item, targetRow)]} />
+          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={[...waitChips, ...stackMetaChips(item, targetRow)]} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
           {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links target={targetRow?.key} /> : null}
