@@ -16,6 +16,8 @@ describe("projects probe", () => {
       error: "Resource protected by organization SAML enforcement",
     });
     expect(probeAnswer({ data: { viewer: { projectsV2: null } }, errors: [SCOPE] }, "unknown")).toEqual({ state: "missing" });
+    // A connection alongside the scope error still isn't a yes.
+    expect(probeAnswer({ data: { viewer: { projectsV2: { nodes: [] } } }, errors: [SCOPE] }, "on")).toEqual({ state: "missing" });
   });
 
   it("NXT-12, GH-01: tells the missing scope from other failures, like a timeout, and keeps projects on through a blip", () => {

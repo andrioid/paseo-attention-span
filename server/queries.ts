@@ -246,8 +246,9 @@ export type ProjectStatusesResult = Record<string, { field?: { options?: { name:
 
 // Answers only when the login may read projects; without read:project GitHub refuses it, which is how Next up tells [NXT-12].
 // It must ask for a field read:project guards: totalCount isn't, so a token without the scope answered it. GitHub checks
-// the scope against the query, not the data, so first: 0 is refused all the same, and costs nothing (seen 2026-11-11).
-export const PROJECTS_PROBE = "query ProjectsProbe { viewer { projectsV2(first: 0) { nodes { id } } } }";
+// the scope against the query, not the data, so it's refused even for someone with no projects (seen 2026-11-11). One
+// node keeps it small and within GitHub's documented 1–100.
+export const PROJECTS_PROBE = "query ProjectsProbe { viewer { projectsV2(first: 1) { nodes { id } } } }";
 
 // How GitHub says the login lacks read:project.
 export const missingProjectScope = (error: unknown): boolean => /read:project/i.test(typeof error === "string" ? error : ((error as Error)?.message ?? ""));

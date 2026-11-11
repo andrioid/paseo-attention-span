@@ -15,7 +15,9 @@ export function projectsFailure(message: string): Answer {
 // no answer at all, isn't a yes. `before` is the last answer: a failure for another reason after projects worked leaves
 // them on, as each search falls back on its own.
 export function probeAnswer(result: { data: { viewer?: { projectsV2?: unknown } | null } | null; errors: string[] } | Error, before: Answer["state"]): Answer {
-  if (!(result instanceof Error) && result.data?.viewer?.projectsV2) return { state: "on" };
+  // The scope missing is said whatever else came back.
+  const scope = !(result instanceof Error) && result.errors.find((error) => projectsFailure(error).state === "missing");
+  if (!scope && !(result instanceof Error) && result.data?.viewer?.projectsV2) return { state: "on" };
   const answer = projectsFailure(result instanceof Error ? result.message : result.errors.join("; ") || "GitHub didn't list your projects");
   return answer.state === "failed" && before === "on" ? { state: "on", error: answer.error } : answer;
 }
