@@ -18,6 +18,11 @@ export interface Place {
   login: string | null;
 }
 
+// "#160", standing out a little from the quiet text it leads, like a stack's rows in a sheet.
+export function NumberText({ number }: { number: number }) {
+  return <Text style={useStrongText()}>#{number}</Text>;
+}
+
 // "#160 · acme/shop", to lead a Meta line: the number on its own first, then the repo with its name standing out from its
 // owner, so cards from several repos scan.
 export function PlaceText({ place }: { place: Place }) {
@@ -26,7 +31,7 @@ export function PlaceText({ place }: { place: Place }) {
   const cut = label.lastIndexOf("/") + 1;
   return (
     <>
-      <Text style={strong}>#{place.number}</Text>
+      <NumberText number={place.number} />
       {" · "}
       {label.slice(0, cut)}
       <Text style={strong}>{label.slice(cut)}</Text>

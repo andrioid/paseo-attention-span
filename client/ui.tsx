@@ -196,8 +196,9 @@ export function HintArea({ style, children }: { style?: StyleProp<ViewStyle>; ch
   );
 }
 
-// Resting the pointer this long shows a hint; passing over doesn't.
-const HINT_DELAY_MS = 300;
+// Resting the pointer this long shows a hint, or fetches a card's details ahead; passing over does neither.
+export const REST_MS = 300;
+const HINT_DELAY_MS = REST_MS;
 
 // What something means, in words: on hover after a moment, and always to screen readers. It floats over the layout rather
 // than in it, so showing it moves nothing, and it's sized to the room left in its HintArea: beside the content, wrapping

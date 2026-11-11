@@ -1,10 +1,11 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { Modal } from "@getpaseo/plugin/client/ui";
-import type { ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Chip, ItemDetails } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, HintArea, KeepStyles, LINE_HEIGHT, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
+import { Button, HintArea, KeepStyles, LINE_HEIGHT, REST_MS, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
 
 // Tapping a card opens its sheet: what the card knows, every action saying what it will do, then what's fetched [ATT-06].
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop.
@@ -89,6 +90,42 @@ function Badge(chip: Chip) {
       <Signal {...chip} />
     </View>
   );
+}
+
+// What a sheet fetches when it opens; the card and its sheet share it, so what the card fetched the sheet reuses.
+export interface DetailsQuery {
+  queryKey: readonly unknown[];
+  queryFn: () => Promise<ItemDetails>;
+}
+
+// Fetched details stay fresh this long, so a sheet opened again, or after its card was pointed at, opens at once.
+export const DETAILS_STALE_MS = 60_000;
+// Tapped, a card waits this long at most for its details before its sheet opens anyway.
+const OPEN_WAIT_MS = 1_500;
+
+// Opens a card's sheet once its details are in, so the sheet doesn't change once open; meanwhile the card says it's
+// loading. Past OPEN_WAIT_MS it opens anyway and the skeletons hold the room; a failure opens it with its error line.
+// Resting the pointer on the card fetches them ahead, best effort [ATT-06, GH-01].
+export function useSheetOpener(query: DetailsQuery, show: () => void) {
+  const client = useQueryClient();
+  const [opening, setOpening] = useState(false);
+  const rest = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(rest.current), []);
+  const fetch = () => client.fetchQuery({ ...query, staleTime: DETAILS_STALE_MS });
+  const open = () => {
+    if (opening) return;
+    setOpening(true);
+    const waited = new Promise((done) => setTimeout(done, OPEN_WAIT_MS));
+    void Promise.race([fetch().catch(() => undefined), waited]).then(() => (setOpening(false), show()));
+  };
+  const hover = {
+    onHoverIn: () => {
+      clearTimeout(rest.current);
+      rest.current = setTimeout(() => void fetch().catch(() => undefined), REST_MS);
+    },
+    onHoverOut: () => clearTimeout(rest.current),
+  };
+  return { opening, open, hover };
 }
 
 // The PR's size and the linked issues or PRs, once fetched. Until then skeleton lines hold the room of the lines the card

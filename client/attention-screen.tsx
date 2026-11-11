@@ -16,11 +16,11 @@ import { blocks } from "../shared/setup";
 import { useAttention } from "./data";
 import { CardList, CardRow, type CardProps } from "./card";
 import type { IconName } from "./icons";
-import { PlaceText } from "./entity";
+import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DetailLines, type SheetEntry } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, type SheetEntry, useSheetOpener } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
@@ -611,7 +611,9 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const main = item.actions[0];
   // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04].
   const children = item.children.filter((child) => child.attention || isRed(child.chips));
-  const open = () => setSheet("item");
+  // The sheet opens once its details are in; meanwhile › spins [ATT-06].
+  const opener = useSheetOpener(itemDetailsQuery(item, actions.fetchDetails), () => setSheet("item"));
+  const open = opener.open;
   const copy = useCopy();
   const history = SECTIONS[item.section].tab === "history";
 
@@ -651,6 +653,8 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
         ) : null
       }
       onOpen={open}
+      opening={opener.opening}
+      hover={opener.hover}
       busy={actions.busy.has(item.key)}
       primary={
         sessions[0]
@@ -705,13 +709,18 @@ interface SheetHandlers {
 }
 
 // What the card already knows on top, then every action, then what's fetched when it opens, so nothing jumps as it loads [ATT-06, GH-01].
-function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
+// What an item's sheet fetches when it opens; its card fetches the same ahead, so the sheet opens complete [ATT-06].
+// `checks` asks for failing checks too, for Rerun.
+function itemDetailsQuery(item: Item, fetchDetails: FetchDetails): DetailsQuery {
   const checks = item.actions.includes("rerun");
-  const details = useQuery({
+  return {
     queryKey: ["attention-span", "details", item.key, checks],
-    queryFn: () => actions.fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
-    staleTime: 60_000,
-  });
+    queryFn: () => fetchDetails({ subject: { kind: item.kind, repo: item.repo, number: item.number }, target: item.target, checks }),
+  };
+}
+
+function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item; chips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
+  const details = useQuery({ ...itemDetailsQuery(item, actions.fetchDetails), staleTime: DETAILS_STALE_MS });
   const meta = item.target.number !== item.number ? [`actions apply to PR #${item.target.number}`] : [];
   // PRs already in the stack line link from there; list only the rest, like someone else's PR closing the same issue.
   const shown = new Set(item.children.map((child) => child.url));
@@ -730,8 +739,8 @@ function ItemSheet({ item, chips, sessions, actions, ...handlers }: { item: Item
         </>
       }
       entries={sheetEntries(item, sessions, actions, handlers, details)}
-      // A PR has a size line; an issue's PRs are in its stack line already, so few lines come for it [ATT-06].
-      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} expected={item.kind === "pr" ? 1 : 0} />}
+      // The PR its actions apply to has a size line; an issue's PRs are in its stack line already, so few more come [ATT-06].
+      bottom={<DetailLines details={extra} loading={details.isLoading} error={details.error} linkedLabel={item.kind === "issue" ? "PR" : "Closes"} expected={item.target.kind === "pr" ? 1 : 0} />}
     />
   );
 }
@@ -1174,7 +1183,7 @@ function StackLine({ rows, merged, links = false }: { rows: SubRow[]; merged: bo
             <Text style={{ color: styles.c.foreground, fontSize: 13 }} numberOfLines={1}>
               {row.title}
             </Text>
-            <Meta facts={[`#${row.number}`]} chips={row.chips} />
+            <Meta lead={<NumberText number={row.number} />} facts={[]} chips={row.chips} />
           </View>
           {links ? (
             <View style={{ justifyContent: "center", paddingHorizontal: 4 }}>
