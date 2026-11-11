@@ -4,7 +4,6 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
 import { type Place, PlaceText } from "./entity";
-import { cancelPendingOpen } from "./sheet";
 import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
@@ -42,10 +41,8 @@ export interface CardProps {
   meta: { place: Place; when?: string; signals: Chip[] };
   // Defaults to "<title>, more".
   accessibilityLabel?: string;
-  // Tapping the card opens its sheet [ATT-06].
+  // Tapping the card opens its sheet, at once [ATT-06].
   onOpen: () => void;
-  // While its sheet waits for its details, a spinner takes the place of › [ATT-06].
-  opening?: boolean;
   // Resting the pointer on the card, to fetch its sheet's details ahead.
   hover?: { onHoverIn: () => void; onHoverOut: () => void };
   // The labelled main action; secondary ones are icon-only (›, copy).
@@ -65,9 +62,8 @@ export function CardList({ children }: { children: ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, opening, hover, primary, secondary, busy, extra, confirm, overlay }: CardProps & { first: boolean }) {
+export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, hover, primary, secondary, busy, extra, confirm, overlay }: CardProps & { first: boolean }) {
   const styles = useStyles();
-  const chevron = secondary.some((action) => action.icon === "chevronRight");
   const actions = (
     <View style={styles.wrap}>
       {primary ? (
@@ -77,8 +73,7 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
           icon={primary.icon}
           variant="calm"
           busy={busy}
-          // A card's action wins over its sheet still waiting to open [ATT-06].
-          onPress={() => (cancelPendingOpen(), primary.onPress())}
+          onPress={primary.onPress}
         />
       ) : busy ? (
         <ActivityIndicator size="small" color={styles.c.foregroundMuted} />
@@ -91,11 +86,9 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
           icon={action.icon}
           variant="ghost"
           accessibilityLabel={action.accessibilityLabel ?? action.label}
-          busy={opening && action.icon === "chevronRight"}
           onPress={action.onPress}
         />
       ))}
-      {opening && !chevron ? <ActivityIndicator size="small" color={styles.c.foregroundMuted} accessibilityLabel="Opening" /> : null}
     </View>
   );
   return (

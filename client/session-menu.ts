@@ -13,7 +13,8 @@ export function agentSignal(agent: AgentSummary): Chip {
 // A session as a sheet line, under the name of what started it: it opens the session, its state at the end [SES-03, ATT-07].
 export function sessionEntry(agent: AgentSummary, label: string, onOpen: (agentId: string) => void): SheetEntry {
   const signal = agentSignal(agent);
-  const when = agent.lastActivityAt ? `${ago(agent.lastActivityAt)} ago` : null;
+  // Non-breaking, so "2h ago" doesn't split across lines beside a badge on phones.
+  const when = agent.lastActivityAt ? `${ago(agent.lastActivityAt)} ago`.replace(/ /g, "\u00a0") : null;
   return {
     key: agent.id,
     icon: "agent",

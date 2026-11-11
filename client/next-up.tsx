@@ -20,7 +20,7 @@ import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, useSheetOpener } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, usePrefetchOnRest } from "./sheet";
 import { githubColor, IssuePills, PlaceText } from "./entity";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
@@ -286,7 +286,7 @@ function prSignal(issue: NextUpIssue): Chip[] {
   return [{ text: `PR by ${first.author ?? "someone"}${more.length ? ` +${more.length}` : ""}`, tone: "warn" }];
 }
 
-// What an issue's sheet fetches when it opens; its card fetches the same ahead, so the sheet opens complete [ATT-06].
+// What an issue's sheet fetches when it opens; resting the pointer on its card fetches the same ahead [ATT-06].
 function issueDetailsQuery(issue: NextUpIssue, fetchDetails: FetchDetails): DetailsQuery {
   const subject = { kind: "issue" as const, repo: issue.repo, number: issue.number };
   return { queryKey: detailsKey(subject, undefined, false), queryFn: () => fetchDetails({ subject, checks: false }) };
@@ -298,8 +298,9 @@ const TYPE_TONES: Record<string, Tone> = { bug: "bad", feature: "good", epic: "g
 // Its main action and ›; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
 function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onOptions, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
   const [sheet, setSheet] = useState(false);
-  // The sheet opens once its details are in; meanwhile › spins [ATT-06].
-  const opener = useSheetOpener(issueDetailsQuery(issue, fetchDetails), () => setSheet(true));
+  // The sheet opens at once; what it fetches fills in [ATT-06].
+  const open = () => setSheet(true);
+  const prefetch = usePrefetchOnRest(issueDetailsQuery(issue, fetchDetails));
   // Closing asks first, with the reason and an optional comment [NXT-11, SAFE-01].
   const [closing, setClosing] = useState(false);
   // An open session leads; without one, Start does [SES-03].
@@ -315,9 +316,8 @@ function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onSt
       accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
       meta={{ place: { repo: issue.repo, number: issue.number, login }, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
       extra={<IssuePills issue={issue} />}
-      onOpen={opener.open}
-      opening={opener.opening}
-      hover={opener.hover}
+      onOpen={open}
+      hover={prefetch}
       busy={busy.has(issue.key)}
       primary={
         sessions[0]
@@ -325,7 +325,7 @@ function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onSt
           : // Claim first so teammates see it's taken [NXT-05].
             { label: startLabel, accessibilityLabel: `${startLabel} ${issue.title}`, icon: "agent", onPress: () => onStart(issue, claim) }
       }
-      secondary={[{ label: `Details for #${issue.number}`, icon: "chevronRight", onPress: opener.open }]}
+      secondary={[{ label: `Details for #${issue.number}`, icon: "chevronRight", onPress: open }]}
       confirm={
         closing
           ? {
@@ -394,10 +394,11 @@ function IssueSheet({
         ]),
     claim
       ? { key: "claim", icon: "claim", label: "Claim", detail: "Assigns you, without starting a session", onPress: close(() => onClaim(issue, true)) }
-      : { key: "unclaim", icon: "unclaim", label: "Unclaim", detail: "Removes you as assignee, so it goes back to Unclaimed", onPress: close(() => onClaim(issue, false)) },
+      : { key: "unclaim", icon: "unclaim", label: "Unclaim", detail: "Removes you as assignee, so it goes back to Unclaimed", housekeeping: true, onPress: close(() => onClaim(issue, false)) },
     { key: "github", icon: "github", label: "Open issue on GitHub", detail: `${issue.repo}#${issue.number}`, onPress: close(() => void openExternalUrl(issue.url)) },
     ...(sessions.length ? [startAnotherEntry(true, withOptions)] : []),
-    { key: "close", icon: "issueClosed", label: "Close issue", detail: "Asks first: as completed or not planned, with an optional comment", onPress: close(onCloseIssue) },
+    // Giving it up or closing it sits apart, below the work [ATT-06].
+    { key: "close", icon: "issueClosed", label: "Close issue", detail: "Asks first: as completed or not planned, with an optional comment", housekeeping: true, onPress: close(onCloseIssue) },
   ];
   return (
     <ActionSheet
