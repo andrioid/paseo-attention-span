@@ -1,5 +1,5 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { Modal } from "@getpaseo/plugin/client/ui";
+import { Modal as PaseoModal, type ModalComponent, type ModalProps } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -118,6 +118,15 @@ const PENDING_OPENS = new LatestOnly();
 export function cancelPendingOpen(): void {
   PENDING_OPENS.cancel();
 }
+
+// Every dialog and sheet in the plugin: Paseo's Modal, which also takes over from a card still waiting to open its details
+// sheet as it appears, so Filter, feedback or any other dialog never ends up under one that opened late [ATT-06]. A
+// details sheet opening for itself is done waiting by then, so it cancels nothing.
+function TakingOverModal(props: ModalProps) {
+  useEffect(cancelPendingOpen, []);
+  return <PaseoModal {...props} />;
+}
+export const Modal: ModalComponent = Object.assign(TakingOverModal, { Content: PaseoModal.Content });
 
 // Opens a card's sheet once its details are in, so the sheet doesn't change once open; meanwhile the card says it's
 // loading. Past OPEN_WAIT_MS it opens anyway and the skeletons hold the room; a failure opens it with its error line.

@@ -246,6 +246,8 @@ export interface ProjectsAccess {
   state: "on" | "missing" | "failed" | "unknown";
   // GitHub's own words when it failed for another reason, like an org's SSO.
   error?: string;
+  // What went wrong reading them on the last refresh while they're on, like boards an org's SSO hides, in GitHub's words.
+  warning?: string;
   // Where gh's token comes from: its own login, which `gh auth refresh` can widen, or an environment variable it reads first.
   token: "gh" | "GH_TOKEN" | "GITHUB_TOKEN";
 }

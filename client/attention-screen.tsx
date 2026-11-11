@@ -1,6 +1,6 @@
 import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { Markdown, Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { Markdown, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -20,7 +20,7 @@ import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, cancelPendingOpen, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, type SheetEntry, useSheetOpener } from "./sheet";
+import { ActionSheet, cancelPendingOpen, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, useSheetOpener } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
@@ -401,7 +401,7 @@ function AttentionList({
             <Text style={styles.muted}>{feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
           </Pressable>
           {openSettings ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={() => (cancelPendingOpen(), openSettings())} hitSlop={8}>
               <TablerIcon name="settings" size={16} />
             </Pressable>
           ) : null}

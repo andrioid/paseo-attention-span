@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { probeAnswer, searchWithProjects } from "./projects";
+import { probeAnswer, projectsWarning, searchWithProjects } from "./projects";
 
 const SCOPE = "Your token has not been granted the required scopes to execute this query. The 'title' field requires one of the following scopes: ['read:project']";
 
@@ -20,6 +20,13 @@ describe("projects probe", () => {
     expect(probeAnswer(new Error("GitHub didn't answer within 10 s"), "on")).toEqual({ state: "on", error: "GitHub didn't answer within 10 s" });
     // The scope gone is news even after projects worked.
     expect(probeAnswer(new Error(SCOPE), "on")).toEqual({ state: "missing" });
+  });
+});
+
+describe("projects warning", () => {
+  it("NXT-12: says each problem of a refresh once, and nothing when it read projects cleanly", () => {
+    expect(projectsWarning([])).toBeUndefined();
+    expect(projectsWarning(["SAML enforcement; Not found", "SAML enforcement", "GitHub didn't answer within 20 s"])).toBe("SAML enforcement; Not found; GitHub didn't answer within 20 s");
   });
 });
 

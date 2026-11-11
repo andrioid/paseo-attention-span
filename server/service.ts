@@ -3,7 +3,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
 import { classify, classifyHistory, issueBoardIds } from "./classify";
-import { probeAnswer, projectsFailure, searchWithProjects } from "./projects";
+import { probeAnswer, projectsFailure, projectsWarning, searchWithProjects } from "./projects";
 import { FIXTURE, graphql, graphqlResult } from "./gh";
 import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS } from "./fixture";
 import type { Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
@@ -39,6 +39,9 @@ const RETRY_MS = 5 * 60_000;
 const PROJECTS_CHECK_MS = 60 * 60_000;
 // The check waits this long at most, as the refresh waits on it.
 const PROBE_TIMEOUT_MS = 10_000;
+// A search with projects, or a batch of boards' statuses, waits this long at most before the refresh goes on without them.
+const PROJECTS_SEARCH_TIMEOUT_MS = 20_000;
+const BOARDS_PER_REQUEST = 50;
 
 // Where gh's token comes from: an environment variable, which gh reads before its own login, or that login [NXT-12].
 const tokenSource = (): ProjectsAccess["token"] => (process.env.GH_TOKEN ? "GH_TOKEN" : process.env.GITHUB_TOKEN ? "GITHUB_TOKEN" : "gh");
@@ -69,6 +72,7 @@ export class AttentionService {
   private intervalMinutes = 0;
   private projects: { access: ProjectsAccess; checkedAt: number } = { access: { state: "unknown", token: tokenSource() }, checkedAt: 0 };
   private projectsProbe: Promise<ProjectsAccess> | null = null;
+  private projectsWarning: string | undefined;
   // The app's connection to Paseo, from its last request; background refreshes have none of their own.
   private paseo: PluginHandlerContext["paseo"] | null = null;
 
@@ -307,8 +311,15 @@ export class AttentionService {
   // actually returns the viewer's projects, as a partial answer with errors isn't a yes. Any attempt counts toward the
   // hour, so an outage doesn't add a probe to every refresh, and it's given PROBE_TIMEOUT_MS, so a stuck gh can't hold up
   // the refresh waiting on it. Settings and a refresh asking at once share one probe [GH-01].
+  // What went wrong reading projects on the last refresh, while they're on, like boards an org's SSO hides, rides along for
+  // Settings; a later probe that works doesn't clear it, only a refresh that reads them cleanly.
   async projectsAccess(force = false): Promise<ProjectsAccess> {
     if (FIXTURE) return { state: "on", token: "gh" };
+    const access = await this.probeProjects(force);
+    return this.projectsWarning ? { ...access, warning: this.projectsWarning } : access;
+  }
+
+  private async probeProjects(force: boolean): Promise<ProjectsAccess> {
     if (this.projectsProbe) return this.projectsProbe;
     if (!force && Date.now() - this.projects.checkedAt < PROJECTS_CHECK_MS) return this.projects.access;
     this.projectsProbe = (async () => {
@@ -327,13 +338,16 @@ export class AttentionService {
     // Next up's searches read projects too, when they can [NXT-12]. Projects are extra, so they can never cost the search:
     // whatever goes wrong with them (the scope gone since the check, an org's SSO, no results at all), the search runs again
     // without them and Settings says why. Boards the token can't see come back empty and are left out.
-    const projects = (await this.projectsAccess()).state === "on";
+    const projects = (await this.probeProjects(false)).state === "on";
+    // What goes wrong reading projects this refresh, for Settings.
+    const problems: string[] = [];
     const pickable = async <K extends "assigned" | "unclaimed">(name: K, query: string): Promise<Pick<LiveResult, K>> => {
       const plain = () => graphql<Pick<LiveResult, K>>(searchQuery([name]), { [name]: query });
       if (!projects) return plain();
-      const withProjects = () => graphqlResult<Pick<LiveResult, K>>(searchQuery([name], false, { projects }), { [name]: query });
+      // Bounded, so a stuck request falls back rather than hold up the refresh.
+      const withProjects = () => graphqlResult<Pick<LiveResult, K>>(searchQuery([name], false, { projects }), { [name]: query }, { timeoutMs: PROJECTS_SEARCH_TIMEOUT_MS });
       const { data, failure, partly } = await searchWithProjects(withProjects, plain, (result) => !!result[name]);
-      if (partly) console.error(`Next up's ${name} search with projects partly failed:`, partly);
+      for (const problem of [partly, failure]) if (problem) (problems.push(problem), console.error(`Next up's ${name} search with projects:`, problem));
       if (failure) this.projects = { access: { ...projectsFailure(failure), token: tokenSource() }, checkedAt: Date.now() };
       return data;
     };
@@ -347,8 +361,9 @@ export class AttentionService {
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
     const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
     const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked")]);
-    const afterThem = forDetails.then((parts) => this.details(merge(parts), projects));
+    const afterThem = forDetails.then((parts) => this.details(merge(parts), projects, problems));
     const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
+    if (projects) this.projectsWarning = projectsWarning(problems);
     return { data: merge([...first, ...rest]), details };
   }
 
@@ -359,7 +374,7 @@ export class AttentionService {
 
   // Behind counts [UPS-07], required checks [PRS-14], issue field option order [NXT-02] and colors [NXT-10], and the Status
   // options of the boards Next up's issues are on [NXT-03].
-  private async details(data: Pick<LiveResult, "mine" | "assigned" | "unclaimed">, projects: boolean): Promise<Details> {
+  private async details(data: Pick<LiveResult, "mine" | "assigned" | "unclaimed">, projects: boolean, problems: string[]): Promise<Details> {
     const prs = data.mine.nodes.filter((pr) => pr?.headRefName && !pr.isCrossRepository);
     // Priority's colors tint its pill, so its options are asked for even when the config orders it.
     const effort = nextUpField(this.config, "effort");
@@ -368,7 +383,7 @@ export class AttentionService {
     const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
     const refs = toLookUp(data.mine.nodes.filter((pr) => pr?.repository));
     const mergeStates = this.mergeStates(data.mine.nodes.filter((pr) => pr?.repository));
-    const statuses = projects ? this.projectStatuses(issueBoardIds(issues)) : Promise.resolve({});
+    const statuses = projects ? this.projectStatuses(issueBoardIds(issues), problems) : Promise.resolve({});
     const details: Details = { behind: {}, fieldOptions: {}, fieldColors: {}, projectStatuses: {}, issues: {}, checks: {}, mergeState: {} };
     if (prs.length === 0 && orgs.length === 0 && refs.length === 0) return { ...details, mergeState: await mergeStates, projectStatuses: await statuses };
     const { query, compares } = detailsQuery(prs, orgs as string[], refs);
@@ -400,15 +415,23 @@ export class AttentionService {
 
   // Each board's Status options, once per board [NXT-03, GH-01]. A board that can't be read lists no statuses; the whole
   // request failing costs only the filter's statuses, never the refresh.
-  private async projectStatuses(ids: string[]): Promise<Details["projectStatuses"]> {
-    if (ids.length === 0) return {};
-    try {
-      const { data } = await graphqlResult<ProjectStatusesResult>(projectStatusesQuery(ids));
-      return Object.fromEntries(ids.flatMap((id, index) => (data?.[`b${index}`]?.field?.options ? [[id, data[`b${index}`]!.field!.options!]] : [])));
-    } catch (error) {
-      console.error("Couldn't read the boards' statuses:", (error as Error).message);
-      return {};
-    }
+  // Bounded in time, so it can't hold up the refresh, and in size, a batch of boards per request.
+  private async projectStatuses(ids: string[], problems: string[]): Promise<Details["projectStatuses"]> {
+    const batches = Array.from({ length: Math.ceil(ids.length / BOARDS_PER_REQUEST) }, (_, i) => ids.slice(i * BOARDS_PER_REQUEST, (i + 1) * BOARDS_PER_REQUEST));
+    const results = await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          const { data, errors } = await graphqlResult<ProjectStatusesResult>(projectStatusesQuery(batch), {}, { timeoutMs: PROJECTS_SEARCH_TIMEOUT_MS });
+          if (errors.length) problems.push(errors.join("; "));
+          return batch.flatMap((id, index) => (data?.[`b${index}`]?.field?.options ? [[id, data[`b${index}`]!.field!.options!] as const] : []));
+        } catch (error) {
+          problems.push((error as Error).message);
+          return [];
+        }
+      }),
+    );
+    if (problems.length) console.error("Reading projects:", problems.join("; "));
+    return Object.fromEntries(results.flat());
   }
 
   // My PRs' merge state, a few per request in parallel, as GitHub only works it out for a few at a time; search's answer

@@ -250,7 +250,10 @@ function ProjectsRow() {
         ? `Couldn't read projects: ${status.error}`
         : status?.state === "unknown"
           ? "Couldn't tell whether projects can be read"
-          : "Shows each issue's project and Status on its card, and adds them to the filter";
+          : // On, but some went wrong last time, like boards an org's SSO hides: in GitHub's words, so it can be fixed.
+            status?.warning || status?.error
+            ? `On, but GitHub said: ${status.warning ?? status.error}`
+            : "Shows each issue's project and Status on its card, and adds them to the filter";
   const on = status?.state === "on";
   return (
     <SettingsRow label="Projects" hint={hint} error={access.error ? (access.error as Error).message : null}>

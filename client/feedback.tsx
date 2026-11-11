@@ -1,12 +1,12 @@
 import { openExternalUrl, type PluginClientContext, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { Modal, TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { AgentSummary } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import { FEEDBACK_REPO, type FeedbackContext, type FeedbackKind, feedbackItemKey, feedbackPrompt } from "../shared/feedback";
 import * as rpc from "../shared/rpc";
-import { ActionSheet, type SheetEntry } from "./sheet";
+import { ActionSheet, Modal, type SheetEntry } from "./sheet";
 import { sessionEntry } from "./session-menu";
 import { ITEM_LABEL, KIND_LABEL, LABEL, resolveAgentConfig } from "./sessions";
 import { Button, KeepStyles, TablerIcon, useStyles } from "./ui";

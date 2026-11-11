@@ -20,6 +20,11 @@ export function probeAnswer(result: { data: { viewer?: { projectsV2?: unknown } 
   return answer.state === "failed" && before === "on" ? { state: "on", error: answer.error } : answer;
 }
 
+// What went wrong reading projects in one refresh, each said once, for Settings; nothing when all went well.
+export function projectsWarning(problems: string[]): string | undefined {
+  return problems.length ? [...new Set(problems.flatMap((problem) => problem.split("; ")))].join("; ") : undefined;
+}
+
 // One of Next up's searches with projects, falling back to the same search without them whatever goes wrong: GitHub
 // failing it, or answering without its results. Boards the token can't see come back empty within an answer that has
 // its results, which is kept. `failure` says what went wrong, for Settings.

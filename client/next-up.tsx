@@ -20,8 +20,7 @@ import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, type SheetEntry, useSheetOpener } from "./sheet";
-import { Modal } from "@getpaseo/plugin/client/ui";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, useSheetOpener } from "./sheet";
 import { githubColor, IssuePills, PlaceText } from "./entity";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
