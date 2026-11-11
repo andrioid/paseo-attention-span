@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { probeAnswer, projectsWarning, searchWithProjects } from "./projects";
+import { PROJECTS_PROBE } from "./queries";
 
 const SCOPE = "Your token has not been granted the required scopes to execute this query. The 'title' field requires one of the following scopes: ['read:project']";
 
 describe("projects probe", () => {
   it("NXT-12: is on only when GitHub actually lists the viewer's projects", () => {
-    expect(probeAnswer({ data: { viewer: { projectsV2: { totalCount: 3 } } }, errors: [] }, "unknown")).toEqual({ state: "on" });
+    expect(probeAnswer({ data: { viewer: { projectsV2: { nodes: [] } } }, errors: [] }, "unknown")).toEqual({ state: "on" });
+    // totalCount answers without read:project, so the probe must ask for a field the scope guards.
+    expect(PROJECTS_PROBE).toContain("nodes { id }");
+    expect(PROJECTS_PROBE).not.toContain("totalCount");
     // A partial answer with errors isn't a yes.
     expect(probeAnswer({ data: { viewer: null }, errors: ["Resource protected by organization SAML enforcement"] }, "unknown")).toEqual({
       state: "failed",
       error: "Resource protected by organization SAML enforcement",
     });
     expect(probeAnswer({ data: { viewer: { projectsV2: null } }, errors: [SCOPE] }, "unknown")).toEqual({ state: "missing" });
+    // A connection alongside the scope error still isn't a yes.
+    expect(probeAnswer({ data: { viewer: { projectsV2: { nodes: [] } } }, errors: [SCOPE] }, "on")).toEqual({ state: "missing" });
   });
 
   it("NXT-12, GH-01: tells the missing scope from other failures, like a timeout, and keeps projects on through a blip", () => {
