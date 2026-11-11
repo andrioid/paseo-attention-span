@@ -220,6 +220,28 @@ export interface Item {
   notPlanned?: true;
 }
 
+// The colors GitHub lets an org give issue field options and a project its Status options. GRAY is what nothing chosen looks
+// like, so it's shown untinted [NXT-10].
+export type GithubColor = "GRAY" | "BLUE" | "GREEN" | "YELLOW" | "ORANGE" | "RED" | "PINK" | "PURPLE";
+
+// An open project an issue is on, with its place on the board's built-in Status field [NXT-12].
+export interface IssueProject {
+  id: string;
+  title: string;
+  status?: string;
+  color?: GithubColor;
+}
+
+// An open project Next up's issues are on, with every option of its Status field in the board's order, for the filter [NXT-03].
+export interface ProjectInfo {
+  id: string;
+  title: string;
+  statuses: { name: string; color: GithubColor }[];
+}
+
+// Whether the gh login may read projects (read:project). Without it Next up leaves projects out and Settings says how [NXT-12].
+export type ProjectsAccess = "on" | "missing" | "unknown";
+
 // An issue to pick up: assigned to me [NXT-06] or nobody [NXT-01].
 export interface NextUpIssue {
   key: string;
@@ -237,6 +259,10 @@ export interface NextUpIssue {
   sources: string[];
   // Its priority's place in the field's order, 0 first; missing when unknown [NXT-02].
   priorityRank?: number;
+  // The color the org gave its priority option; missing when the org colored none, so the card falls back on rank [NXT-10].
+  priorityColor?: GithubColor;
+  // The open projects it's on; missing when projects can't be read [NXT-12].
+  projects?: IssueProject[];
   // Open PRs that close it: someone may already be on it [NXT-10].
   openPrs: { number: number; url: string; author: string | null }[];
 }
@@ -267,6 +293,8 @@ export interface Attention {
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom?: UnclaimedSource;
+  // The projects Next up's issues are on, for its filter [NXT-03, NXT-12].
+  projects?: ProjectInfo[];
   // Repo -> who reviewed or was asked on my PRs there, latest first, for the reviewer picker [PRS-12].
   reviewers?: Record<string, Reviewer[]>;
 }
@@ -340,14 +368,31 @@ export interface AttentionView {
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom: UnclaimedSource;
+  // The projects Next up's issues are on [NXT-03, NXT-12].
+  projects: ProjectInfo[];
   dismissedCount: number;
   // Scopes ticked in Next up's filter; none means all [NXT-03].
   scopes: string[];
   // Sources ticked in Next up's filter; none means all [NXT-09].
   sources: string[];
+  // Project statuses ticked in Next up's filter, as projectFilterId makes them; none means all [NXT-03].
+  projectFilter: string[];
   config: AttentionConfig;
   // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
   pending: number;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
   fixtureAgents?: AgentSummary[];
+}
+
+// What a tick in Next up's project filter stands for: one status of one project, a project's issues without a status, or
+// issues on no project [NXT-03].
+export function projectFilterId(project: { id: string } | null, status?: string | null): string {
+  if (!project) return "noproject";
+  return status ? `status:${project.id}:${status}` : `nostatus:${project.id}`;
+}
+
+// The ticks an issue answers to: one per project it's on, or "noproject".
+export function projectFilterIds(issue: Pick<NextUpIssue, "projects">): string[] {
+  const projects = issue.projects ?? [];
+  return projects.length ? projects.map((project) => projectFilterId(project, project.status)) : [projectFilterId(null)];
 }

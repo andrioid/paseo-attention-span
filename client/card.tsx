@@ -3,12 +3,12 @@ import { type ReactNode, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { Chip } from "../shared/attention";
 import type { IconName } from "./icons";
-import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
+import { Button, HintArea, Meta, type Place, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
 //
 //   [mark]  title (2 lines at most)                 [actions]   ← desktop
-//           place · when · signals
+//           #number · repo · when · signals
 //           extra (slot)
 //           [actions]                                           ← phone, labelled
 //           confirm bar
@@ -36,8 +36,8 @@ export interface ConfirmSpec {
 export interface CardProps {
   mark: { icon: IconName; tone: Tone };
   title: string;
-  // "repo #number", then when it happened, then signals [ATT-05].
-  meta: { place: string; when?: string; signals: Chip[] };
+  // "#number · repo", then when it happened, then signals [ATT-05, ATT-20].
+  meta: { place: Place; when?: string; signals: Chip[] };
   // Defaults to "<title>, more".
   accessibilityLabel?: string;
   // Tapping the card opens its sheet [ATT-06].
@@ -84,7 +84,7 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
             <Text style={styles.title} numberOfLines={2}>
               {title}
             </Text>
-            <Meta facts={meta.when ? [meta.place, meta.when] : [meta.place]} chips={meta.signals} />
+            <Meta place={meta.place} facts={meta.when ? [meta.when] : []} chips={meta.signals} />
             {extra}
           </Pressable>
           {/* On phones the actions sit under the text, labelled, so mixed actions stay readable. */}

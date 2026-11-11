@@ -1,4 +1,4 @@
-import type { AgentSummary, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
+import type { AgentSummary, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { SessionKind } from "../shared/config";
 import type { IssueField } from "../shared/setup";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
@@ -20,6 +20,19 @@ export const FIXTURE_ISSUE_FIELDS: IssueField[] = [
   { name: "Scope", options: ["🔙 Backend", "🖌 Frontend", "🕵 Full-stack", "📱 Mobile app"], orgs: ["acme"] },
   { name: "Team", options: ["Platform", "Payments"], orgs: ["acme"] },
 ];
+// The org's colors for its priorities [NXT-10]; P3 is left gray, which shows untinted.
+const PRIORITY_COLORS: Record<string, GithubColor> = { "🌋 P0 Urgent": "RED", "🏔 P1 High": "ORANGE", "🏕P2 Medium": "YELLOW", "🏝 P3 Low": "GRAY" };
+// Two org projects with the board's built-in Status field [NXT-12].
+const TODO_BOARD = { id: "PVT_todo", title: "TODO", closed: false, field: { options: [s("Backlog", "GRAY"), s("Todo", "BLUE"), s("In progress", "YELLOW"), s("Done", "GREEN")] } };
+const IDEAS_BOARD = { id: "PVT_ideas", title: "Ideas", closed: false, field: { options: [s("New", "GRAY"), s("Exploring", "PINK"), s("Shaped", "PURPLE")] } };
+function s(name: string, color: GithubColor) {
+  return { name, color };
+}
+// An issue's place on a board: its Status, or none.
+function onBoard(board: typeof TODO_BOARD, status?: string): Pick<PickableNode, "projectItems"> {
+  const option = board.field.options.find((o) => o.name === status);
+  return { projectItems: { nodes: [{ project: board, status: option ?? null }] } };
+}
 const repository = { nameWithOwner: REPO, squashMergeAllowed: true, defaultBranchRef: { name: "main" } };
 const avatar = (id: number) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
 
@@ -237,23 +250,28 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     ],
     // My own issue, asked about long ago and never answered [ATT-11].
     asked: [issue(141, [comment(me, "Is this still needed?", 40)], "Rotate the analytics token", { author: me, createdAt: daysAgo(90) })],
+    // Each on a project board, where projects can be read [NXT-12].
     assigned: [
-      pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"),
-      pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO),
+      { ...pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"), ...onBoard(TODO_BOARD, "In progress") },
+      { ...pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO), ...onBoard(TODO_BOARD, "Todo") },
     ],
     // Found by the preview config's Next up sources [NXT-09].
     unclaimed: [
-      { ...pickable(160, fields("🌋 P0 Urgent", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"), sources: ["org:acme"] },
+      { ...pickable(160, fields("🌋 P0 Urgent", "🐂 Medium (2-5d)", "🕵 Full-stack"), 40, "Feature", "Follow-up emails for unanswered offers"), ...onBoard(TODO_BOARD, "Todo"), sources: ["org:acme"] },
       // Nobody's assigned, but alice has a PR open for it [NXT-10].
       {
         ...pickable(161, fields("🏝 P3 Low", "🐟 Tiny (< 4h)", "🔙 Backend"), 15, "Bug", "Deleted employee still shows in the calendar"),
+        ...onBoard(TODO_BOARD, "Backlog"),
         closedByPullRequestsReferences: { nodes: [{ number: 190, url: `https://github.com/${REPO}/pull/190`, state: "OPEN", author: { login: "alice" } }] },
         sources: ["org:acme"],
       },
-      { ...pickable(162, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🔙 Backend"), 30, "Debt", "Merge the two import commands"), sources: ["org:acme"] },
-      { ...pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour"), sources: ["org:acme"] },
-      { ...pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"), sources: ["org:acme"] },
-      { ...pickable(165, {}, 3, "Task", "Devcontainers for pull requests", "me/tool"), sources: ["mine"] },
+      { ...pickable(162, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🔙 Backend"), 30, "Debt", "Merge the two import commands"), ...onBoard(TODO_BOARD, "Backlog"), sources: ["org:acme"] },
+      { ...pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour"), ...onBoard(TODO_BOARD, "Todo"), sources: ["org:acme"] },
+      { ...pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"), ...onBoard(IDEAS_BOARD, "Exploring"), sources: ["org:acme"] },
+      // On a board without a status yet.
+      { ...pickable(166, { Effort: "🐂 Medium (2-5d)", Scope: "🖌 Frontend" }, 150, "Feature", "Dark mode for the planner"), ...onBoard(IDEAS_BOARD), sources: ["org:acme"] },
+      // On no board.
+      { ...pickable(165, {}, 3, "Task", "Devcontainers for pull requests", "me/tool"), projectItems: { nodes: [] }, sources: ["mine"] },
     ],
     merged: [
       merged(170, "Nightly backup check", 1, 171),
@@ -279,6 +297,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     details: {
       behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 },
       fieldOptions: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] },
+      fieldColors: { Priority: PRIORITY_COLORS },
       issues: { [key(132)]: { number: 132, title: "The calendar can't be used with a keyboard", url: `https://github.com/${REPO}/issues/132`, repository } },
       checks: { [key(128)]: { required: 2, failing: 0, pending: 0 }, [key(129)]: { required: 1, failing: 0, pending: 0 } },
       mergeState: {},

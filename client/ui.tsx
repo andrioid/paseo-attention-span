@@ -2,7 +2,8 @@ import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, type RefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type StyleProp, Text, View, type ViewStyle } from "react-native";
-import type { Chip } from "../shared/attention";
+import type { Chip, GithubColor } from "../shared/attention";
+import { repoLabel } from "../shared/format";
 import { HINT_GAP, type HintPlacement, hintPlacement } from "../shared/hint";
 import { ICONS, type IconName } from "./icons";
 
@@ -16,6 +17,8 @@ export function makeStyles(theme: Theme, compact: boolean) {
   return {
     c,
     compact,
+    // Themes don't say whether they're dark; their base surface does. Picks the shade of GitHub's colors that reads on it.
+    dark: (luminance(c.surface0) ?? 0) < 0.5,
     // Action text and icons. The accent is a fill: as text on a dark theme it's 2.5:1; this green is 5–6:1 on every surface.
     action: c.statusSuccess,
     screen: { flex: 1, backgroundColor: c.surface0 },
@@ -36,6 +39,69 @@ export function makeStyles(theme: Theme, compact: boolean) {
   };
 }
 export type Styles = ReturnType<typeof makeStyles>;
+
+// "#rgb", "#rrggbb" or "rgb(…)" as 0–255 channels; null for anything else.
+function channels(color: string): [number, number, number] | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim())?.[1];
+  if (hex) {
+    const full = hex.length === 3 ? [...hex].map((ch) => ch + ch).join("") : hex;
+    return [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16)) as [number, number, number];
+  }
+  const rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(color.trim());
+  return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : null;
+}
+
+function luminance(color: string): number | null {
+  const rgb = channels(color);
+  return rgb ? (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 : null;
+}
+
+// `a` with `share` of it kept and the rest `b`; just `a` when either isn't a color this can read.
+export function mix(a: string, b: string, share: number): string {
+  const [x, y] = [channels(a), channels(b)];
+  if (!x || !y) return a;
+  return `#${x.map((value, i) => Math.round(value * share + y[i] * (1 - share)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// The colors GitHub offers for options, as GitHub draws them on dark and on light [NXT-10].
+const GITHUB_COLORS: Record<GithubColor, { dark: string; light: string }> = {
+  GRAY: { dark: "#8b949e", light: "#6e7781" },
+  BLUE: { dark: "#4493f8", light: "#0969da" },
+  GREEN: { dark: "#3fb950", light: "#1a7f37" },
+  YELLOW: { dark: "#d29922", light: "#9a6700" },
+  ORANGE: { dark: "#db6d28", light: "#bc4c00" },
+  RED: { dark: "#f85149", light: "#cf222e" },
+  PINK: { dark: "#db61a2", light: "#bf3989" },
+  PURPLE: { dark: "#ab7df8", light: "#8250df" },
+};
+
+// An option's color for this theme. GRAY is what an option looks like when nobody chose a color, so it tints nothing.
+export function githubColor(styles: Styles, color: GithubColor | undefined): string | undefined {
+  return color && color !== "GRAY" ? GITHUB_COLORS[color]?.[styles.dark ? "dark" : "light"] : undefined;
+}
+
+// A fact about an item to pick up, as an icon half and a value half: the icon says what the value is, in words on hover and to
+// screen readers. A color softly fills the value half [NXT-10].
+export function Pill({ icon, label, value, color, hint }: { icon: IconName; label?: string; value?: string; color?: string; hint: string }) {
+  const styles = useStyles();
+  const text = { fontSize: 11, lineHeight: 16 };
+  return (
+    <Hint text={hint} inline>
+      <View accessibilityLabel={hint} style={{ flexDirection: "row", alignItems: "stretch", borderWidth: 1, borderColor: styles.c.border, borderRadius: 999, overflow: "hidden" }}>
+        <View style={[styles.row, { gap: 4, paddingLeft: 7, paddingRight: label ? 7 : 6 }]}>
+          <TablerIcon name={icon} size={12} />
+          {label ? <Text style={[text, { color: styles.c.foregroundMuted }]}>{label}</Text> : null}
+        </View>
+        {value ? (
+          <View style={{ borderLeftWidth: 1, borderLeftColor: styles.c.border, paddingHorizontal: 7, justifyContent: "center" }}>
+            {color ? <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: color, opacity: 0.08 }} /> : null}
+            <Text style={[text, { color: color ? mix(color, styles.c.foreground, 0.75) : mix(styles.c.foreground, styles.c.foregroundMuted, 0.8) }]}>{value}</Text>
+          </View>
+        ) : null}
+      </View>
+    </Hint>
+  );
+}
 
 const StylesContext = createContext<Styles | null>(null);
 export const useStyles = () => useContext(StylesContext)!;
@@ -164,15 +230,41 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
   );
 }
 
-// The line under a title: facts as quiet text joined by "·", then signals [ATT-05].
-export function Meta({ facts, chips }: { facts: string[]; chips: Chip[] }) {
+// Which item a card is: its number, then its repo. My own repos go without their owner.
+export interface Place {
+  repo: string;
+  number: number;
+  login: string | null;
+}
+
+// The line under a title: the item's number and repo, then facts as quiet text joined by "·", then signals [ATT-05].
+// The number leads on its own, and the repo's name stands out from its owner, so cards from several repos scan [ATT-20].
+export function Meta({ place, facts, chips }: { place?: Place; facts: string[]; chips: Chip[] }) {
   const styles = useStyles();
   const quiet = (chip: Chip) => chip.tone === "neutral" && !chip.icon && !chip.hint;
   const text = [...facts, ...chips.filter(quiet).map((chip) => chip.text)];
   const signals = chips.filter((chip) => !quiet(chip));
+  const strong = { color: mix(styles.c.foreground, styles.c.foregroundMuted, 0.85), fontWeight: "500" as const };
+  // My own repos drop the owner, as repoLabel does; others show it quieter than the name.
+  const label = place ? repoLabel(place.repo, place.login) : "";
+  const cut = label.lastIndexOf("/") + 1;
+  const [owner, name] = [label.slice(0, cut), label.slice(cut)];
   return (
     <View style={[styles.wrap, { columnGap: 10, rowGap: 4 }]}>
-      {text.length ? <Text style={styles.muted}>{text.join(" · ")}</Text> : null}
+      {place || text.length ? (
+        <Text style={styles.muted}>
+          {place ? (
+            <>
+              <Text style={strong}>#{place.number}</Text>
+              {" · "}
+              {owner}
+              <Text style={strong}>{name}</Text>
+              {text.length ? " · " : null}
+            </>
+          ) : null}
+          {text.join(" · ")}
+        </Text>
+      ) : null}
       {signals.map((chip) => (
         <Signal key={chip.text} {...chip} />
       ))}
@@ -268,7 +360,8 @@ export function useCopy() {
     );
 }
 
-// Choice chips for options and filters: the only pills, because they're tappable.
+// Choice chips for options and filters: tappable, filled when chosen. Next up's fact pills (Pill) aren't tappable, and lead
+// with an icon half instead.
 export function Toggle({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   const { c } = useStyles();
   return (

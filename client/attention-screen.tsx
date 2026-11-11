@@ -6,7 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
-import { ago, linkList, repoLabel } from "../shared/format";
+import { ago, linkList } from "../shared/format";
 import { isClear } from "../shared/still";
 import { workEmoji } from "../shared/work";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -194,6 +194,7 @@ function AttentionList({
   const restore = useRpc(rpc.restoreDismissed);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
+  const saveProjects = useRpc(rpc.setProjectFilter);
   const closeIssue = useRpc(rpc.closeIssue);
   const reopenIssue = useRpc(rpc.reopenIssue);
   const update = useRpc(rpc.updateBranch);
@@ -449,12 +450,15 @@ function AttentionList({
           selected={view.scopes}
           sources={nextUpSources(view.config)}
           selectedSources={view.sources}
-          // One setView for both, so clearing scopes and sources together can't put either back.
+          projects={view.projects}
+          selectedProjects={view.projectFilter}
+          // One setView for all, so clearing them together can't put any back.
           onFilter={(change) => {
             attention.setView({ ...view, ...change });
             const failed = (error: Error) => toast.error(`Saving the filter failed: ${error.message}`);
             if (change.scopes) saveScopes({ scopes: change.scopes }).catch(failed);
             if (change.sources) saveSources({ sources: change.sources }).catch(failed);
+            if (change.projectFilter) saveProjects({ projects: change.projectFilter }).catch(failed);
           }}
           agents={actions.agents}
           login={view.login}
@@ -631,7 +635,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       mark={stateMark(item)}
       title={item.title}
       meta={{
-        place: `${repoLabel(item.repo, actions.login)} #${item.number}`,
+        place: { repo: item.repo, number: item.number, login: actions.login },
         when: item.closedAt ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago` : undefined,
         signals: chips,
       }}

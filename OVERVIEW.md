@@ -55,7 +55,9 @@ When someone needs a nudge, **Copy list** next to their name copies their items 
 
 ## Next up: for when your plate is clear
 
-It does happen. Next up lists issues assigned to you first, because finishing what you've taken seems polite, and then open issues nobody's claimed. If your org uses issue fields for priority and effort, it ranks by those, so the important quick wins float to the top. Fields called Priority, Effort and Scope are picked up on their own; if yours are called something else, pick them in Settings. Each issue shows its repo, priority, effort and scope, and whether someone already has a PR open for it. That last one has saved me from duplicating a colleague's work more than once.
+It does happen. Next up lists issues assigned to you first, because finishing what you've taken seems polite, and then open issues nobody's claimed. If your org uses issue fields for priority and effort, it ranks by those, so the important quick wins float to the top. Fields called Priority, Effort and Scope are picked up on their own; if yours are called something else, pick them in Settings. Each issue shows its repo, priority, effort and scope, and whether someone already has a PR open for it. That last one has saved me from duplicating a colleague's work more than once. Each fact sits in a small pill with an icon, so "Medium" never leaves you guessing whether it's priority or effort, and priority wears the color your org gave it.
+
+If your issues live on GitHub project boards, Next up shows which board and column each one is in, and the filter lets you pick boards and their columns: only TODO's Todo, say, and leave Ideas out. That needs one more permission than `gh` asks for by default; Settings tells you the command (`gh auth refresh -s read:project`) and until then everything else works as before.
 
 ![Next up](docs/screenshots/desktop-dark-next-up.png)
 

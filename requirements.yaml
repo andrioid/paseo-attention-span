@@ -36,6 +36,7 @@ functional:
       ATT-17: choose to follow threads I've commented on, so recent replies after mine there show without a tag, off by default; so that surfacing other people's threads is my choice, and the list stays signal, not noise.
       ATT-18: see a calm, restful scene in Doing when nothing needs me, only once a refresh has confirmed it; so that a clear list feels like rest rather than a blank page, and calm never stands in for a check that failed or hasn't run.
       ATT-19: tell at a glance what each person shown on an item is to it: someone I'm waiting on, who opened it, or whose comments are left to address, with an icon by their picture and the meaning in words when I point at it; so that a face and a time never leave me guessing.
+      ATT-20: tell which item a card is on every tab by its number first, then its repository with the repository's name standing out from its owner, which my own repositories leave out; so that cards from several repositories scan without reading each one in full.
   mentions:
     As a developer, I can:
       MEN-01: see open threads where a person mentioned me and is still waiting for my response; so that I only hear about mentions when someone is waiting for me.
@@ -89,15 +90,16 @@ functional:
     As a developer, I can:
       NXT-01: see open issues nobody is assigned to, apart from the work that needs me; so that I can get an idea of what to do next.
       NXT-02: see unclaimed issues ordered by priority, then effort, then age; so that the most important quick wins come first.
-      NXT-03: filter unclaimed issues by scope, and have my choice remembered; so that I only see work I'd pick up.
+      NXT-03: filter unclaimed issues by scope, and by project and its statuses, each project's statuses listed under it in the board's order, with issues on no project or without a status as choices of their own, and have my choice remembered; so that I only see work I'd pick up.
       NXT-04: choose in the app where unclaimed issues come from (my own repositories, organizations I belong to, or single repositories) and choose which issue fields the list uses, with fields named Priority, Effort and Scope used until I do; so that the plugin can be used elsewhere without editing files.
       NXT-05: claim an issue and start a session on it in one step; so that teammates see it's taken and I can start right away.
       NXT-06: see issues assigned to me before unclaimed ones; so that I finish what I've taken before picking more.
       NXT-07: claim an issue without starting a session, and give back one assigned to me; so that what I've taken matches what I'll do.
       NXT-08: see unclaimed issues from the repositories of my Paseo projects when I haven't chosen any; so that Next up is useful without setup and never fills with strangers' issues.
       NXT-09: filter unclaimed issues by where they came from, and have my choice remembered; so that I can focus on one source at a time.
-      NXT-10: see on each issue its repository, priority, effort and scope at a glance, and whether an open pull request already closes it and by whom; so that I can judge whether to pick it up without opening it.
+      NXT-10: see on each issue its repository, its projects with their status, and its priority, effort and scope at a glance, each a pill whose icon says what it is, named in words when I point at it and in the sheet, with status and priority softly in the color GitHub has for them (none for gray, and the top two priorities warm and accent where the org colored none), and whether an open pull request already closes it and by whom; so that I can judge whether to pick it up without opening it.
       NXT-11: close an issue from Next up as completed or not planned, with an optional comment, and undo it; so that work that's done or won't be done stops being suggested.
+      NXT-12: see which open GitHub projects my Next up issues are on, and where on each board, once my gh login may read projects, with Settings saying the one command that allows it until then; so that I know whether work is planned or just an idea, without Next up breaking for anyone who hasn't allowed it.
   waiting:
     As a developer, I can:
       WAI-01: see my work that is waiting on others, grouped by who it waits on with whoever blocks the most first, bots after people, and work no person holds up last, each group with work that has an active session first, and each card saying why it waits and for how long, including my pull requests in Doing that wait on whom I asked, where a pull request waits for review only once someone has been asked, and a thread only once my last words ask a question; so that I know that work is tracked and who is blocking me most.

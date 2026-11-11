@@ -5,6 +5,7 @@ import {
   type Item,
   type NextUpIssue,
   type Person,
+  type ProjectInfo,
   type Reviewer,
   SECTION_ORDER,
   SECTIONS,
@@ -16,7 +17,7 @@ import {
 import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField, sameField } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import { workChip, workKind } from "../shared/work";
-import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, PullRequestNode, RequestedReviewer } from "./github-types";
+import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, ProjectItemNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
@@ -417,6 +418,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     // Assigned issues not already in progress come before unclaimed ones [NXT-06].
     assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
     unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
+    projects: issueProjects([...compact(data.assigned.nodes), ...compact(data.unclaimed.nodes)]),
   };
 }
 
@@ -588,9 +590,14 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
     const index = order.findIndex((name) => value.toLowerCase().includes(name.toLowerCase()));
     return index < 0 ? Infinity : index;
   };
+  // The org's color for a priority, where it colored any of them; otherwise the card ranks it by color itself [NXT-10].
+  const colors = priority ? Object.entries(details.fieldColors ?? {}).find(([name]) => sameField(name, priority.field))?.[1] : undefined;
+  const colored = !!colors && Object.values(colors).some((color) => color !== "GRAY");
   return nodes
     .map((node) => {
       const rank = position(valueOf(node, priority?.field), priority);
+      const priorityValue = valueOf(node, priority?.field);
+      const priorityColor = colored && priorityValue ? colors![priorityValue] : undefined;
       return {
         key: prKey(node),
         repo: node.repository.nameWithOwner,
@@ -605,6 +612,8 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
         defaultBranch: node.repository.defaultBranchRef?.name,
         sources: node.sources ?? [],
         priorityRank: Number.isFinite(rank) ? rank : undefined,
+        ...(priorityColor ? { priorityColor } : {}),
+        ...(node.projectItems ? { projects: openItems(node).map(({ project, status }) => ({ id: project.id, title: project.title, ...(status?.name ? { status: status.name, color: status.color } : {}) })) } : {}),
         openPrs: (node.closedByPullRequestsReferences?.nodes ?? [])
           .filter((pr) => pr?.state === "OPEN")
           .map((pr) => ({ number: pr.number, url: pr.url, author: pr.author?.login ?? null })),
@@ -616,6 +625,20 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
         position(a.effort, effort) - position(b.effort, effort) ||
         a.createdAt.localeCompare(b.createdAt),
     );
+}
+
+// The items of an issue on open projects; a closed project's board is done with [NXT-12].
+function openItems(node: PickableNode): { project: NonNullable<ProjectItemNode["project"]>; status: ProjectItemNode["status"] }[] {
+  return (node.projectItems?.nodes ?? []).flatMap((item) => (item?.project && !item.project.closed ? [{ project: item.project, status: item.status }] : []));
+}
+
+// Every open project Next up's issues are on, once, with its Status options in the board's order, for the filter [NXT-03].
+function issueProjects(nodes: PickableNode[]): ProjectInfo[] {
+  const byId = new Map<string, ProjectInfo>();
+  for (const { project } of nodes.flatMap(openItems)) {
+    if (!byId.has(project.id)) byId.set(project.id, { id: project.id, title: project.title, statuses: project.field?.options ?? [] });
+  }
+  return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title));
 }
 
 // ---- Mentions still waiting on me [MEN-01..06] ----
