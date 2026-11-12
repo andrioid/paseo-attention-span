@@ -29,6 +29,21 @@ describe("clip", () => {
     expect(clip(text, 25)).toBe(`${text.slice(0, 25)}\n…(truncated)\nLinks in the cut part:\n- https://jam.dev/c/13189e9c-f95e`);
   });
 
+  it("SES-04: keeps links whole: parentheses, underscores, uppercase schemes and Markdown or angle-bracket wrappers", () => {
+    const links = [
+      "https://en.wikipedia.org/wiki/Function_(mathematics)",
+      "https://example.com/file_",
+      "HTTPS://jam.dev/c/123",
+      "https://md.example/a",
+      "https://angle.example/b",
+      "https://bold.example/c",
+      "https://em.example/d",
+      "https://code.example/e",
+    ];
+    const text = `${"a".repeat(10)} ${links[0]}, ${links[1]} and ${links[2]}. [md](${links[3]}) <${links[4]}> **${links[5]}** _${links[6]}_ \`${links[7]}\``;
+    expect(clip(text, 5)).toBe(`aaaaa\n…(truncated)\nLinks in the cut part:\n${links.map((url) => `- ${url}`).join("\n")}`);
+  });
+
   it("SES-04: says nothing about links when the cut part has none", () => {
     expect(clip("x".repeat(30), 10)).toBe(`${"x".repeat(10)}\n…(truncated)`);
   });

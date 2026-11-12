@@ -9,13 +9,26 @@ import { graphql, runGh } from "./gh";
 export function clip(text: string | null | undefined, max: number): string {
   const value = (text ?? "").trim();
   if (value.length <= max) return value;
-  // Links run to the first space, quote or bracket; trailing punctuation belongs to the sentence.
-  const links = (part: string) => [...part.matchAll(/https?:\/\/[^\s<>"'()\[\]]+/g)].map(([url]) => url.replace(/[.,;:!?*_`]+$/, ""));
+  const links = (part: string) => [...part.matchAll(/(.?)(https?:\/\/[^\s<>"'`\[\]]+)/gi)].map(([, before, url]) => trimLink(url, before));
   const kept = new Set(links(value.slice(0, max)));
   // A link the cut splits in half is listed whole.
   const cut = [...new Set(links(value))].filter((url) => !kept.has(url));
   const listed = cut.length ? `\nLinks in the cut part:\n${cut.map((url) => `- ${url}`).join("\n")}` : "";
   return `${value.slice(0, max)}\n…(truncated)${listed}`;
+}
+
+// A link runs to the first space, quote or square bracket. Trailing punctuation belongs to the sentence, a closing
+// parenthesis only when the link has no opening one (Markdown's [text](url)), and * or _ only when they also open it
+// (**url**, _url_).
+function trimLink(url: string, before: string): string {
+  let link = url;
+  for (let previous = ""; previous !== link; ) {
+    previous = link;
+    link = link.replace(/[.,;:!?]+$/, "");
+    if (link.endsWith(")") && (link.match(/\(/g)?.length ?? 0) < (link.match(/\)/g)?.length ?? 0)) link = link.slice(0, -1);
+    if ((before === "*" || before === "_") && link.endsWith(before)) link = link.replace(before === "*" ? /\*+$/ : /_+$/, "");
+  }
+  return link;
 }
 
 async function ghJson<T>(args: string[]): Promise<T> {
