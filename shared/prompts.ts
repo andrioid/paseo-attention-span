@@ -65,7 +65,7 @@ Read the issue and the code it touches, then propose a plan before changing anyt
 // Review of a stack, while config.json doesn't replace the review template: one session for every PR asking for my review [ATT-04].
 export const REVIEW_STACK_TEMPLATE = `Review the pull requests {{review}} in {{repo}}, part of the stack {{stack}} (bottom first). You are in a checkout of the top branch, {{head}}, which has every PR's changes.
 
-1. Review: for each of {{review}}, read its description and its diff against its own base (\`git diff origin/<base>...origin/<head>\`, branches below). Review only those; the rest of the stack is context.
+1. Review: for each of {{review}}, read its description (linked below) and its diff against its own base (\`git diff origin/<base>...origin/<head>\`, branches below). Review only those; the rest of the stack is context.
 2. Investigate: dig into anything risky or unclear in the code they touch.
 3. ${SWEEP}
 4. Report back, for each PR:
