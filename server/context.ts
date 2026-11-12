@@ -4,10 +4,32 @@ import { graphql, runGh } from "./gh";
 
 // Context for a session prompt, fetched deterministically when a session starts [SES-04].
 
-const clip = (text: string | null | undefined, max = 4000) => {
+// Cuts long text, but lists every link from the cut part so the agent can still open them, like a Jam recording at the
+// bottom of a support issue.
+export function clip(text: string | null | undefined, max: number): string {
   const value = (text ?? "").trim();
-  return value.length > max ? `${value.slice(0, max)}\n…(truncated)` : value;
-};
+  if (value.length <= max) return value;
+  const links = (part: string) => [...part.matchAll(/(.?)(https?:\/\/[^\s<>"'`\[\]]+)/gi)].map(([, before, url]) => trimLink(url, before));
+  const kept = new Set(links(value.slice(0, max)));
+  // A link the cut splits in half is listed whole.
+  const cut = [...new Set(links(value))].filter((url) => !kept.has(url));
+  const listed = cut.length ? `\nLinks in the cut part:\n${cut.map((url) => `- ${url}`).join("\n")}` : "";
+  return `${value.slice(0, max)}\n…(truncated)${listed}`;
+}
+
+// A link runs to the first space, quote or square bracket. Trailing punctuation belongs to the sentence, a closing
+// parenthesis only when the link has no opening one (Markdown's [text](url)), and * or _ only when they also open it
+// (**url**, _url_).
+function trimLink(url: string, before: string): string {
+  let link = url;
+  for (let previous = ""; previous !== link; ) {
+    previous = link;
+    link = link.replace(/[.,;:!?]+$/, "");
+    if (link.endsWith(")") && (link.match(/\(/g)?.length ?? 0) < (link.match(/\)/g)?.length ?? 0)) link = link.slice(0, -1);
+    if ((before === "*" || before === "_") && link.endsWith(before)) link = link.replace(before === "*" ? /\*+$/ : /_+$/, "");
+  }
+  return link;
+}
 
 async function ghJson<T>(args: string[]): Promise<T> {
   // `gh pr checks` exits non-zero when checks fail but still prints the JSON.
@@ -26,26 +48,30 @@ export async function sessionContext(kind: SessionKind, target: Target): Promise
   if (kind === "fix") return failingChecks(ref, target.repo);
   if (kind === "address") return reviewFeedback(target);
 
-  // Review of a stack: every branch, and the description and latest comments of each PR asking for my review [ATT-04].
+  // Review of a stack: every branch, with a link to each PR asking for my review; the agent reads what it needs [ATT-04].
   const stack = target.stack ?? [];
   if (kind === "review" && stack.length > 1) {
-    const asking = stack.filter((pr) => pr.review);
-    const lines = stack.map((pr) => `${branchLine(pr)}${pr.review ? ", review requested" : ", mine"}`);
-    const prs = await Promise.all(asking.map(async (pr) => `#${pr.number}\n${await conversation([String(pr.number), "--repo", target.repo], "pr")}`));
-    return [`Stack, bottom first:\n${lines.join("\n")}`, ...prs].join("\n\n");
+    const lines = stack.map((pr) => `${branchLine(pr)}${pr.review ? `, review requested: https://github.com/${target.repo}/pull/${pr.number}` : ", mine"}`);
+    return `Stack, bottom first:\n${lines.join("\n")}`;
   }
 
-  // review, start: the description and the latest comments.
-  return conversation(ref, target.kind);
+  // review, start: the whole description and the latest comments.
+  return conversation(ref, target);
 }
 
 const branchLine = (pr: StackPr) => `- #${pr.number}: ${pr.head} (on ${pr.base})`;
 
-async function conversation(ref: string[], kind: Target["kind"]): Promise<string> {
-  type View = { body: string; comments: { author: { login: string }; body: string }[] };
-  const view = await ghJson<View>([kind === "pr" ? "pr" : "issue", "view", ...ref, "--json", "body,comments"]);
-  const comments = view.comments.slice(-5).map((c) => `@${c.author.login}: ${clip(c.body, 800)}`);
-  return [`Description:\n${clip(view.body) || "(empty)"}`, comments.length ? `Recent comments:\n${comments.join("\n\n")}` : ""].filter(Boolean).join("\n\n");
+const RECENT_COMMENTS = 5;
+
+async function conversation(ref: string[], target: Target): Promise<string> {
+  type View = { body: string; comments: { author: { login: string } | null; body: string }[] };
+  const view = await ghJson<View>([target.kind === "pr" ? "pr" : "issue", "view", ...ref, "--json", "body,comments"]);
+  const comments = view.comments.slice(-RECENT_COMMENTS).map((c) => `@${c.author?.login ?? "ghost"}: ${clip(c.body, 800)}`);
+  const older = view.comments.length > RECENT_COMMENTS ? `Showing the last ${RECENT_COMMENTS} of ${view.comments.length} comments; the rest are at ${target.url}` : "";
+  // The description goes in whole: GitHub caps it at 65,536 characters, and its links are often at the bottom.
+  return [`Description:\n${(view.body ?? "").trim() || "(empty)"}`, comments.length ? `Recent comments:\n${[older, ...comments].filter(Boolean).join("\n\n")}` : ""]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export async function defaultBranch(repo: string): Promise<string | null> {
@@ -66,6 +92,13 @@ async function failingChecks(ref: string[], repo: string): Promise<string> {
   return [`Failing checks:\n${failed.map((check) => `- ${check.name} ${check.link}`).join("\n")}`, ...logs].join("\n\n");
 }
 
+// What one page of a review query leaves out, with where to read the rest.
+const notShown = (count: number, what: string, url: string) => (count > 0 ? `${count} ${what} not shown, see ${url}` : "");
+
+const THREADS = 100;
+const THREAD_COMMENTS = 20;
+const REVIEWS = 20;
+
 // gh has no command for unresolved review threads, so this one is GraphQL.
 async function reviewFeedback(target: Target): Promise<string> {
   type Author = { login: string } | null;
@@ -73,16 +106,19 @@ async function reviewFeedback(target: Target): Promise<string> {
   const data = await graphql<{
     repository: {
       pullRequest: {
-        reviews: { nodes: { author: Author; state: string; body: string }[] };
-        reviewThreads: { nodes: { isResolved: boolean; path: string; line: number | null; comments: { nodes: { author: Author; body: string }[] } }[] };
+        reviews: { totalCount: number; nodes: { author: Author; state: string; body: string }[] };
+        reviewThreads: {
+          totalCount: number;
+          nodes: { isResolved: boolean; path: string; line: number | null; comments: { totalCount: number; nodes: { author: Author; body: string }[] } }[];
+        };
       };
     };
   }>(
     `query($owner: String!, $name: String!, $number: Int!) {
       repository(owner: $owner, name: $name) {
         pullRequest(number: $number) {
-          reviews(last: 20, states: [CHANGES_REQUESTED, COMMENTED]) { nodes { author { login } state body } }
-          reviewThreads(first: 100) { nodes { isResolved path line comments(first: 20) { nodes { author { login } body } } } }
+          reviews(last: ${REVIEWS}, states: [CHANGES_REQUESTED, COMMENTED]) { totalCount nodes { author { login } state body } }
+          reviewThreads(first: ${THREADS}) { totalCount nodes { isResolved path line comments(first: ${THREAD_COMMENTS}) { totalCount nodes { author { login } body } } } }
         }
       }
     }`,
@@ -93,8 +129,20 @@ async function reviewFeedback(target: Target): Promise<string> {
   const summaries = reviews.nodes.filter((r) => r.body.trim()).map((r) => `- ${who(r.author)} (${r.state.toLowerCase()}): ${clip(r.body, 1500)}`);
   const threads = reviewThreads.nodes
     .filter((t) => !t.isResolved)
-    .map((t) => `- ${t.path}${t.line ? `:${t.line}` : ""}\n${t.comments.nodes.map((c) => `  ${who(c.author)}: ${clip(c.body, 1500).replace(/\n/g, "\n  ")}`).join("\n")}`);
-  return [summaries.length ? `Review summaries:\n${summaries.join("\n")}` : "", threads.length ? `Unresolved review threads:\n${threads.join("\n")}` : "No unresolved review threads."]
+    .map((t) => {
+      const comments = t.comments.nodes.map((c) => `  ${who(c.author)}: ${clip(c.body, 1500).replace(/\n/g, "\n  ")}`);
+      const more = notShown(t.comments.totalCount - t.comments.nodes.length, "more comments", target.url);
+      return [`- ${t.path}${t.line ? `:${t.line}` : ""}`, ...comments, more && `  ${more}`].filter(Boolean).join("\n");
+    });
+  // Older reviews and later threads past one page are left out; say so, since some of those threads may be unresolved.
+  const olderReviews = notShown(reviews.totalCount - reviews.nodes.length, "older reviews", target.url);
+  const laterThreads = notShown(reviewThreads.totalCount - reviewThreads.nodes.length, "more review threads (resolved or not)", target.url);
+  return [
+    summaries.length ? `Review summaries:\n${summaries.join("\n")}` : "",
+    threads.length ? `Unresolved review threads:\n${threads.join("\n")}` : laterThreads ? "" : "No unresolved review threads.",
+    olderReviews,
+    laterThreads,
+  ]
     .filter(Boolean)
     .join("\n\n");
 }
