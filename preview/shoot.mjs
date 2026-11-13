@@ -213,7 +213,7 @@ for (const layout of layouts) {
       await page.getByText(/Reviewed \(\d+\)/).first().click();
       await page.waitForTimeout(800);
       await shot("history-reviewed");
-      // Copy a week, then one card's link, and keep what landed on the clipboard [HIS-03, ATT-15].
+      // Copy a week, its reviews, then one card's link, and keep what landed on the clipboard [HIS-03, ATT-15].
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:6767" });
       const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
       // The newest week with work in it: on a Monday, "This week" has none yet.
@@ -221,9 +221,12 @@ for (const layout of layouts) {
       await page.getByText(/^Copied \d+ links? from /).waitFor({ timeout: 5000 });
       await shot("history-copied");
       const week = await clipboard();
+      await page.getByRole("button", { name: /^Copy reviewed links from / }).first().click();
+      await page.getByText(/^Copied \d+ reviewed links? from /).waitFor({ timeout: 5000 });
+      const reviewed = await clipboard();
       await page.getByRole("button", { name: /^Copy link to #\d+$/ }).first().click();
       await page.waitForTimeout(400);
-      await writeFile(`/out/${prefix}-history-clipboard.txt`, `${week}\n---\n${await clipboard()}\n`);
+      await writeFile(`/out/${prefix}-history-clipboard.txt`, `${week}\n---\n${reviewed}\n---\n${await clipboard()}\n`);
       await page.getByRole("tab", { name: /Next up/ }).first().click();
       await openSheet("Orders export times out for big shops");
       await modalShot("next-up-sheet");

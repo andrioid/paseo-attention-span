@@ -1178,7 +1178,9 @@ function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions
           count={items.length}
           action={
             who && !who.bot ? (
-              <Button icon="copy" label={styles.compact ? undefined : "Copy list"} variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
+              <View style={styles.overCard}>
+                <Button icon="markdown" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
+              </View>
             ) : null
           }
         />
@@ -1206,7 +1208,7 @@ function weekLabel(monday: Date): string {
 }
 
 // What I finished, by week, with reviews tucked away per week [HIS-01, HIS-02].
-// A week copies as a list of links to paste into a report, each led by its kind; reviews stay out of it [HIS-03, HIS-04].
+// A week copies as a list of links to paste into a report, each led by its kind; its reviews copy as a list of their own [HIS-03, HIS-04].
 function History({ items, actions }: { items: Item[]; actions: Actions }) {
   const styles = useStyles();
   const copy = useCopy();
@@ -1232,25 +1234,42 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
           count={done.length}
           action={
             copied.length > 0 ? (
-              <Button
-                icon="copy"
-                variant="ghost"
-                accessibilityLabel={`Copy links from ${label}`}
-                onPress={() =>
-                  copy(
-                    linkList(copied.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
-                    `Copied ${copied.length} link${copied.length === 1 ? "" : "s"} from ${label}`,
-                  )
-                }
-              />
+              <View style={styles.overCard}>
+                <Button
+                  icon="markdown"
+                  variant="ghost"
+                  accessibilityLabel={`Copy links from ${label}`}
+                  onPress={() =>
+                    copy(
+                      linkList(copied.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
+                      `Copied ${copied.length} link${copied.length === 1 ? "" : "s"} from ${label}`,
+                    )
+                  }
+                />
+              </View>
             ) : null
           }
         />
         {done.length > 0 ? <Card items={done} actions={actions} /> : null}
         {reviewed.length > 0 ? (
           <View style={{ gap: 8 }}>
-            <View style={styles.wrap}>
+            {/* Its copy lines up under the week's, at the right edge, like every Markdown copy. */}
+            <View style={styles.row}>
               <Toggle label={`Reviewed (${reviewed.length})`} active={open === label} onPress={() => setOpen(open === label ? null : label)} />
+              <View style={{ flex: 1 }} />
+              <View style={styles.overCard}>
+                <Button
+                  icon="markdown"
+                  variant="ghost"
+                  accessibilityLabel={`Copy reviewed links from ${label}`}
+                  onPress={() =>
+                    copy(
+                      linkList(reviewed.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
+                      `Copied ${reviewed.length} reviewed link${reviewed.length === 1 ? "" : "s"} from ${label}`,
+                    )
+                  }
+                />
+              </View>
             </View>
             {open === label ? <Card items={reviewed} actions={actions} /> : null}
           </View>
