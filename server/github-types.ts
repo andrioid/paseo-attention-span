@@ -96,6 +96,8 @@ export interface IssueNode {
 }
 
 export interface PickableNode {
+  // The issue's node id, which a transfer keeps [ATT-21].
+  id?: string;
   number: number;
   title: string;
   url: string;
@@ -128,6 +130,42 @@ export interface LiveResult {
   asked: Nodes<IssueNode>;
   assigned: Nodes<PickableNode>;
   unclaimed: Nodes<PickableNode>;
+  // My PRs closed lately [ATT-21].
+  ended: Nodes<EndedPullRequest>;
+}
+
+export interface EndedPullRequest {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  merged: boolean;
+  mergedAt: string | null;
+  closedAt: string;
+  repository: Repo;
+  mergedBy: { login: string } | null;
+  assignees: Nodes<{ login: string }>;
+  timelineItems: Nodes<{ createdAt?: string; actor?: { login: string } | null }>;
+}
+
+// Who assigned or unassigned whom; actor and assignee are null for a deleted account [ATT-21].
+export interface AssignmentEvent {
+  __typename: "AssignedEvent" | "UnassignedEvent";
+  createdAt: string;
+  actor: { login: string } | null;
+  assignee: { login?: string } | null;
+}
+
+export interface AssignmentSubject {
+  __typename: "PullRequest" | "Issue";
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  repository: Repo;
+  assignees: Nodes<{ login: string }>;
+  timelineItems: Nodes<AssignmentEvent | Record<string, never>>;
 }
 
 // One request for all three [HIS-01, HIS-02].
@@ -135,7 +173,9 @@ export interface LiveResult {
 type Labels = { labels?: Nodes<{ name: string }> };
 
 export interface HistoryResult {
-  merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
+  // Who I am, to tell a merge by someone else [HIS-05]; missing in older fixtures.
+  viewer?: { login: string; id: string };
+  merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
   reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; author: Actor | null } & Labels>;
   closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo; issueType?: { name: string } | null } & Labels>;
 }

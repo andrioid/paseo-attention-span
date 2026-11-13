@@ -7,6 +7,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
+import { changeText } from "../shared/changes";
 import { ago, linkList } from "../shared/format";
 import { isClear } from "../shared/still";
 import { workEmoji } from "../shared/work";
@@ -26,7 +27,7 @@ import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from ".
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
-import { Avatar, Button, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
+import { Avatar, Button, Disclosure, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -45,6 +46,7 @@ const ACTION_ICONS: Record<ActionId, IconName> = {
   merge: "merge",
   close: "close",
   start: "agent",
+  got_it: "check",
 };
 
 function actionLabel(action: ActionId, item: Item): string {
@@ -66,6 +68,7 @@ function actionLabel(action: ActionId, item: Item): string {
     merge: "Merge",
     close: "Close draft",
     start: "Start",
+    got_it: "Got it",
   }[action];
 }
 
@@ -96,6 +99,7 @@ function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): string {
     merge: `Merges ${pr} into ${base} (${target.mergeMethod}) now`,
     close: `Closes ${pr}. A comment is posted only if you write one`,
     start: "An agent reads the issue and proposes a plan",
+    got_it: "Clears this note. Nothing changes on GitHub",
   }[action];
 }
 
@@ -179,8 +183,10 @@ const SECTION_ICONS: Record<SectionId, IconName> = {
   wait_reviewer: "replyArrow",
   wait_ci: "clock",
   wait_answer: "reply",
+  changed: "team",
   done: "merge",
   reviewed: "review",
+  handed_off: "userShare",
 };
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
@@ -247,6 +253,7 @@ function AttentionList({
   const dismiss = useRpc(rpc.dismissItem);
   const undismiss = useRpc(rpc.undismissItem);
   const restore = useRpc(rpc.restoreDismissed);
+  const gotIt = useRpc(rpc.gotIt);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
   const saveProjects = useRpc(rpc.setProjectFilter);
@@ -397,6 +404,11 @@ function AttentionList({
       const session = ACTION_SESSION[action];
       const { target } = item;
       if (action === "reply") return void openExternalUrl(item.person?.url ?? item.url);
+      // [ATT-21]
+      if (action === "got_it" && item.change) {
+        const { id } = item.change;
+        return change(item.key, "Got it", () => gotIt({ id, on: true }), `Cleared the note on “${item.title}”`, () => gotIt({ id, on: false }));
+      }
       if (session) return void startWithDefaults(item.key, session, target);
       if (action === "update") change(item.key, "Update", () => update({ key: item.key, target }), `Updating PR ${target.number} with ${target.baseRefName}`);
       // [PRS-11]
@@ -625,7 +637,14 @@ interface Actions {
 }
 
 // What the card is: open, draft, merged or closed. Urgency stays in the chips and section headers.
+// A note on what someone else did shows what happened instead; its words say it too, so color isn't the only sign [ATT-21].
 function stateMark(item: Item): CardProps["mark"] {
+  if (item.change) {
+    const kind = item.change.kind;
+    if (kind === "merged") return { icon: "merge", tone: "good" };
+    if (kind === "closed") return { icon: "prClosed", tone: "bad" };
+    return { icon: kind === "unassigned" ? "userMinus" : "userShare", tone: "warn" };
+  }
   if (item.closedAt) return item.kind === "pr" ? { icon: "merge", tone: "good" } : { icon: "issueClosed", tone: item.chips.length ? "neutral" : "good" };
   if (item.kind === "issue") return { icon: "issue", tone: "good" };
   return item.draft ? { icon: "draft", tone: "neutral" } : { icon: "pr", tone: "good" };
@@ -711,7 +730,11 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       title={item.title}
       meta={{
         place: { repo: item.repo, number: item.number, login: actions.login },
-        when: item.closedAt ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago` : undefined,
+        when: item.change
+          ? changeText(item.change)
+          : item.closedAt
+            ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago${item.mergedBy ? ` by ${item.mergedBy}` : ""}`
+            : undefined,
         signals: chips,
       }}
       extra={
@@ -876,9 +899,9 @@ function sheetEntries(
   // History, where an issue is its own target, the first of the PRs that closed it.
   const pr = targetUrl(item) && item.target.kind === "pr" ? item.target : item.kind === "issue" && item.children[0] ? item.children[0] : undefined;
   entries.push(githubEntry(item, (url) => close(() => void openExternalUrl(url))(), pr));
-  // Nothing's left to start on once it's merged or closed.
-  if (!item.closedAt) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
-  if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) });
+  // Nothing's left to start on once it's merged or closed, or out of my hands; a note is cleared with Got it, not dismissed [ATT-21].
+  if (!item.closedAt && !item.change) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
+  if (inDoing && !item.change) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) });
   return entries;
 }
 
@@ -1207,7 +1230,9 @@ function weekLabel(monday: Date): string {
 function History({ items, actions }: { items: Item[]; actions: Actions }) {
   const styles = useStyles();
   const copy = useCopy();
-  const [open, setOpen] = useState<string | null>(null);
+  // Groups opened, as "<week>:<group>"; each opens on its own.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (id: string) => setOpen((now) => (now.has(id) ? new Set([...now].filter((other) => other !== id)) : new Set([...now, id])));
   if (items.length === 0) return <Text style={styles.text}>Nothing finished in this period.</Text>;
   const weeks = new Map<number, Item[]>();
   for (const item of items) {
@@ -1218,6 +1243,8 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
   for (const [week, all] of [...weeks].sort((a, b) => b[0] - a[0])) {
     const done = all.filter((item) => item.section === "done").sort((a, b) => b.closedAt!.localeCompare(a.closedAt!));
     const reviewed = all.filter((item) => item.section === "reviewed");
+    // Out of the week's copy: it wasn't my finished work [HIS-06].
+    const handed = all.filter((item) => item.section === "handed_off").sort((a, b) => b.closedAt!.localeCompare(a.closedAt!));
     // What was done, each led by its kind; not planned issues stay on screen but out of the report [HIS-03, HIS-04].
     const copied = done.filter((item) => !item.notPlanned);
     const label = weekLabel(new Date(week));
@@ -1250,7 +1277,7 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
           <View style={{ gap: 8 }}>
             {/* Its copy lines up under the week's, at the right edge, like every Markdown copy. */}
             <View style={styles.row}>
-              <Toggle label={`Reviewed (${reviewed.length})`} active={open === label} onPress={() => setOpen(open === label ? null : label)} />
+              <Disclosure label="Reviewed" count={reviewed.length} open={open.has(`${label}:reviewed`)} onPress={() => toggle(`${label}:reviewed`)} />
               <View style={{ flex: 1 }} />
               <View style={styles.overCard}>
                 <Button
@@ -1266,7 +1293,13 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
                 />
               </View>
             </View>
-            {open === label ? <Card items={reviewed} actions={actions} /> : null}
+            {open.has(`${label}:reviewed`) ? <Card items={reviewed} actions={actions} /> : null}
+          </View>
+        ) : null}
+        {handed.length > 0 ? (
+          <View style={{ gap: 8 }}>
+            <Disclosure label="Closed or handed off" count={handed.length} open={open.has(`${label}:handed`)} onPress={() => toggle(`${label}:handed`)} />
+            {open.has(`${label}:handed`) ? <Card items={handed} actions={actions} /> : null}
           </View>
         ) : null}
       </View>,
@@ -1293,7 +1326,7 @@ function StackLine({ rows, merged, links = false, target }: { rows: SubRow[]; me
               {row.title}
             </Text>
             <View style={[styles.wrap, { columnGap: 10, rowGap: 2 }]}>
-              <Meta lead={<NumberText number={row.number} />} facts={[]} chips={row.chips} />
+              <Meta lead={<NumberText number={row.number} />} facts={merged && row.mergedBy ? [`merged by ${row.mergedBy}`] : []} chips={row.chips} />
               {row.key === target ? <Text style={{ color: styles.action, fontSize: 12, fontWeight: "600" }}>actions apply here</Text> : null}
             </View>
           </View>

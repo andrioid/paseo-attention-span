@@ -1,4 +1,5 @@
 import type { AgentSummary, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
+import type { OthersChange } from "../shared/changes";
 import type { SessionKind } from "../shared/config";
 import type { IssueField } from "../shared/setup";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
@@ -134,6 +135,7 @@ export function builders(now: Date) {
       merged: nodes("merged") as SearchResult["merged"],
       reviewed: nodes("reviewed") as SearchResult["reviewed"],
       closed: nodes("closed") as SearchResult["closed"],
+      ended: nodes("ended") as SearchResult["ended"],
     };
   }
 
@@ -152,6 +154,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     title,
     url: `https://github.com/${REPO}/pull/${number}`,
     mergedAt: daysAgo(days),
+    // Someone else merged one of them [HIS-05].
+    mergedBy: { login: number === 177 ? "dave" : number === 179 ? "carol" : "me" },
     repository,
     labels: labels(...names),
     closingIssuesReferences: { nodes: closesIssue ? [{ number: closesIssue, repository }] : [] },
@@ -282,6 +286,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       merged(172, "Fix VAT on credit notes", 3, undefined, "bug"),
       merged(177, "chore: bump the build image", 4),
       merged(178, "Tidy the settings screen", 5),
+      // Handed over to carol before she merged it, so it isn't listed as mine [HIS-06].
+      merged(179, "Move invoices to the new queue", 1),
       merged(173, "Speed up the order list", 9, 174),
       merged(175, "Remove the old importer", 16),
     ],
@@ -308,6 +314,33 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       mergeState: {},
     },
   };
+}
+
+// What others did to my work, one of each kind, as the ledger keeps them [ATT-21, HIS-06]. #179 was handed over, then merged
+// by its new owner, so History doesn't count it as mine.
+export function fixtureChanges(now: Date): OthersChange[] {
+  const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
+  const event = (kind: OthersChange["kind"], subject: "pr" | "issue", number: number, title: string, hours: number, actor?: string, to?: string): OthersChange => ({
+    id: `${kind}:F_${number}:${hoursAgo(hours)}`,
+    kind,
+    subjectId: `F_${number}`,
+    subject,
+    key: `${REPO}#${number}`,
+    repo: REPO,
+    number,
+    title,
+    url: `https://github.com/${REPO}/${subject === "pr" ? "pull" : "issues"}/${number}`,
+    ...(actor ? { actor } : {}),
+    ...(to ? { to } : {}),
+    at: hoursAgo(hours),
+  });
+  return [
+    event("merged", "pr", 183, "Retry failed webhooks", 2, "dave"),
+    event("took_over", "pr", 186, "Split the invoice PDF job", 5, "phil", "phil"),
+    event("closed", "pr", 169, "Cache exchange rates", 26, "alice"),
+    event("handed", "pr", 179, "Move invoices to the new queue", 50, "dave", "carol"),
+    event("unassigned", "issue", 160, "Refunds skip the ledger", 74, "bob"),
+  ];
 }
 
 // Sessions the preview shows as started from items: working, needs me, failed, idle.

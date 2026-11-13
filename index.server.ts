@@ -40,6 +40,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.getAttention, ({ refresh }, { paseo }) => ready(() => (attention.connect(paseo), attention.get(refresh))));
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)));
   server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)));
+  server.handle(rpc.gotIt, ({ id, on }) => ready(() => attention.gotIt(id, on)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)));
   server.handle(rpc.setupStatus, () => setupStatus());

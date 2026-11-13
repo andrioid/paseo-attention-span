@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { type Item, itemSessions, projectFilterIds, SECTIONS } from "../shared/attention";
 import { linkedSessions } from "../shared/linked-sessions";
 import { AttentionConfig, nextUpSources } from "../shared/config";
+import { changeItems, EMPTY_LEDGER } from "./changes";
 import { classify, classifyHistory } from "./classify";
-import { alice, bob, bot, builders, fixture, me, REPO } from "./fixture";
+import { alice, bob, bot, builders, fixture, fixtureChanges, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
 import {
   detailsQuery,
@@ -746,6 +747,20 @@ describe("history", () => {
     expect(items.map((item) => [item.number, item.children.map((c) => c.number)])).toEqual([[60, [61, 62]], [63, []]]);
   });
 
+  it("HIS-05: says who merged my PR when it wasn't me", () => {
+    const repository = { nameWithOwner: REPO };
+    const merged = (number: number, by: string | null) => ({ number, title: "Step", url: "u", mergedAt: daysAgo(1), mergedBy: by ? { login: by } : null, repository, closingIssuesReferences: { nodes: [] } });
+    const items = classifyHistory(search({ merged: [merged(70, "dave"), merged(71, "ME"), merged(72, null)] }));
+    expect(items.map((item) => [item.number, item.mergedBy])).toEqual([[70, "dave"], [71, undefined], [72, undefined]]);
+    // Under the issue it closed too.
+    const [issue] = classifyHistory(search({
+      closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
+      merged: [{ ...merged(61, "dave"), closingIssuesReferences: { nodes: [{ number: 60, repository }] } }],
+    }));
+    expect(issue.children.map((child) => [child.number, child.mergedBy])).toEqual([[61, "dave"]]);
+    expect(searchQuery(HISTORY_SEARCHES, true)).toContain("mergedBy { login }");
+  });
+
   it("HIS-02, ATT-19: lists PRs I reviewed apart from my own work, with their author", () => {
     const [item] = classifyHistory(search({ reviewed: [{ number: 63, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository: { nameWithOwner: REPO }, author: alice }] }));
     expect(item).toMatchObject({ section: "reviewed", person: { login: "alice", role: "author" } });
@@ -1078,7 +1093,9 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const attention = classify({ data, details, config, now: NOW });
-    expect(new Set([...attention.items, ...classifyHistory(data)].map((item) => item.section)).size).toBe(15);
+    // Changed by others and Closed or handed off come from the ledger, not the searches [ATT-21, HIS-06].
+    const changes = changeItems({ ...EMPTY_LEDGER, events: fixtureChanges(NOW) }, NOW, 30, "2000-01-01T00:00:00Z");
+    expect(new Set([...attention.items, ...classifyHistory(data), ...changes.doing, ...changes.history].map((item) => item.section)).size).toBe(17);
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 7]);
   });

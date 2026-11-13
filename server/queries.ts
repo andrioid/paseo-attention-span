@@ -28,9 +28,20 @@ const SEARCHES = {
   asked: { first: 50, nodes: THREAD },
   assigned: { first: 50, nodes: "...pickable" },
   unclaimed: { first: 100, nodes: "...pickable" },
+  // My PRs closed lately, with who merged or closed them, for Changed by others [ATT-21]. Who closed one comes from its last
+  // close event; assignees tell a PR handed over before it closed [PRS-08].
+  ended: {
+    first: 50,
+    nodes: `... on PullRequest {
+      id number title url merged mergedAt closedAt repository { nameWithOwner } mergedBy { login }
+      assignees(first: 10) { nodes { login } }
+      timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { createdAt actor { login } } } }
+    }`,
+  },
+  // Who merged it, when it wasn't me [HIS-05].
   merged: {
     first: 100,
-    nodes: "... on PullRequest { number title url body mergedAt repository { nameWithOwner } labels(first: 20) { nodes { name } } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
+    nodes: "... on PullRequest { number title url body mergedAt mergedBy { login } repository { nameWithOwner } labels(first: 20) { nodes { name } } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
   },
   reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } labels(first: 20) { nodes { name } } }" },
   // Labels and type say what kind of work each was [HIS-04].
@@ -39,7 +50,7 @@ const SEARCHES = {
 export type SearchName = keyof typeof SEARCHES;
 
 // Doing, Waiting and Next up. History has its own, slower schedule.
-export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed"] as const;
+export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed", "ended"] as const;
 export const HISTORY_SEARCHES = ["merged", "reviewed", "closed"] as const;
 
 const FRAGMENTS: Record<string, string> = {
@@ -51,7 +62,7 @@ const FRAGMENTS: Record<string, string> = {
   ... on PullRequestReviewComment { id url reactionGroups { viewerHasReacted } }
 }`,
   pickable: `fragment pickable on Issue {
-  number title url createdAt
+  id number title url createdAt
   repository { nameWithOwner isFork defaultBranchRef { name } }
   issueType { name }
   issueFieldValues(first: 20) { nodes { ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } } } }
@@ -125,6 +136,11 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
+// Where History starts: whole weeks, from a Monday, so the oldest week isn't cut short [HIS-01].
+export function historySince(now: Date, weeks: number): string {
+  return new Date(startOfWeek(now).getTime() - (weeks - 1) * 7 * 86_400_000).toISOString();
+}
+
 // Where Next up looks for unclaimed issues [NXT-04, NXT-08]: one search per chosen source, so each issue says which
 // sources found it and no query outgrows GitHub's limit [NXT-09]. Without sources, the configured orgs and repos,
 // else my Paseo projects' repos. Never all of GitHub: unlike the other searches, this one isn't about me.
@@ -170,14 +186,15 @@ export function mergeUnclaimed(results: { source: string | null; nodes: (Pickabl
 export function searchVariables(config: AttentionConfig, now: Date): Record<Exclude<SearchName, "unclaimed">, string> {
   const scope = where(config.orgs, config.repos);
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
-  // Whole weeks, from a Monday, so the oldest week isn't cut short.
-  const history = isoDate(new Date(startOfWeek(now).getTime() - (config.historyWeeks - 1) * 7 * 86_400_000));
+  const history = isoDate(new Date(historySince(now, config.historyWeeks)));
   return {
     mine: `is:pr is:open author:@me ${scope}`,
     // By name only, not via a team [REV-01].
     reviews: `is:pr is:open user-review-requested:@me ${scope}`,
     mentions: `is:open mentions:@me updated:>=${since} ${scope}`,
     assigned: `is:issue is:open assignee:@me ${scope}`,
+    // Within the window Changed by others catches up over [ATT-21].
+    ended: `is:pr is:closed author:@me closed:>=${since} sort:updated-desc ${scope}`,
     // Threads I opened, commented on, was assigned or mentioned in, active lately: answers, and fresh questions [ATT-16].
     involved: `is:open involves:@me updated:>=${since} sort:updated-desc ${scope}`,
     // On my own issues a question nobody answered stays however old [ATT-11]. Newest first, so old ones go last.
@@ -187,6 +204,17 @@ export function searchVariables(config: AttentionConfig, now: Date): Record<Excl
     reviewed: `is:pr is:merged reviewed-by:@me -author:@me merged:>=${history} ${scope}`,
     closed: `is:issue is:closed assignee:@me closed:>=${history} ${scope}`,
   };
+}
+
+// Who assigned and unassigned whom on PRs and issues that may have left my hands, by node id, a batch per request [ATT-21, GH-01].
+// The last events are enough: a handover is the latest change of hands.
+export const ASSIGNMENT_BATCH = 20;
+const ASSIGNMENT_EVENT = "createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } }";
+export function assignmentsQuery(ids: string[]): string {
+  const subject = `id number title url state repository { nameWithOwner } assignees(first: 10) { nodes { login } }
+      timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT], last: 30) { nodes { __typename ... on AssignedEvent { ${ASSIGNMENT_EVENT} } ... on UnassignedEvent { ${ASSIGNMENT_EVENT} } } }`;
+  const fields = ids.map((id, index) => `a${index}: node(id: ${JSON.stringify(id)}) { __typename ... on PullRequest { ${subject} } ... on Issue { ${subject} } }`);
+  return `query Assignments {\n${fields.join("\n")}\n}`;
 }
 
 export function prKey(node: { repository: { nameWithOwner: string }; number: number }): string {

@@ -18,6 +18,8 @@ When there's nothing in it, you get a quiet horizon that follows the time of day
 
 Mentions only count while the person is still waiting for you. Reply or react and it's gone. On your own issues and PRs, a new comment from the last 30 days shows up under **Answered** even if it doesn't tag you. On other people's threads only tags count. The point is to pick out the signal, and most of what happens in threads you once commented on isn't. If you do want those replies, turn on **Follow threads I've commented on** in Settings. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
+Sometimes other people move your work without asking: they merge your PR, close it, take it over, or unassign you from an issue. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one gets a line at the bottom of Doing, like "merged by dave 2h ago" or "phil took over", until you tap **Got it**.
+
 Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
 
 ![An item's actions](docs/screenshots/desktop-dark-doing-sheet.png)
@@ -75,7 +77,7 @@ Some orgs keep issues in a separate repo from the code. When that happens, the f
 
 The issues and PRs you finished in recent weeks, grouped by week, plus the PRs you reviewed that got merged. Reviews are work too, even if nobody counts them.
 
-There's a copy button per week that gives you a Markdown list of links, each led by what kind of work it was: 🐞 bug, 🚀 feature, 🔧 task, or 🔀 for a PR that's none of those. The kind comes from the issue type, else the labels, else a title like "fix: …", so it works whether or not your repos use issue types. Cards show it too. Issues closed as not planned stay out of the list. That's my standup prep now, and it takes about four seconds.
+There's a copy button per week that gives you a Markdown list of links, each led by what kind of work it was: 🐞 bug, 🚀 feature, 🔧 task, or 🔀 for a PR that's none of those. The kind comes from the issue type, else the labels, else a title like "fix: …", so it works whether or not your repos use issue types. Cards show it too. Issues closed as not planned stay out of the list. A PR someone else merged says who, and work that left your hands (a PR someone closed or took over, an issue you were taken off) sits apart under **Closed or handed off**, out of the list, even if its new owner merges it later. That's my standup prep now, and it takes about four seconds.
 
 ![History](docs/screenshots/desktop-dark-history.png)
 

@@ -101,6 +101,11 @@ for (const layout of layouts) {
       await page.screenshot({ path: `/out/${prefix}-doing-needs-reviewer.png`, clip: await band("Needs a reviewer", "My drafts") });
       // Optional checks failing or still running leave a PR ready [PRS-14].
       await page.screenshot({ path: `/out/${prefix}-doing-ready.png`, clip: await band("Ready to merge", "Needs upstream") });
+      // What others did to my work, last in Doing with Got it [ATT-21].
+      // The section is last, so it ends at the feedback line under the list.
+      // Brought to the top, as the list scrolls inside its own view and the section is below a phone's tall viewport.
+      await page.locator(`text=/^Changed by others/ >> visible=true`).first().evaluate((element) => element.scrollIntoView({ block: "start" }));
+      await page.screenshot({ path: `/out/${prefix}-doing-changed.png`, clip: await band("Changed by others", "Enjoying Attention Span") });
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
       const openSheet = async (title) => {
@@ -210,9 +215,13 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: /close/i }).last().click();
       await page.waitForTimeout(400);
       await page.getByRole("tab", { name: /History/ }).first().click();
-      await page.getByText(/Reviewed \(\d+\)/).first().click();
+      await page.getByRole("button", { name: /^Reviewed, \d+$/ }).first().click();
       await page.waitForTimeout(800);
       await shot("history-reviewed");
+      // My PRs others closed unmerged, and work taken out of my hands, out of the week's copy [HIS-06].
+      await page.getByRole("button", { name: /^Closed or handed off, \d+$/ }).first().click();
+      await page.waitForTimeout(800);
+      await shot("history-handed");
       // Copy a week, its reviews, then one card's link, and keep what landed on the clipboard [HIS-03, ATT-15].
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:6767" });
       const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
@@ -355,6 +364,12 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: "Dismiss" }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
+      // Clear the notes on what others did; they have Got it, not Dismiss [ATT-21].
+      const gotIt = page.getByRole("button", { name: "Got it", exact: true });
+      for (let left = await gotIt.count(); left > 0; left = await gotIt.count()) {
+        await gotIt.first().click();
+        for (let i = 0; i < 50 && (await gotIt.count()) === left; i++) await page.waitForTimeout(100);
+      }
       // Dismiss the rest: a clear Doing tab shows its horizon, as on a real screen's height [ATT-18].
       const details = page.getByRole("button", { name: /^Details for #/ });
       for (let left = await details.count(); left > 0; left = await details.count()) {

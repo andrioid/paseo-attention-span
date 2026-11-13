@@ -2,12 +2,15 @@ import type { Attention, AttentionView, FeedId, FeedStatus, GithubColor, Item, P
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
+import { changeCandidates, nextLedger, type Lookups, withGotIt } from "./changes";
 import { classify, classifyHistory, issueBoardIds } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning, searchWithProjects } from "./projects";
 import { FIXTURE, graphql, graphqlResult } from "./gh";
-import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS } from "./fixture";
-import type { Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
+import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS, fixtureChanges } from "./fixture";
+import type { AssignmentSubject, Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
 import {
+  ASSIGNMENT_BATCH,
+  assignmentsQuery,
   type CheckContext,
   detailsQuery,
   HISTORY_SEARCHES,
@@ -115,6 +118,14 @@ export class AttentionService {
   async undismiss(key: string): Promise<AttentionView> {
     delete this.state.dismissed[key];
     await saveState(this.state);
+    return this.view();
+  }
+
+  // Clears a Changed by others note, or brings it back for Undo; nothing changes on GitHub [ATT-21].
+  async gotIt(id: string, on: boolean): Promise<AttentionView> {
+    const gotIt = this.state.changes.gotIt.filter((other) => other !== id);
+    this.state.changes.gotIt = on && this.state.changes.events.some((event) => event.id === id) ? [...gotIt, id] : gotIt;
+    await this.save();
     return this.view();
   }
 
@@ -282,7 +293,39 @@ export class AttentionService {
     const login = FIXTURE ? "me" : this.config.nextUp.mine ? await this.login() : null;
     const unclaimed = unclaimedSearches(this.config, projectRepos, login);
     const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now, unclaimed.searches);
+    await this.trackChanges(data, now);
     return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from };
+  }
+
+  // What others did to my work since the last refresh [ATT-21]. Only PRs whose hands changed and issues that left my assigned
+  // search are looked up, a batch per request; a failed batch is asked again next time [GH-01]. Kept long enough for History.
+  private async trackChanges(data: LiveResult, now: Date): Promise<void> {
+    const ledger = this.state.changes;
+    if (FIXTURE) {
+      // Previews start each layout with a refresh, which brings the notes back: Got it would otherwise outlive a layout.
+      this.state.changes = { ...ledger, events: fixtureChanges(now), gotIt: [] };
+      return;
+    }
+    const me = data.viewer.login;
+    const candidates = changeCandidates(ledger, data, me);
+    const lookups: Lookups = new Map();
+    for (let at = 0; at < candidates.length; at += ASSIGNMENT_BATCH) {
+      const batch = candidates.slice(at, at + ASSIGNMENT_BATCH);
+      try {
+        const { data: result, failures } = await graphqlResult<Record<string, AssignmentSubject | null>>(assignmentsQuery(batch));
+        batch.forEach((id, index) => {
+          const alias = `a${index}`;
+          // A node GitHub can't find is gone for good; one it failed on is asked again next refresh.
+          const failed = failures.some((failure) => failure.path?.[0] === alias && failure.type !== "NOT_FOUND");
+          if (!failed) lookups.set(id, result?.[alias] ?? null);
+        });
+      } catch (error) {
+        console.error("Couldn't look up who changed my work:", (error as Error).message);
+      }
+    }
+    const keepDays = Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7);
+    // A Got it tapped while this refresh ran still counts.
+    this.state.changes = withGotIt(nextLedger(ledger, data, me, lookups, now, this.config.mentionDays, keepDays), this.state.changes.gotIt);
   }
 
   // The account gh is signed in as, for My repos [NXT-04]. Asked once, unless the last fetch already says.
@@ -306,7 +349,7 @@ export class AttentionService {
 
   private async fetchHistory(now: Date): Promise<Item[]> {
     if (FIXTURE) return classifyHistory(fixture(now).data);
-    return classifyHistory(await graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES), this.variables(HISTORY_SEARCHES, now)));
+    return classifyHistory(await graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES, true), this.variables(HISTORY_SEARCHES, now)));
   }
 
   // Whether the gh login may read projects, asked at most hourly, or now when Settings asks [NXT-12]. On only when GitHub
@@ -362,7 +405,7 @@ export class AttentionService {
     };
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
     const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
-    const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked")]);
+    const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked"), search("ended")]);
     const afterThem = forDetails.then((parts) => this.details(merge(parts), projects, problems));
     try {
       const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
@@ -507,7 +550,11 @@ export class AttentionService {
     const now = Date.now();
     const pending = Object.fromEntries(Object.entries(this.state.pending).filter(([, entry]) => isPending(entry, this.fetchedAt(), now)));
     const shown = applyPending(this.state.live?.attention ?? null, this.state.history?.items ?? [], pending);
-    return buildView(shown.attention, shown.history, this.state.dismissed, {
+    return buildView(
+      shown.attention,
+      shown.history,
+      this.state.dismissed,
+      {
       feeds: { live: status("live"), history: status("history") },
       scopes: this.state.scopes,
       sources: this.state.sources,
@@ -515,6 +562,8 @@ export class AttentionService {
       config: this.config,
       pending: Object.keys(pending).length,
       ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),
-    });
+      },
+      this.state.changes,
+    );
   }
 }
