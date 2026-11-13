@@ -22,6 +22,8 @@ export interface SheetEntry {
   detailNode?: ReactNode;
   // Said on hover, and to screen readers, for a line that can't show everything [ATT-19].
   hint?: string;
+  // What screen readers say in place of the label, where the label alone doesn't say what it opens.
+  accessibilityLabel?: string;
   // A line that changes while the sheet is open, so screen readers say it when it does.
   live?: boolean;
   disabled?: boolean;
@@ -30,7 +32,7 @@ export interface SheetEntry {
   copy?: { text: string; label: string; done: string };
   // A second half with the same weight, like an issue's PR beside the issue: side by side, or one above the other on
   // phones, so neither half is cut short [ATT-12].
-  beside?: Pick<SheetEntry, "icon" | "label" | "detail" | "onPress" | "copy">;
+  beside?: Pick<SheetEntry, "icon" | "label" | "detail" | "accessibilityLabel" | "onPress" | "copy">;
   // A running session's state at the end of the line: the line opens it [SES-03, ATT-07].
   badge?: Chip;
   // Muted, for a line that's there on purpose but rarely wanted, like starting another session.
@@ -120,7 +122,7 @@ function Half({ entry, corners }: { entry: SheetEntry; corners: { topLeft?: bool
       <Pressable
         accessibilityRole="button"
         // The button's name is all a screen reader says of it, so a hint goes in it too.
-        accessibilityLabel={entry.hint ? `${entry.label}. ${entry.hint}` : entry.label}
+        accessibilityLabel={[entry.accessibilityLabel ?? entry.label, entry.hint].filter(Boolean).join(". ")}
         accessibilityState={{ disabled: !!entry.disabled }}
         disabled={entry.disabled}
         onPress={entry.onPress}
@@ -178,12 +180,14 @@ export function githubEntry(
     icon: "github",
     label: "Open issue",
     detail: `#${item.number}`,
+    accessibilityLabel: `Open issue #${item.number} on GitHub`,
     onPress: () => onOpen(item.url),
     copy: copy(item.number, item.url),
     beside: {
       icon: "github",
       label: "Open PR",
       detail: place >= 0 ? `#${pr.number} · ${place + 1} of ${pr.stack!.length}` : `#${pr.number}`,
+      accessibilityLabel: `Open PR #${pr.number} on GitHub${place >= 0 ? `, ${place + 1} of ${pr.stack!.length} in its stack` : ""}`,
       onPress: () => onOpen(pr.url),
       copy: copy(pr.number, pr.url),
     },

@@ -735,7 +735,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
             : undefined
       }
       secondary={[
-        only ? { label: only.label, icon: only.icon, onPress: only.onPress } : { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
+        only ? { label: only.label, accessibilityLabel: only.accessibilityLabel, icon: only.icon, onPress: only.onPress } : { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
         // History is where I report from, so its cards copy their link in one tap [ATT-15].
         ...(history ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
       ]}
@@ -872,8 +872,9 @@ function sheetEntries(
       entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), housekeeping: action === "close", onPress: () => onPerform(action) });
     }
   }
-  // Anything Attention Span doesn't cover [ATT-12], with an issue's PR beside it.
-  const pr = targetUrl(item) && item.target.kind === "pr" ? item.target : undefined;
+  // Anything Attention Span doesn't cover [ATT-12], with an issue's PR beside it: the one its actions apply to, or in
+  // History, where an issue is its own target, the first of the PRs that closed it.
+  const pr = targetUrl(item) && item.target.kind === "pr" ? item.target : item.kind === "issue" && item.children[0] ? item.children[0] : undefined;
   entries.push(githubEntry(item, (url) => close(() => void openExternalUrl(url))(), pr));
   // Nothing's left to start on once it's merged or closed.
   if (!item.closedAt) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
