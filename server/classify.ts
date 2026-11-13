@@ -426,6 +426,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
 // My merged PRs under the closed issues they worked on, closed issues, and reviews [HIS-01, HIS-02, ATT-03].
 export function classifyHistory(data: HistoryResult): Item[] {
   const items: Item[] = [];
+  const me = data.viewer?.login.toLowerCase();
   const closed = new Map<string, Item>();
   // What kind of work it was, on the card and its copied line [HIS-04].
   const kinded = (item: Item, node: { title: string; labels?: { nodes: { name: string }[] }; issueType?: { name: string } | null }): Item => {
@@ -444,7 +445,12 @@ export function classifyHistory(data: HistoryResult): Item[] {
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
     const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
     if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false });
-    else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt }, pr));
+    else {
+      // Who merged it, when it wasn't me [HIS-05].
+      const by = pr.mergedBy?.login;
+      const mergedBy = by && me && by.toLowerCase() !== me ? { mergedBy: by } : {};
+      items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt, ...mergedBy }, pr));
+    }
   }
   for (const pr of compact(data.reviewed.nodes)) items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt) }, pr));
   return items.sort(order);

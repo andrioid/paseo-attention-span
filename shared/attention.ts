@@ -1,3 +1,4 @@
+import type { OthersChange } from "./changes";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
 import type { WorkKind } from "./work";
 
@@ -22,6 +23,8 @@ export const SECTIONS = {
   // Nobody has the next move until I ask someone [PRS-12].
   needs_reviewer: { tab: "doing", title: "Needs a reviewer" },
   drafts: { tab: "doing", title: "My drafts" },
+  // What someone else did to my work: a note until Got it, never counted as needing me [ATT-21].
+  changed: { tab: "doing", title: "Changed by others" },
   // Waiting groups these by who they wait on, not by section [WAI-01].
   wait_review: { tab: "waiting", title: "Waiting for review" },
   wait_reviewer: { tab: "waiting", title: "Waiting for the reviewer" },
@@ -30,6 +33,8 @@ export const SECTIONS = {
   // [HIS-01, HIS-02]
   done: { tab: "history", title: "Done" },
   reviewed: { tab: "history", title: "Reviewed" },
+  // My PRs closed unmerged by others, and work taken out of my hands, out of the week's copy [HIS-06].
+  handed_off: { tab: "history", title: "Closed or handed off" },
 } as const satisfies Record<string, { tab: TabId; title: string }>;
 export type SectionId = keyof typeof SECTIONS;
 export const SECTION_ORDER = Object.keys(SECTIONS) as SectionId[];
@@ -50,7 +55,9 @@ export type ActionId =
   | "automerge"
   | "merge"
   | "close"
-  | "start";
+  | "start"
+  // Clears a Changed by others note; nothing changes on GitHub [ATT-21].
+  | "got_it";
 
 // A short state label on a row [ATT-05]; tone picks its color.
 export interface Chip {
@@ -218,6 +225,10 @@ export interface Item {
   work?: WorkKind;
   // History only: an issue closed as not planned, kept out of the copied week [HIS-03].
   notPlanned?: true;
+  // History only: who merged my PR, when it wasn't me [HIS-05].
+  mergedBy?: string;
+  // Changed by others and Closed or handed off: what someone else did [ATT-21, HIS-06].
+  change?: OthersChange;
 }
 
 // The colors GitHub lets an org give issue field options and a project its Status options. GRAY is what nothing chosen looks
@@ -371,7 +382,7 @@ export interface FeedStatus {
 export interface AttentionView {
   feeds: Record<FeedId, FeedStatus>;
   login: string | null;
-  // Items in Doing; the sidebar shows it [ATT-09].
+  // Items in Doing that need me; the sidebar shows it. Changed by others notes don't count [ATT-09, ATT-21].
   count: number;
   doing: Section[];
   waiting: WaitingGroup[];

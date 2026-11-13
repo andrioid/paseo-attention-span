@@ -1,6 +1,8 @@
 import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import { workChip, workKind } from "../shared/work";
+import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
+import { historySince } from "./queries";
 import type { State } from "./store";
 
 export interface ViewMeta {
@@ -126,25 +128,31 @@ export function waitingGroups(items: Item[]): WaitingGroup[] {
 // Waiting's work: its own sections, and my PRs in Doing while they wait on someone I asked [WAI-01, PRS-15].
 const inWaiting = (item: Item) => SECTIONS[item.section].tab === "waiting" || (SECTIONS[item.section].tab === "doing" && !!item.wait && !!item.waitingOn?.length);
 
-export function buildView(attention: Attention | null, history: Item[], dismissed: State["dismissed"], meta: ViewMeta): AttentionView {
+export function buildView(attention: Attention | null, history: Item[], dismissed: State["dismissed"], meta: ViewMeta, ledger: ChangeLedger = EMPTY_LEDGER, now = new Date()): AttentionView {
   const items = [...(attention?.items ?? []), ...history];
-  const visible = items.filter((item) => !isDismissed(item, dismissed));
+  // A PR that left my hands isn't my finished work, even once its new owner merges it [HIS-06].
+  const handed = handedKeys(ledger);
+  const visible = items.filter((item) => !isDismissed(item, dismissed) && !(item.section === "done" && handed.has(item.key)));
+  // Notes on what others did, and work that left my hands; never dismissed, only cleared with Got it [ATT-21, HIS-06].
+  const changes = changeItems(ledger, now, meta.config.mentionDays, historySince(now, meta.config.historyWeeks));
+  const shown = [...visible, ...changes.doing, ...changes.history];
   const sections = (tab: TabId): Section[] =>
     SECTION_ORDER.filter((id) => SECTIONS[id].tab === tab)
-      .map((id) => ({ id, title: SECTIONS[id].title, items: visible.filter((item) => item.section === id) }))
+      .map((id) => ({ id, title: SECTIONS[id].title, items: shown.filter((item) => item.section === id) }))
       .filter((section) => section.items.length > 0);
   const doing = sections("doing");
   return {
     ...meta,
     login: attention?.login ?? null,
-    count: doing.reduce((sum, section) => sum + section.items.length, 0),
+    // What needs me; notes on others' doings don't [ATT-09, ATT-21].
+    count: doing.reduce((sum, section) => sum + (section.id === "changed" ? 0 : section.items.length), 0),
     doing,
     waiting: waitingGroups(visible.filter(inWaiting)),
-    history: visible.filter((item) => SECTIONS[item.section].tab === "history"),
+    history: shown.filter((item) => SECTIONS[item.section].tab === "history"),
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],
     unclaimedFrom: attention?.unclaimedFrom ?? "config",
     projects: attention?.projects ?? [],
-    dismissedCount: items.length - visible.length,
+    dismissedCount: items.filter((item) => isDismissed(item, dismissed)).length,
   };
 }
