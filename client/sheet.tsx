@@ -22,12 +22,17 @@ export interface SheetEntry {
   detailNode?: ReactNode;
   // Said on hover, and to screen readers, for a line that can't show everything [ATT-19].
   hint?: string;
+  // What screen readers say in place of the label, where the label alone doesn't say what it opens.
+  accessibilityLabel?: string;
   // A line that changes while the sheet is open, so screen readers say it when it does.
   live?: boolean;
   disabled?: boolean;
   onPress: () => void;
   // A copy icon at the end of the line, so copying adds no line to the sheet [ATT-15].
   copy?: { text: string; label: string; done: string };
+  // A second half with the same weight, like an issue's PR beside the issue: side by side, or one above the other on
+  // phones, so neither half is cut short [ATT-12].
+  beside?: Pick<SheetEntry, "icon" | "label" | "detail" | "accessibilityLabel" | "onPress" | "copy">;
   // A running session's state at the end of the line: the line opens it [SES-03, ATT-07].
   badge?: Chip;
   // Muted, for a line that's there on purpose but rarely wanted, like starting another session.
@@ -73,31 +78,58 @@ const INNER_RADIUS = 11;
 
 function Entry({ entry, first, last }: { entry: SheetEntry; first: boolean; last: boolean }) {
   const styles = useStyles();
+  const beside = entry.beside;
+  const stacked = !!beside && styles.compact;
+  const line = first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 };
+  if (!beside) {
+    return (
+      <View style={[styles.row, { gap: 0, alignItems: "stretch" }, line]}>
+        <Half entry={entry} corners={{ topLeft: first, bottomLeft: last, topRight: first, bottomRight: last }} />
+      </View>
+    );
+  }
+  // Two halves: side by side with a short divider, or on phones one above the other with a line like the sheet's own.
+  return (
+    <View style={[stacked ? null : [styles.row, { gap: 0, alignItems: "stretch" }], line]}>
+      <Half entry={entry} corners={stacked ? { topLeft: first, topRight: first } : { topLeft: first, bottomLeft: last }} />
+      {stacked ? (
+        <View style={{ height: 1, backgroundColor: styles.c.surface1 }} />
+      ) : (
+        <View style={{ width: 1, marginVertical: 8, backgroundColor: styles.c.border }} />
+      )}
+      <Half entry={{ key: `${entry.key}-beside`, ...beside }} corners={stacked ? { bottomLeft: last, bottomRight: last } : { topRight: first, bottomRight: last }} />
+    </View>
+  );
+}
+
+// A line's pressable part and its copy icon. The pressed and hovered fill follows the block's rounded corners where it
+// touches them; the copy icon has its own fill at the right.
+function Half({ entry, corners }: { entry: SheetEntry; corners: { topLeft?: boolean; bottomLeft?: boolean; topRight?: boolean; bottomRight?: boolean } }) {
+  const styles = useStyles();
   const { hovered, hover } = useHover();
   const copy = useCopy();
   const muted = styles.c.foregroundMuted;
   const dim = entry.disabled || entry.quiet;
-  // The pressed and hovered fill follows the block's rounded corners; the copy icon has its own at the right.
-  const corners = {
-    borderTopLeftRadius: first ? INNER_RADIUS : 0,
-    borderBottomLeftRadius: last ? INNER_RADIUS : 0,
-    borderTopRightRadius: first && !entry.copy ? INNER_RADIUS : 0,
-    borderBottomRightRadius: last && !entry.copy ? INNER_RADIUS : 0,
+  const radius = {
+    borderTopLeftRadius: corners.topLeft ? INNER_RADIUS : 0,
+    borderBottomLeftRadius: corners.bottomLeft ? INNER_RADIUS : 0,
+    borderTopRightRadius: corners.topRight && !entry.copy ? INNER_RADIUS : 0,
+    borderBottomRightRadius: corners.bottomRight && !entry.copy ? INNER_RADIUS : 0,
   };
   const detail = entry.detailNode ?? (entry.detail ? <Text style={styles.muted}>{entry.detail}</Text> : null);
   return (
-    <View style={[styles.row, { gap: 0, alignItems: "stretch" }, first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 }]}>
+    <View style={[styles.row, { flex: 1, gap: 0, alignItems: "stretch", minWidth: 0 }]}>
       <Pressable
         accessibilityRole="button"
         // The button's name is all a screen reader says of it, so a hint goes in it too.
-        accessibilityLabel={entry.hint ? `${entry.label}. ${entry.hint}` : entry.label}
+        accessibilityLabel={[entry.accessibilityLabel ?? entry.label, entry.hint].filter(Boolean).join(". ")}
         accessibilityState={{ disabled: !!entry.disabled }}
         disabled={entry.disabled}
         onPress={entry.onPress}
         {...hover}
         style={({ pressed }) => [
           styles.row,
-          corners,
+          radius,
           { flex: 1, alignItems: "flex-start", paddingVertical: 10, paddingHorizontal: 12, backgroundColor: pressed || hovered ? styles.c.border : "transparent" },
         ]}
       >
@@ -127,6 +159,39 @@ function Entry({ entry, first, last }: { entry: SheetEntry; first: boolean; last
       ) : null}
     </View>
   );
+}
+
+// The line that opens an item on GitHub, for anything Attention Span doesn't cover [ATT-12], with its link to share [ATT-15].
+// An issue with a PR has the PR beside it, with the same weight, so reaching the PR doesn't mean going through the issue;
+// in a stack it's the PR the actions apply to, and says where it sits.
+export function githubEntry(
+  item: { kind: "pr" | "issue"; repo: string; number: number; url: string },
+  onOpen: (url: string) => void,
+  pr?: { number: number; url: string; stack?: { number: number }[] },
+): SheetEntry {
+  const copy = (number: number, url: string) => ({ text: url, label: `Copy link to #${number}`, done: `Copied link to #${number}` });
+  if (!pr || item.kind !== "issue") {
+    return { key: "github", icon: "github", label: `Open ${item.kind === "issue" ? "issue" : "PR"} on GitHub`, detail: `${item.repo}#${item.number}`, onPress: () => onOpen(item.url), copy: copy(item.number, item.url) };
+  }
+  // The repo is on the sheet's top line already, so each half says only its number.
+  const place = pr.stack && pr.stack.length > 1 ? pr.stack.findIndex((p) => p.number === pr.number) : -1;
+  return {
+    key: "github",
+    icon: "github",
+    label: "Open issue",
+    detail: `#${item.number}`,
+    accessibilityLabel: `Open issue #${item.number} on GitHub`,
+    onPress: () => onOpen(item.url),
+    copy: copy(item.number, item.url),
+    beside: {
+      icon: "github",
+      label: "Open PR",
+      detail: place >= 0 ? `#${pr.number} · ${place + 1} of ${pr.stack!.length}` : `#${pr.number}`,
+      accessibilityLabel: `Open PR #${pr.number} on GitHub${place >= 0 ? `, ${place + 1} of ${pr.stack!.length} in its stack` : ""}`,
+      onPress: () => onOpen(pr.url),
+      copy: copy(pr.number, pr.url),
+    },
+  };
 }
 
 // A state as a pill on a soft tint of its tone.

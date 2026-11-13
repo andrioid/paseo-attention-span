@@ -105,13 +105,13 @@ for (const layout of layouts) {
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
       const openSheet = async (title) => {
         await page.getByRole("button", { name: `${title}, more` }).first().click();
-        await page.getByText(/^Open (issue|PR) on GitHub$/).last().waitFor({ timeout: 10000 });
+        await page.getByText(/^Open (issue|PR)( on GitHub)?$/).last().waitFor({ timeout: 10000 });
         await page.waitForTimeout(800); // details load
       };
       const closeSheet = async () => {
         await page.keyboard.press("Escape");
         await page.waitForTimeout(400);
-        if (await page.getByText(/^Open (issue|PR) on GitHub$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
+        if (await page.getByText(/^Open (issue|PR)( on GitHub)?$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
         await page.waitForTimeout(300);
       };
       // What a face and an amber age mean, in words on hover, floating over the card so nothing moves [ATT-19, ATT-11].
