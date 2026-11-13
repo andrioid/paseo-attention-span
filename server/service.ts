@@ -121,10 +121,11 @@ export class AttentionService {
     return this.view();
   }
 
-  // Clears a Changed by others note, or brings it back for Undo; nothing changes on GitHub [ATT-21].
-  async gotIt(id: string, on: boolean): Promise<AttentionView> {
-    const gotIt = this.state.changes.gotIt.filter((other) => other !== id);
-    this.state.changes.gotIt = on && this.state.changes.events.some((event) => event.id === id) ? [...gotIt, id] : gotIt;
+  // Clears Changed by others notes, or brings them back for Undo; nothing changes on GitHub [ATT-21].
+  async gotIt(ids: string[], on: boolean): Promise<AttentionView> {
+    const gotIt = this.state.changes.gotIt.filter((other) => !ids.includes(other));
+    const known = ids.filter((id) => this.state.changes.events.some((event) => event.id === id));
+    this.state.changes.gotIt = on ? [...gotIt, ...known] : gotIt;
     await this.save();
     return this.view();
   }

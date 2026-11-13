@@ -18,7 +18,7 @@ When there's nothing in it, you get a quiet horizon that follows the time of day
 
 Mentions only count while the person is still waiting for you. Reply or react and it's gone. On your own issues and PRs, a new comment from the last 30 days shows up under **Answered** even if it doesn't tag you. On other people's threads only tags count. The point is to pick out the signal, and most of what happens in threads you once commented on isn't. If you do want those replies, turn on **Follow threads I've commented on** in Settings. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
-Sometimes other people move your work without asking: they merge your PR, close it, take it over, or unassign you from an issue. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one gets a line at the bottom of Doing, like "merged by dave 2h ago" or "phil took over", until you tap **Got it**.
+Sometimes other people move your work without asking: they merge your PR, close it, take it over, or unassign you from an issue. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one gets a line at the bottom of Doing, like "merged by dave 2h ago" or "phil took over", until you tap its check, or **Mark all as read** to clear them all.
 
 Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
 

@@ -24,6 +24,8 @@ export interface CardAction {
   onPress: () => void;
   // Defaults to the label.
   accessibilityLabel?: string;
+  // Icon only, with no background until hovered, for an action whose icon says it all, like Got it's check [ATT-21].
+  quiet?: boolean;
 }
 
 export interface ConfirmSpec {
@@ -68,10 +70,10 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
     <View style={styles.wrap}>
       {primary ? (
         <Button
-          label={primary.label}
-          accessibilityLabel={primary.accessibilityLabel}
+          label={primary.quiet ? undefined : primary.label}
+          accessibilityLabel={primary.accessibilityLabel ?? primary.label}
           icon={primary.icon}
-          variant="calm"
+          variant={primary.quiet ? "ghost" : "calm"}
           busy={busy}
           onPress={primary.onPress}
         />
