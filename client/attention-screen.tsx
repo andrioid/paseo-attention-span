@@ -762,7 +762,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
         sessions[0]
           ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id) }
           : main
-            ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], quiet: main === "got_it", onPress: () => perform(main) }
+            ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], iconOnly: main === "got_it", onPress: () => perform(main) }
             : undefined
       }
       secondary={[
