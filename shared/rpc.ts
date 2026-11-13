@@ -17,8 +17,8 @@ export const getAttention = defineRpc({ name: "attention.get", input: z.object({
 export const dismissItem = defineRpc({ name: "attention.dismiss", input: z.object({ key: z.string() }), output: view });
 // Undo one dismissal [ATT-08].
 export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.object({ key: z.string() }), output: view });
-// Clears a Changed by others note; `on: false` brings it back for Undo. Nothing changes on GitHub [ATT-21].
-export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ id: z.string(), on: z.boolean() }), output: view });
+// Clears Changed by others notes, one or all of them; `on: false` brings them back for Undo. Nothing changes on GitHub [ATT-21].
+export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ ids: z.array(z.string()), on: z.boolean() }), output: view });
 export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({}), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });
