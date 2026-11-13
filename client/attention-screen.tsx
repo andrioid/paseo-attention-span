@@ -21,7 +21,7 @@ import { NumberText, PlaceText } from "./entity";
 import { NextUpList } from "./next-up";
 import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FadeIn, Modal, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FadeIn, githubEntry, Modal, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
 import { SetupChecklist } from "./setup";
@@ -872,15 +872,9 @@ function sheetEntries(
       entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), housekeeping: action === "close", onPress: () => onPerform(action) });
     }
   }
-  // Anything Attention Span doesn't cover [ATT-12], and its link to share [ATT-15].
-  entries.push({
-    key: "github",
-    icon: "github",
-    label: `Open ${item.kind === "issue" ? "issue" : "PR"} on GitHub`,
-    detail: `${item.repo}#${item.number}`,
-    onPress: close(() => void openExternalUrl(item.url)),
-    copy: { text: item.url, label: `Copy link to #${item.number}`, done: `Copied link to #${item.number}` },
-  });
+  // Anything Attention Span doesn't cover [ATT-12], with an issue's PR beside it.
+  const pr = targetUrl(item) && item.target.kind === "pr" ? item.target : undefined;
+  entries.push(githubEntry(item, (url) => close(() => void openExternalUrl(url))(), pr));
   // Nothing's left to start on once it's merged or closed.
   if (!item.closedAt) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
   if (inDoing) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) });

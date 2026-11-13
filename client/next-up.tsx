@@ -20,7 +20,7 @@ import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, Modal, type SheetEntry, usePrefetchOnRest } from "./sheet";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, githubEntry, Modal, type SheetEntry, usePrefetchOnRest } from "./sheet";
 import { githubColor, IssuePills, PlaceText } from "./entity";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
@@ -395,7 +395,8 @@ function IssueSheet({
     claim
       ? { key: "claim", icon: "claim", label: "Claim", detail: "Assigns you, without starting a session", onPress: close(() => onClaim(issue, true)) }
       : { key: "unclaim", icon: "unclaim", label: "Unclaim", detail: "Removes you as assignee, so it goes back to Unclaimed", housekeeping: true, onPress: close(() => onClaim(issue, false)) },
-    { key: "github", icon: "github", label: "Open issue on GitHub", detail: `${issue.repo}#${issue.number}`, onPress: close(() => void openExternalUrl(issue.url)) },
+    // Someone's PR open against it sits beside the issue [ATT-12].
+    githubEntry({ kind: "issue", ...issue }, (url) => close(() => void openExternalUrl(url))(), issue.openPrs[0]),
     ...(sessions.length ? [startAnotherEntry(true, withOptions)] : []),
     // Giving it up or closing it sits apart, below the work [ATT-06].
     { key: "close", icon: "issueClosed", label: "Close issue", detail: "Asks first: as completed or not planned, with an optional comment", housekeeping: true, onPress: close(onCloseIssue) },
