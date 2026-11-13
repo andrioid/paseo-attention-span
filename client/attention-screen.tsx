@@ -1326,7 +1326,7 @@ function StackLine({ rows, merged, links = false, target }: { rows: SubRow[]; me
               {row.title}
             </Text>
             <View style={[styles.wrap, { columnGap: 10, rowGap: 2 }]}>
-              <Meta lead={<NumberText number={row.number} />} facts={[]} chips={row.chips} />
+              <Meta lead={<NumberText number={row.number} />} facts={merged && row.mergedBy ? [`merged by ${row.mergedBy}`] : []} chips={row.chips} />
               {row.key === target ? <Text style={{ color: styles.action, fontSize: 12, fontWeight: "600" }}>actions apply here</Text> : null}
             </View>
           </View>

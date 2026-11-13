@@ -752,6 +752,12 @@ describe("history", () => {
     const merged = (number: number, by: string | null) => ({ number, title: "Step", url: "u", mergedAt: daysAgo(1), mergedBy: by ? { login: by } : null, repository, closingIssuesReferences: { nodes: [] } });
     const items = classifyHistory(search({ merged: [merged(70, "dave"), merged(71, "ME"), merged(72, null)] }));
     expect(items.map((item) => [item.number, item.mergedBy])).toEqual([[70, "dave"], [71, undefined], [72, undefined]]);
+    // Under the issue it closed too.
+    const [issue] = classifyHistory(search({
+      closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
+      merged: [{ ...merged(61, "dave"), closingIssuesReferences: { nodes: [{ number: 60, repository }] } }],
+    }));
+    expect(issue.children.map((child) => [child.number, child.mergedBy])).toEqual([[61, "dave"]]);
     expect(searchQuery(HISTORY_SEARCHES, true)).toContain("mergedBy { login }");
   });
 

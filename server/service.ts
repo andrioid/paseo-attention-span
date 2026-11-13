@@ -2,7 +2,7 @@ import type { Attention, AttentionView, FeedId, FeedStatus, GithubColor, Item, P
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
-import { changeCandidates, nextLedger, type Lookups } from "./changes";
+import { changeCandidates, nextLedger, type Lookups, withGotIt } from "./changes";
 import { classify, classifyHistory, issueBoardIds } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning, searchWithProjects } from "./projects";
 import { FIXTURE, graphql, graphqlResult } from "./gh";
@@ -324,10 +324,8 @@ export class AttentionService {
       }
     }
     const keepDays = Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7);
-    const next = nextLedger(ledger, data, me, lookups, now, this.config.mentionDays, keepDays);
     // A Got it tapped while this refresh ran still counts.
-    const ids = new Set(next.events.map((event) => event.id));
-    this.state.changes = { ...next, gotIt: this.state.changes.gotIt.filter((id) => ids.has(id)) };
+    this.state.changes = withGotIt(nextLedger(ledger, data, me, lookups, now, this.config.mentionDays, keepDays), this.state.changes.gotIt);
   }
 
   // The account gh is signed in as, for My repos [NXT-04]. Asked once, unless the last fetch already says.

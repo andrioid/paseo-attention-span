@@ -197,6 +197,8 @@ export interface SubRow {
   chips: Chip[];
   // Behind its parent, conflicting or failing CI: shown even when the stack is collapsed.
   attention: boolean;
+  // History only: who merged it, when it wasn't me [HIS-05].
+  mergedBy?: string;
 }
 
 export interface Item {

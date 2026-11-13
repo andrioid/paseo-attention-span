@@ -157,6 +157,12 @@ export function nextLedger(ledger: ChangeLedger, data: Data, me: string, lookups
   return { events, gotIt: ledger.gotIt.filter((id) => ids.has(id)), assigned, handed };
 }
 
+// What a refresh found, with the Got its tapped while it ran, as those changed the ledger after the refresh read it [ATT-21].
+export function withGotIt(next: ChangeLedger, gotIt: string[]): ChangeLedger {
+  const ids = new Set(next.events.map((event) => event.id));
+  return { ...next, gotIt: gotIt.filter((id) => ids.has(id)) };
+}
+
 // The ledger as cards: Doing's notes not yet cleared, within `windowDays`, newest first [ATT-21]; History's work closed
 // unmerged by others or taken out of my hands, from `historySince` [HIS-06].
 export function changeItems(ledger: ChangeLedger, now: Date, windowDays: number, historySince: string): { doing: Item[]; history: Item[] } {

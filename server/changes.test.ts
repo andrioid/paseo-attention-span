@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Attention, Item } from "../shared/attention";
 import { changeText, type OthersChange } from "../shared/changes";
 import { AttentionConfig } from "../shared/config";
-import { type ChangeLedger, changeCandidates, changeItems, EMPTY_LEDGER, ended, handover, type Lookups, nextLedger } from "./changes";
+import { type ChangeLedger, changeCandidates, changeItems, EMPTY_LEDGER, ended, handover, type Lookups, nextLedger, withGotIt } from "./changes";
 import type { AssignmentEvent, AssignmentSubject, EndedPullRequest, LiveResult, PickableNode, PullRequestNode } from "./github-types";
 import { buildView } from "./view";
 
@@ -102,6 +102,31 @@ describe("my PRs others merged or closed", () => {
     expect(after.events.map((event) => [event.kind, event.actor])).toEqual([["merged", "carol"]]);
     // Not looked up yet (the lookup failed): wait a refresh rather than call it a merge.
     expect(nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", new Map(), NOW, 30, 35).events).toEqual([]);
+  });
+});
+
+describe("keeping and clearing", () => {
+  const merged = (id: string, hours: number) => endedPr(id, { mergedAt: hoursAgo(hours), closedAt: hoursAgo(hours) });
+
+  it("ATT-21, HIS-06: events are kept for keepDays, then dropped with their Got it", () => {
+    const kept = nextLedger(EMPTY_LEDGER, data({ ended: [merged("P1", 24 * 20)] }), "me", new Map(), NOW, 30, 35);
+    const tapped = { ...kept, gotIt: [kept.events[0].id] };
+    const later = new Date(NOW.getTime() + 20 * 86_400_000);
+    expect(nextLedger(tapped, data({}), "me", new Map(), later, 30, 35)).toMatchObject({ events: [], gotIt: [] });
+    expect(nextLedger(tapped, data({}), "me", new Map(), NOW, 30, 35).gotIt).toEqual(tapped.gotIt);
+  });
+
+  it("ATT-21: a Got it tapped while a refresh ran survives it, and Undo while it ran too", () => {
+    const before = nextLedger(EMPTY_LEDGER, data({ ended: [merged("P1", 2), merged("P2", 3)] }), "me", new Map(), NOW, 30, 35);
+    const [first, second] = before.events.map((event) => event.id);
+    // The refresh read the ledger with nothing tapped; meanwhile first was tapped.
+    const after = nextLedger(before, data({ ended: [merged("P1", 2), merged("P2", 3)] }), "me", new Map(), NOW, 30, 35);
+    expect(withGotIt(after, [first]).gotIt).toEqual([first]);
+    // Read with second tapped, then Undo while it ran: the refresh doesn't bring the tap back.
+    const tappedBefore = nextLedger({ ...before, gotIt: [second] }, data({ ended: [merged("P1", 2), merged("P2", 3)] }), "me", new Map(), NOW, 30, 35);
+    expect(withGotIt(tappedBefore, []).gotIt).toEqual([]);
+    // A tap on an event the refresh dropped goes with it.
+    expect(withGotIt({ ...after, events: [after.events[0]] }, [first, second]).gotIt).toEqual([first]);
   });
 });
 
