@@ -61,8 +61,9 @@ const isAssignment = (node: AssignmentEvent | Record<string, never>): node is As
 
 // Who took it out of my hands, from GitHub's assign and unassign events [ATT-21]. Null when it's still mine, it was my own
 // doing, or the events don't show it. An issue closed by now stays silent: issue closes are no big deal.
-// The new owner is the latest of the current assignees to be assigned. The one named is who took me off it, else, on a PR I
-// was never assigned, who assigned the new owner: "phil took over" when that's the new owner, else "dave handed it to carol".
+// The new owner is the latest of the current assignees to be assigned. It left my hands with whichever came last of my
+// removal and the new owner's assignment, and whoever did that is named: "phil took over" when that's the new owner, else
+// "dave handed it to carol". So a PR I unassigned myself from is still mine until someone else takes it.
 export function handover(subject: AssignmentSubject, me: string): OthersChange | null {
   const assignees = logins(subject);
   if (assignees.some((login) => same(login, me))) return null;
@@ -75,17 +76,16 @@ export function handover(subject: AssignmentSubject, me: string): OthersChange |
   const to = given?.assignee?.login ?? assignees[0];
   // A PR of mine with nobody on it is mine; an issue needs proof I was taken off it.
   if (subject.__typename === "PullRequest" ? !to : !removal) return null;
-  const by = removal ?? given;
+  const by = removal && given && to ? (given.createdAt > removal.createdAt ? given : removal) : (removal ?? given);
   if (!by || same(by.actor?.login, me)) return null;
   const actor = by.actor?.login;
   const kind = !to ? "unassigned" : same(actor, to) ? "took_over" : "handed";
   return change(subject, subject.__typename === "PullRequest" ? "pr" : "issue", kind, by.createdAt, actor, to);
 }
 
-// A PR of mine someone else merged or closed unmerged [ATT-21]. One handed over first is a handover instead, as it had
-// left my hands before it ended.
+// A PR of mine someone else merged or closed unmerged [ATT-21]. Whether it left my hands before it ended is up to nextLedger,
+// which knows when that happened.
 export function ended(pr: EndedPullRequest, me: string): OthersChange | null {
-  if (handedOver(pr, me)) return null;
   if (pr.merged) return same(pr.mergedBy?.login, me) || !pr.mergedAt ? null : change(pr, "pr", "merged", pr.mergedAt, pr.mergedBy?.login);
   const closer = pr.timelineItems.nodes.at(-1)?.actor?.login;
   return same(closer, me) ? null : change(pr, "pr", "closed", pr.closedAt, closer);
@@ -121,13 +121,19 @@ function change(
 export function nextLedger(ledger: ChangeLedger, data: Data, me: string, lookups: Lookups, now: Date, windowDays: number, keepDays: number): ChangeLedger {
   const since = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
   const found: OthersChange[] = [];
+  const endedAt = new Map(present(data.ended.nodes).map((pr) => [pr.id, pr.mergedAt ?? pr.closedAt]));
+  // Assigning a PR once it's merged or closed hands nothing over.
+  const handovers = [...lookups.values()]
+    .map((subject) => (subject ? handover(subject, me) : null))
+    .filter((event): event is OthersChange => !!event && !(endedAt.has(event.subjectId) && event.at > endedAt.get(event.subjectId)!));
+  found.push(...handovers);
+  const handedAt = (id: string) => [...ledger.events, ...handovers].filter((event) => isHandover(event) && event.subjectId === id).map((event) => event.at);
   for (const pr of present(data.ended.nodes)) {
+    // A PR someone else has whose hands aren't looked up yet waits a refresh, so a handover isn't reported as a merge.
+    if (handedOver(pr, me) && !lookups.has(pr.id) && ledger.handed[pr.id] !== signature(pr)) continue;
     const event = ended(pr, me);
-    if (event) found.push(event);
-  }
-  for (const subject of lookups.values()) {
-    const event = subject ? handover(subject, me) : null;
-    if (event) found.push(event);
+    // One that left my hands before it ended was a handover, not my work merged or closed.
+    if (event && !handedAt(pr.id).some((at) => at <= event.at)) found.push(event);
   }
   // Mine again: my PRs with nobody else on them, and issues assigned to me.
   const mineNow = new Set([...present(data.mine.nodes).filter((pr) => !handedOver(pr, me)).map((pr) => pr.id), ...Object.keys(assignedNow(data))]);

@@ -93,8 +93,29 @@ describe("my PRs others merged or closed", () => {
     expect(ended({ ...closed, timelineItems: { nodes: [{ actor: { login: "me" } }] } }, "me")).toBeNull();
   });
 
-  it("ATT-21: a PR handed over before it ended is a handover, not a merge", () => {
-    expect(ended(endedPr("P1", { assignees: users("carol"), mergedBy: { login: "carol" } }), "me")).toBeNull();
+  it("ATT-21: a PR handed over before it ended is a handover, not a merge; one assigned after it ended is still my merge", () => {
+    const pr = endedPr("P1", { assignees: users("carol"), mergedBy: { login: "carol" } });
+    const lookup = (hours: number): Lookups => new Map([["P1", { ...subject("PullRequest", ["carol"], [assigned("carol", "carol", hours)]), id: "P1", state: "MERGED" }]]);
+    const before = nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", lookup(5), NOW, 30, 35);
+    expect(before.events.map((event) => event.kind)).toEqual(["took_over"]);
+    const after = nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", lookup(1), NOW, 30, 35);
+    expect(after.events.map((event) => [event.kind, event.actor])).toEqual([["merged", "carol"]]);
+    // Not looked up yet (the lookup failed): wait a refresh rather than call it a merge.
+    expect(nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", new Map(), NOW, 30, 35).events).toEqual([]);
+  });
+});
+
+describe("ownership cycles", () => {
+  it("ATT-21: a PR I took myself off is still mine until someone takes it, and that's who's named, when they took it", () => {
+    const self = handover(subject("PullRequest", ["carol"], [assigned("me", "me", 50), unassigned("me", "me", 40), assigned("carol", "carol", 3)]), "me");
+    expect(self).toMatchObject({ kind: "took_over", actor: "carol", at: hoursAgo(3) });
+    const earlier = handover(subject("PullRequest", ["carol"], [unassigned("me", "dave", 40), assigned("carol", "carol", 3)]), "me");
+    expect(earlier).toMatchObject({ kind: "took_over", actor: "carol", at: hoursAgo(3) });
+  });
+
+  it("ATT-21: an old removal from an earlier round doesn't name who took it this time", () => {
+    const events = [unassigned("me", "dave", 90), assigned("me", "me", 60), unassigned("me", "alice", 4), assigned("carol", "alice", 4)];
+    expect(handover(subject("Issue", ["carol"], events), "me")).toMatchObject({ kind: "handed", actor: "alice", to: "carol", at: hoursAgo(4) });
   });
 });
 
@@ -178,6 +199,12 @@ describe("notes and History", () => {
     expect(view.count).toBe(0);
     const cleared = buildView(attention, [], {}, meta, { ...ledger, gotIt: ledger.events.map((event) => event.id) }, NOW);
     expect(cleared.doing).toEqual([]);
+  });
+
+  it("HIS-06: a handed-over PR isn't listed under the finished issue it closed either", () => {
+    const issue: Item = { ...done("acme/shop#40"), kind: "issue", children: [{ key: "acme/shop#2", number: 2, title: "t", url: "u", draft: false, chips: [], attention: false }] };
+    const view = buildView(attention, [issue], {}, meta, ledger, NOW);
+    expect(view.history.find((item) => item.key === "acme/shop#40")?.children).toEqual([]);
   });
 
   it("HIS-06: History lists what was closed unmerged or handed off, and a handed-over PR's later merge isn't my finished work", () => {

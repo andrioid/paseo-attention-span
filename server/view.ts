@@ -132,7 +132,9 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
   const items = [...(attention?.items ?? []), ...history];
   // A PR that left my hands isn't my finished work, even once its new owner merges it [HIS-06].
   const handed = handedKeys(ledger);
-  const visible = items.filter((item) => !isDismissed(item, dismissed) && !(item.section === "done" && handed.has(item.key)));
+  const visible = items
+    .filter((item) => !isDismissed(item, dismissed) && !(item.section === "done" && handed.has(item.key)))
+    .map((item) => (item.section === "done" && item.children.some((child) => handed.has(child.key)) ? { ...item, children: item.children.filter((child) => !handed.has(child.key)) } : item));
   // Notes on what others did, and work that left my hands; never dismissed, only cleared with Got it [ATT-21, HIS-06].
   const changes = changeItems(ledger, now, meta.config.mentionDays, historySince(now, meta.config.historyWeeks));
   const shown = [...visible, ...changes.doing, ...changes.history];

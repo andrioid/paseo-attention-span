@@ -34,16 +34,28 @@ export function runGh(args: string[], input?: string, { timeoutMs }: { timeoutMs
 
 // GitHub's answer with its errors kept beside whatever data resolved, for callers that must tell a partial answer from a
 // whole one. Throws only when nothing came back at all.
-export async function graphqlResult<T>(query: string, variables: Record<string, unknown> = {}, options: { timeoutMs?: number } = {}): Promise<{ data: T | null; errors: string[] }> {
+// `failures` says where each error was and what kind, for callers that tell a node GitHub can't find from one it failed on.
+export interface GraphqlFailure {
+  message: string;
+  type?: string;
+  path?: (string | number)[];
+}
+
+export async function graphqlResult<T>(
+  query: string,
+  variables: Record<string, unknown> = {},
+  options: { timeoutMs?: number } = {},
+): Promise<{ data: T | null; errors: string[]; failures: GraphqlFailure[] }> {
   const { code, stdout, stderr } = await runGh(["api", "graphql", "--input", "-"], JSON.stringify({ query, variables }), options);
-  let parsed: { data?: T | null; errors?: { message: string }[] } | undefined;
+  let parsed: { data?: T | null; errors?: GraphqlFailure[] } | undefined;
   try {
     parsed = JSON.parse(stdout);
   } catch {
     // Not JSON: an auth or network failure.
   }
-  const errors = (parsed?.errors ?? []).map((error) => error.message);
-  if (parsed?.data) return { data: parsed.data, errors };
+  const failures = parsed?.errors ?? [];
+  const errors = failures.map((error) => error.message);
+  if (parsed?.data) return { data: parsed.data, errors, failures };
   throw new Error(errors.join("; ") || stderr.trim() || `gh exited with ${code}`);
 }
 

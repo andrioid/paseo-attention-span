@@ -312,8 +312,13 @@ export class AttentionService {
     for (let at = 0; at < candidates.length; at += ASSIGNMENT_BATCH) {
       const batch = candidates.slice(at, at + ASSIGNMENT_BATCH);
       try {
-        const result = await graphql<Record<string, AssignmentSubject | null>>(assignmentsQuery(batch));
-        batch.forEach((id, index) => lookups.set(id, result[`a${index}`] ?? null));
+        const { data: result, failures } = await graphqlResult<Record<string, AssignmentSubject | null>>(assignmentsQuery(batch));
+        batch.forEach((id, index) => {
+          const alias = `a${index}`;
+          // A node GitHub can't find is gone for good; one it failed on is asked again next refresh.
+          const failed = failures.some((failure) => failure.path?.[0] === alias && failure.type !== "NOT_FOUND");
+          if (!failed) lookups.set(id, result?.[alias] ?? null);
+        });
       } catch (error) {
         console.error("Couldn't look up who changed my work:", (error as Error).message);
       }
