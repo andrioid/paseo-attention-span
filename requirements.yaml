@@ -109,7 +109,7 @@ functional:
     As a developer, I can:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.
       HIS-02: see pull requests I reviewed that merged, apart from my own work; so that I can tell others what I got done.
-      HIS-03: copy a week's finished work as a Markdown list of links; so that reporting progress is one paste.
+      HIS-03: copy a week's finished work as a Markdown list of links, and the pull requests I reviewed that week as a list of their own; so that reporting progress is one paste.
       HIS-04: see what kind of work each finished item was, bug, feature or task, from its issue type, else its labels, else a Conventional Commit title like "fix: …", on its card and leading its copied line like "- 🐞 [title](link)", with PRs of no kind led by 🔀 and issues closed as not planned left out of the copy; so that a busy week's report skims at a glance in any repo.
   feedback:
     As a developer, I can:
