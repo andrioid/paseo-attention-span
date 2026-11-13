@@ -29,6 +29,8 @@ export function makeStyles(theme: Theme, compact: boolean) {
     danger: { color: c.statusDanger, fontSize: 13 },
     title: { color: c.foreground, fontSize: 16, fontWeight: "600" as const, flexShrink: 1 },
     card: { backgroundColor: c.surface1, borderRadius: 12, borderWidth: 1, borderColor: c.border, overflow: "hidden" as const },
+    // Over a card, lines a button up with its cards' last column: their padding plus the card's border.
+    overCard: { marginRight: (compact ? 12 : 16) + 1 },
     item: { padding: compact ? 12 : 16, gap: 10, flexDirection: "row" as const, alignItems: "flex-start" as const },
     divider: { borderTopWidth: 1, borderTopColor: c.border },
     body: { flex: 1, gap: 6, minWidth: 0 },

@@ -1178,7 +1178,9 @@ function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions
           count={items.length}
           action={
             who && !who.bot ? (
-              <Button icon="markdown" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
+              <View style={styles.overCard}>
+                <Button icon="markdown" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
+              </View>
             ) : null
           }
         />
@@ -1232,17 +1234,19 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
           count={done.length}
           action={
             copied.length > 0 ? (
-              <Button
-                icon="markdown"
-                variant="ghost"
-                accessibilityLabel={`Copy links from ${label}`}
-                onPress={() =>
-                  copy(
-                    linkList(copied.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
-                    `Copied ${copied.length} link${copied.length === 1 ? "" : "s"} from ${label}`,
-                  )
-                }
-              />
+              <View style={styles.overCard}>
+                <Button
+                  icon="markdown"
+                  variant="ghost"
+                  accessibilityLabel={`Copy links from ${label}`}
+                  onPress={() =>
+                    copy(
+                      linkList(copied.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
+                      `Copied ${copied.length} link${copied.length === 1 ? "" : "s"} from ${label}`,
+                    )
+                  }
+                />
+              </View>
             ) : null
           }
         />
@@ -1253,17 +1257,19 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
             <View style={styles.row}>
               <Toggle label={`Reviewed (${reviewed.length})`} active={open === label} onPress={() => setOpen(open === label ? null : label)} />
               <View style={{ flex: 1 }} />
-              <Button
-                icon="markdown"
-                variant="ghost"
-                accessibilityLabel={`Copy reviewed links from ${label}`}
-                onPress={() =>
-                  copy(
-                    linkList(reviewed.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
-                    `Copied ${reviewed.length} reviewed link${reviewed.length === 1 ? "" : "s"} from ${label}`,
-                  )
-                }
-              />
+              <View style={styles.overCard}>
+                <Button
+                  icon="markdown"
+                  variant="ghost"
+                  accessibilityLabel={`Copy reviewed links from ${label}`}
+                  onPress={() =>
+                    copy(
+                      linkList(reviewed.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
+                      `Copied ${reviewed.length} reviewed link${reviewed.length === 1 ? "" : "s"} from ${label}`,
+                    )
+                  }
+                />
+              </View>
             </View>
             {open === label ? <Card items={reviewed} actions={actions} /> : null}
           </View>
