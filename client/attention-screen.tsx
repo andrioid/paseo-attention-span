@@ -25,6 +25,7 @@ import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FadeIn, githubEntry, Modal, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
+import { ALL_NOTES, allNotesBusy, noteBusy } from "../shared/got-it";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
 import { Avatar, Button, Disclosure, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
@@ -453,7 +454,7 @@ function AttentionList({
     gotItAll: (items) => {
       const ids = items.flatMap((item) => (item.change ? [item.change.id] : []));
       const notes = `${ids.length} note${ids.length === 1 ? "" : "s"}`;
-      change("changed", "Mark all as read", () => gotIt({ ids, on: true }), `Cleared ${notes} on changes by others`, () => gotIt({ ids, on: false }));
+      change(ALL_NOTES, "Mark all as read", () => gotIt({ ids, on: true }), `Cleared ${notes} on changes by others`, () => gotIt({ ids, on: false }));
     },
     dismiss: (item) => change(item.key, "Dismiss", () => dismiss({ key: item.key }), `Dismissed “${item.title}”`, () => undismiss({ key: item.key }), true),
   };
@@ -756,7 +757,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       }
       onOpen={open}
       hover={prefetch}
-      busy={actions.busy.has(item.key)}
+      busy={item.change ? noteBusy(actions.busy, item.key) : actions.busy.has(item.key)}
       primary={
         sessions[0]
           ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id) }
@@ -1177,7 +1178,7 @@ function Sections({ sections, actions }: { sections: Section[]; actions: Actions
           // Clears every Changed by others note in one tap [ATT-21].
           section.id === "changed" && section.items.length > 1 ? (
             <View style={styles.overCard}>
-              <Button label="Mark all as read" icon="check" variant="ghost" disabled={actions.busy.has("changed")} onPress={() => actions.gotItAll(section.items)} />
+              <Button label="Mark all as read" icon="check" variant="ghost" disabled={allNotesBusy(actions.busy, section.items.map((item) => item.key))} onPress={() => actions.gotItAll(section.items)} />
             </View>
           ) : null
         }
