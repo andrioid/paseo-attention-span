@@ -10,17 +10,13 @@ const run = promisify(execFile);
 // A scratch directory for the session, where this plugin is installed and which version it is [FB-01].
 export async function feedbackInfo(): Promise<FeedbackInfo> {
   const cwd = mkdtempSync(join(tmpdir(), "attention-span-feedback-"));
-  const source = pluginDir();
+  const source = ourInstall()?.path ?? null;
   return { cwd, source, version: source ? await version(source) : null };
 }
 
+// The runtime ID this plugin is installed under, and its source. The update check names the ID [UPD-01].
 // Paseo evaluates the server as a bundle, so it has no file location of its own (import.meta.url is undefined).
 // Paseo's config.json records where each plugin's source is: take this plugin's, by its manifest's ID.
-export function pluginDir(paseoHome?: string): string | null {
-  return ourInstall(paseoHome)?.path ?? null;
-}
-
-// The runtime ID this plugin is installed under, and its source. The update check names the ID [UPD-01].
 export function ourInstall(paseoHome = process.env.PASEO_HOME || join(homedir(), ".paseo")): { id: string; path: string } | null {
   try {
     const { plugins = {} } = JSON.parse(readFileSync(join(paseoHome, "config.json"), "utf8")) as { plugins?: Record<string, { path?: string }> };

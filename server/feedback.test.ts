@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ourInstall, pluginDir } from "./feedback";
+import { ourInstall } from "./feedback";
 
 // A Paseo home whose config.json lists the given plugin sources, each with a manifest of the given ID.
 function paseoHome(plugins: Record<string, string>): { home: string; dirs: Record<string, string> } {
@@ -18,30 +18,23 @@ function paseoHome(plugins: Record<string, string>): { home: string; dirs: Recor
   return { home, dirs };
 }
 
-describe("pluginDir", () => {
+describe("ourInstall", () => {
   it("FB-01: finds this plugin's source in Paseo's config.json", () => {
     const { home, dirs } = paseoHome({ other: "other-plugin", "attention-span": "attention-span" });
-    expect(pluginDir(home)).toBe(dirs["attention-span"]);
+    expect(ourInstall(home)).toEqual({ id: "attention-span", path: dirs["attention-span"] });
   });
 
-  it("FB-01: finds a copy installed under another ID by its manifest", () => {
-    const { home, dirs } = paseoHome({ "attention-span-dev": "attention-span" });
-    expect(pluginDir(home)).toBe(dirs["attention-span-dev"]);
+  it("FB-01, UPD-01: finds a copy installed under another ID by its manifest, and gives that ID", () => {
+    const { home, dirs } = paseoHome({ "attention-span-dev": "attention-span", other: "other-plugin" });
+    expect(ourInstall(home)).toEqual({ id: "attention-span-dev", path: dirs["attention-span-dev"] });
   });
 
   it("FB-01: prefers the install under its own ID", () => {
     const { home, dirs } = paseoHome({ "attention-span-dev": "attention-span", "attention-span": "attention-span" });
-    expect(pluginDir(home)).toBe(dirs["attention-span"]);
+    expect(ourInstall(home)?.path).toBe(dirs["attention-span"]);
   });
 
   it("FB-01: has none, rather than failing, without a config", () => {
-    expect(pluginDir(join(tmpdir(), "no-such-paseo-home"))).toBeNull();
-  });
-});
-
-describe("ourInstall", () => {
-  it("UPD-01: gives the runtime ID the update check names", () => {
-    const { home, dirs } = paseoHome({ "attention-span-dev": "attention-span", other: "other-plugin" });
-    expect(ourInstall(home)).toEqual({ id: "attention-span-dev", path: dirs["attention-span-dev"] });
+    expect(ourInstall(join(tmpdir(), "no-such-paseo-home"))).toBeNull();
   });
 });

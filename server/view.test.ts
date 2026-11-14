@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { agent, item, viewMeta } from "../shared/test-builders";
-import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS, waitingGroups } from "./view";
+import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
 const meta = viewMeta({ feed: { fetchedAt: null, refreshing: false, error: null } });
 
@@ -36,7 +36,8 @@ describe("waiting", () => {
     waitingOn: people.length ? people : undefined,
     wait: { reason: "review", since },
   });
-  const groups = (items: Item[]) => waitingGroups(items).map((group) => [group.who?.login ?? null, group.items.map((i) => i.key)]);
+  const waitingOf = (items: Item[]) => buildView(attention(items), [], {}, meta).waiting;
+  const groups = (items: Item[]) => waitingOf(items).map((group) => [group.who?.login ?? null, group.items.map((i) => i.key)]);
 
   it("WAI-01: groups by who it waits on, whoever blocks the most first, ties by longest wait, each one's work oldest first, and the rest last", () => {
     const items = [
@@ -56,7 +57,7 @@ describe("waiting", () => {
   it("WAI-03: a login that's a requested bot anywhere is a bot, even where it was only tagged first", () => {
     const tagged = waiting("a", "wait_answer", "2026-10-01", [who("copilot")]);
     const requested = waiting("b", "wait_review", "2026-10-02", [{ ...who("copilot"), bot: true }]);
-    expect(waitingGroups([tagged, requested])[0].who).toMatchObject({ login: "copilot", bot: true });
+    expect(waitingOf([tagged, requested])[0].who).toMatchObject({ login: "copilot", bot: true });
     expect(tagged.waitingOn![0].bot).toBeUndefined();
   });
 

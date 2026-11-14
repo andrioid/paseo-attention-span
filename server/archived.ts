@@ -25,13 +25,13 @@ export interface ArchiveEvent {
 }
 
 // What Paseo says of the archived session now; null when it couldn't be found.
-export type FoundSession = Pick<ListedAgent, "labels" | "archivedAt"> | null;
+type FoundSession = Pick<ListedAgent, "labels" | "archivedAt"> | null;
 
-export const itemKeyOf = (labels: Record<string, string> | undefined | null): string | undefined =>
+const itemKeyOf = (labels: Record<string, string> | undefined | null): string | undefined =>
   ITEM_LABELS.map((label) => labels?.[label]).find(Boolean);
 
 // The item whose notes the archive may acknowledge; "drop" when it acknowledges nothing, "wait" when it can't tell yet.
-export function archivedItem(event: ArchiveEvent, found: FoundSession): { itemKey: string } | "drop" | "wait" {
+function archivedItem(event: ArchiveEvent, found: FoundSession): { itemKey: string } | "drop" | "wait" {
   if (event.parentAgentId) return "drop";
   if (!found) return "wait";
   if (found.labels?.[PARENT_AGENT_LABEL]) return "drop";
@@ -43,7 +43,7 @@ export function archivedItem(event: ArchiveEvent, found: FoundSession): { itemKe
 
 // Whether an open session Attention Span started is on any of the keys, which are compared ignoring case. The archived
 // session itself counts too: if it's listed open, it was restored while this was being decided.
-export function stillOpen(keys: string[], open: Pick<ListedAgent, "labels" | "archivedAt">[]): boolean {
+function stillOpen(keys: string[], open: Pick<ListedAgent, "labels" | "archivedAt">[]): boolean {
   const wanted = new Set(keys.map((key) => key.toLowerCase()));
   return open.some((agent) => {
     if (agent.archivedAt) return false;
@@ -71,7 +71,7 @@ async function findSession(paseo: Paseo, agentId: string): Promise<FoundSession>
   return (await listAll(paseo, { filter: { includeArchived: true } })).find((agent) => agent.id === agentId) ?? null;
 }
 
-export interface ArchiveDeps {
+interface ArchiveDeps {
   groupKeysOf(itemKey: string): string[];
   acknowledge(keys: string[], upTo: string): Promise<unknown>;
 }

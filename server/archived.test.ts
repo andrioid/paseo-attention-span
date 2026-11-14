@@ -1,6 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { describe, expect, it } from "vitest";
-import { ArchivedInPaseo, archivedItem, type ArchiveEvent, stillOpen } from "./archived";
+import { ArchivedInPaseo, type ArchiveEvent } from "./archived";
 
 type Paseo = PluginHandlerContext["paseo"];
 
@@ -48,29 +48,37 @@ function watcher(groups: Record<string, string[]> = {}) {
   return { archived, acknowledged };
 }
 
-describe("the item of a session archived in Paseo", () => {
-  it("ATT-22: a session Attention Span started, under any of its names, gives its item", () => {
-    expect(archivedItem(event(), { labels: labelled("acme/shop#1"), archivedAt: AT })).toEqual({ itemKey: "acme/shop#1" });
-    expect(archivedItem(event(), { labels: labelled("acme/shop#1", "github-inbox"), archivedAt: AT })).toEqual({ itemKey: "acme/shop#1" });
+describe("which archives acknowledge", () => {
+  // Whether archiving session "a", as Paseo has it now, acknowledges its group's notes, with these other sessions about.
+  async function acknowledges(session: Omit<FakeAgent, "id">, others: FakeAgent[] = []) {
+    const { archived, acknowledged } = watcher({ "acme/shop#1": ["acme/shop#1", "acme/shop#2"] });
+    await archived.notice(paseoFor([{ id: "a", ...session }, ...others]), event());
+    return acknowledged.length > 0;
+  }
+
+  it.each([
+    ["a session Attention Span started", labelled("acme/shop#1"), AT, true],
+    ["one started under the plugin's old name", labelled("acme/shop#1", "github-inbox"), AT, true],
+    ["a sub-agent", { ...labelled("acme/shop#1"), "paseo.parent-agent-id": "p" }, AT, false],
+    ["a session without an item", {}, AT, false],
+    ["a restored session", labelled("acme/shop#1"), null, false],
+    ["a session archived again since", labelled("acme/shop#1"), "2026-11-14T13:00:00.000Z", false],
+  ])("ATT-22: %s acknowledges: %s", async (_, labels, archivedAt, expected) => {
+    expect(await acknowledges({ labels, archivedAt })).toBe(expected);
   });
 
-  it("ATT-22: sub-agents, unlabelled sessions and restored ones acknowledge nothing", () => {
-    expect(archivedItem(event({ parentAgentId: "p" }), { labels: labelled("acme/shop#1"), archivedAt: AT })).toBe("drop");
-    expect(archivedItem(event(), { labels: { ...labelled("acme/shop#1"), "paseo.parent-agent-id": "p" }, archivedAt: AT })).toBe("drop");
-    expect(archivedItem(event(), { labels: {}, archivedAt: AT })).toBe("drop");
-    expect(archivedItem(event(), { labels: labelled("acme/shop#1"), archivedAt: null })).toBe("drop");
-    expect(archivedItem(event(), { labels: labelled("acme/shop#1"), archivedAt: "2026-11-14T13:00:00.000Z" })).toBe("drop");
+  it("ATT-22: another open session on any key of the group holds it back, ignoring case; archived ones and other work don't", async () => {
+    const session = { labels: labelled("acme/shop#1"), archivedAt: AT };
+    expect(await acknowledges(session, [{ id: "b", labels: labelled("Acme/Shop#2"), archivedAt: null }])).toBe(false);
+    expect(await acknowledges(session, [{ id: "b", labels: labelled("acme/shop#2"), archivedAt: AT }])).toBe(true);
+    expect(await acknowledges(session, [{ id: "b", labels: labelled("acme/other#9"), archivedAt: null }])).toBe(true);
   });
 
-  it("ATT-22: a session Paseo can't find yet waits", () => {
-    expect(archivedItem(event(), null)).toBe("wait");
-  });
-
-  it("ATT-22: another open session on any key holds it back, ignoring case", () => {
-    const open = [{ labels: labelled("Acme/Shop#2"), archivedAt: null }];
-    expect(stillOpen(["acme/shop#1", "acme/shop#2"], open)).toBe(true);
-    expect(stillOpen(["acme/shop#1"], open)).toBe(false);
-    expect(stillOpen(["acme/shop#2"], [{ labels: labelled("acme/shop#2"), archivedAt: AT }])).toBe(false);
+  it("ATT-22: a session Paseo can't find yet waits", async () => {
+    const { archived, acknowledged } = watcher();
+    await archived.notice(paseoFor([]), event());
+    expect(acknowledged).toEqual([]);
+    expect(archived.waiting).toBe(1);
   });
 });
 

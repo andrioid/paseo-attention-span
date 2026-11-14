@@ -100,7 +100,7 @@ export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean 
 // Waiting by who it waits on, so I know whom to nudge: whoever blocks the most first, ties by the longest wait, then bots, who
 // can't be nudged, and last the work no person holds up. Each one's work oldest first; the screen lifts work with an active
 // session. My PRs in Doing that wait on whom I asked are here too, so nudging them is one list [WAI-01, WAI-03, PRS-15].
-export function waitingGroups(items: Item[]): WaitingGroup[] {
+function waitingGroups(items: Item[]): WaitingGroup[] {
   const oldest = (list: Item[]) => list.map((item) => item.wait?.since ?? "").sort()[0] ?? "";
   const people = new Map<string, WaitingGroup>();
   const nobody: Item[] = [];

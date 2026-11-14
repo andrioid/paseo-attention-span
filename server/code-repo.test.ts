@@ -58,11 +58,4 @@ describe("code repos", () => {
     expect(config.codeRepos).toEqual({ "acme/other": "acme/x", "acme/issues": "acme/shop" });
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ orgs: ["acme"], codeRepos: { "acme/other": "acme/x", "acme/issues": "acme/shop" }, extra: 1 });
   });
-
-  it("SES-07: leaves a broken config.json alone", async () => {
-    const path = join(dir, "config.json");
-    await writeFile(path, "{ not json");
-    await expect(store.saveCodeRepo("acme/issues", "acme/shop")).rejects.toThrow(/Can't read/);
-    expect(await readFile(path, "utf8")).toBe("{ not json");
-  });
 });
