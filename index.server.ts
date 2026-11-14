@@ -24,7 +24,7 @@ import { realPort } from "./server/port";
 import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
 import { createStore, DIR, OLD_DIR } from "./server/store";
-import { UpdateCheck } from "./server/update";
+import { fixtureUpdates, paseoUpdates, UpdateCheck } from "./server/update";
 import type { Chip } from "./shared/attention";
 import { readyProviders } from "./shared/providers";
 import * as rpc from "./shared/rpc";
@@ -34,7 +34,7 @@ export default function contribute(server: PluginServerContext) {
   const store = createStore(DIR, OLD_DIR);
   const attention = new AttentionService(FIXTURE ? fixturePort(store, DIR) : realPort(store));
   const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext };
-  const updates = new UpdateCheck();
+  const updates = new UpdateCheck(FIXTURE ? fixtureUpdates : paseoUpdates);
   const archived = new ArchivedInPaseo({ groupKeysOf: (itemKey) => attention.groupKeysOf(itemKey), acknowledge: (keys, upTo) => attention.acknowledge(keys, upTo) });
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
