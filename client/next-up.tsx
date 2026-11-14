@@ -6,16 +6,14 @@ import { ago } from "../shared/format";
 import {
   type AgentSummary,
   type Chip,
-  type GithubColor,
   type IssueCloseReason,
   matchSessions,
   type NextUpIssue,
   type ProjectInfo,
-  projectFilterId,
-  projectFilterIds,
   type UnclaimedSource,
 } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
+import { CLEAR_FILTER, type FilterChange, type FilterGroup, type FilterKind, type FilterOption, nextUpFilter } from "../shared/next-up-filter";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./attention-screen";
 import { CardList, CardRow, type Tone } from "./card";
@@ -59,59 +57,17 @@ interface Props {
   onOpenAgent: (agentId: string) => void;
 }
 
-type FilterChange = { scopes?: string[]; sources?: string[]; projectFilter?: string[] };
-
 type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
 export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, ...rowProps }: Props) {
   const styles = useStyles();
-  const scopes = useMemo(() => [...new Set(unclaimed.map((issue) => issue.scope).filter((scope): scope is string => !!scope))].sort(), [unclaimed]);
-  // Filter by the scopes I picked last time [NXT-03]; a picked scope with no issues left is ignored.
-  const active = selected.filter((scope) => scopes.includes(scope));
-  // And by source, when there's more than one [NXT-09]; a picked source no longer in settings is ignored.
-  const activeSources = sources.length > 1 ? selectedSources.filter((id) => sources.some((source) => source.id === id)) : [];
-  // And by project and status [NXT-03, NXT-12]; a picked status no longer offered is ignored.
-  const tree = useMemo(() => projectTree(unclaimed, projects), [unclaimed, projects]);
-  const leaves = tree.flatMap((node) => node.children.map((child) => child.id));
-  const activeProjects = selectedProjects.filter((id) => leaves.includes(id));
-  const shown = unclaimed.filter(
-    (issue) =>
-      (active.length === 0 || (issue.scope && active.includes(issue.scope))) &&
-      (activeSources.length === 0 || issue.sources.some((id) => activeSources.includes(id))) &&
-      (activeProjects.length === 0 || projectFilterIds(issue).some((id) => activeProjects.includes(id))),
+  const filter = useMemo(
+    () => nextUpFilter({ unclaimed, selected, sources, selectedSources, projects, selectedProjects }),
+    [unclaimed, selected, sources, selectedSources, projects, selectedProjects],
   );
-  const flip = (list: string[], id: string) => (list.includes(id) ? list.filter((other) => other !== id) : [...list, id]);
-  const toggle = (scope: string) => onFilter({ scopes: flip(active, scope) });
-  const toggleSource = (id: string) => onFilter({ sources: flip(activeSources, id) });
-  // A project ticks or clears all its statuses at once; partly ticked, it clears them.
-  const toggleProject = (id: string) => {
-    const children = tree.find((node) => node.id === id)?.children.map((child) => child.id);
-    if (!children) return onFilter({ projectFilter: flip(activeProjects, id) });
-    const any = children.some((child) => activeProjects.includes(child));
-    onFilter({ projectFilter: any ? activeProjects.filter((other) => !children.includes(other)) : [...activeProjects, ...children] });
-  };
-  const narrowedBy = [activeSources.length ? "sources" : null, activeProjects.length ? "projects" : null, active.length ? "scopes" : null].filter(Boolean);
+  const { shown, picked, groups } = filter;
   const [filtering, setFiltering] = useState(false);
-  // A project ticked whole counts once.
-  const projectsPicked = tree.reduce((sum, node) => {
-    const on = node.children.filter((child) => activeProjects.includes(child.id)).length;
-    return sum + (on === node.children.length ? 1 : on);
-  }, 0);
-  const picked = active.length + activeSources.length + projectsPicked;
-  const projectOptions: FilterOption[] = tree.flatMap((node) => {
-    if (node.children.length === 1 && node.children[0].id === node.id) return [{ id: node.id, label: node.title }];
-    const on = node.children.filter((child) => activeProjects.includes(child.id)).length;
-    return [
-      { id: node.id, label: node.title, strong: true, state: on === 0 ? "off" : on === node.children.length ? "on" : "partial" },
-      ...node.children.map((child) => ({ ...child, indent: true })),
-    ];
-  });
-  const groups: FilterGroup[] = [
-    ...(sources.length > 1 ? [{ title: "Source", options: sources, active: activeSources, onToggle: toggleSource }] : []),
-    ...(projectOptions.length > 0 ? [{ title: "Project", options: projectOptions, active: activeProjects, onToggle: toggleProject }] : []),
-    ...(scopes.length > 0 ? [{ title: "Scope", options: scopes.map((scope) => ({ id: scope, label: scope })), active, onToggle: toggle }] : []),
-  ];
 
   // Both point at where Next up looks: plainly when it has nowhere to look, quietly when it found nothing [NXT-13].
   if (calm === "setup") {
@@ -151,14 +107,15 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
         {filtering ? (
           <FilterSheet
             groups={groups}
-            onClear={() => onFilter({ scopes: [], sources: [], projectFilter: [] })}
+            onToggle={(kind, id) => onFilter(filter.toggle(kind, id))}
+            onClear={() => onFilter(CLEAR_FILTER)}
             onClose={() => setFiltering(false)}
           />
         ) : null}
         {unclaimedFrom === "none" ? (
           <Text style={styles.text}>No repos to look in. Register a project in Paseo, or choose where Next up looks in Settings.</Text>
         ) : shown.length === 0 ? (
-          <Text style={styles.text}>No unclaimed issues{narrowedBy.length ? ` in these ${narrowedBy.join(" and ")}` : ""}.</Text>
+          <Text style={styles.text}>{filter.empty}</Text>
         ) : (
           <IssueList issues={shown} claim {...rowProps} />
         )}
@@ -167,40 +124,9 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
   );
 }
 
-// A project in the filter with its statuses under it, all of them in the board's order, dimmed where no unclaimed issue has
-// one; "No status" where some issue on it has none, and "No project" last, where some issue is on none [NXT-03, NXT-12].
-// Only projects the unclaimed issues are on; none at all when projects can't be read.
-interface ProjectNode {
-  id: string;
-  title: string;
-  children: FilterOption[];
-}
-
-function projectTree(unclaimed: NextUpIssue[], projects: ProjectInfo[]): ProjectNode[] {
-  if (!unclaimed.some((issue) => issue.projects)) return [];
-  const on = (project: ProjectInfo) => unclaimed.flatMap((issue) => (issue.projects ?? []).filter((p) => p.id === project.id));
-  const nodes: ProjectNode[] = projects.flatMap((project) => {
-    const items = on(project);
-    if (items.length === 0) return [];
-    const statuses = project.statuses.map((status) => ({
-      id: projectFilterId(project, status.name),
-      label: status.name,
-      color: status.color,
-      dim: !items.some((item) => item.status === status.name),
-    }));
-    // A status the board no longer offers still filters, after the board's own.
-    const gone = [...new Set(items.map((item) => item.status).filter((name): name is string => !!name && !project.statuses.some((s) => s.name === name)))];
-    const none = items.some((item) => !item.status) ? [{ id: projectFilterId(project, null), label: "No status" }] : [];
-    return [{ id: project.id, title: project.title, children: [...statuses, ...gone.map((name) => ({ id: projectFilterId(project, name), label: name })), ...none] }];
-  });
-  const loose = unclaimed.some((issue) => issue.projects && issue.projects.length === 0);
-  const noProject = projectFilterId(null);
-  return loose ? [...nodes, { id: noProject, title: "No project", children: [{ id: noProject, label: "No project" }] }] : nodes;
-}
-
 // Source, project and scope filters behind one button, so they take no room above the list [NXT-03, NXT-09].
 // Ticks apply right away; a bottom sheet on phones, a dialog on desktop.
-function FilterSheet({ groups, onClear, onClose }: { groups: FilterGroup[]; onClear: () => void; onClose: () => void }) {
+function FilterSheet({ groups, onToggle, onClear, onClose }: { groups: FilterGroup[]; onToggle: (kind: FilterKind, id: string) => void; onClear: () => void; onClose: () => void }) {
   const styles = useStyles();
   const any = groups.some((group) => group.active.length > 0);
   return (
@@ -217,7 +143,7 @@ function FilterSheet({ groups, onClear, onClose }: { groups: FilterGroup[]; onCl
                     option={option}
                     state={option.state ?? (group.active.includes(option.id) ? "on" : "off")}
                     first={index === 0}
-                    onPress={() => group.onToggle(option.id)}
+                    onPress={() => onToggle(group.kind, option.id)}
                   />
                 ))}
               </View>
@@ -231,26 +157,6 @@ function FilterSheet({ groups, onClear, onClose }: { groups: FilterGroup[]; onCl
       </Modal.Content>
     </Modal>
   );
-}
-
-interface FilterGroup {
-  title: string;
-  options: FilterOption[];
-  active: string[];
-  onToggle: (id: string) => void;
-}
-
-interface FilterOption {
-  id: string;
-  label: string;
-  // A project's statuses sit under it, each with its board color.
-  indent?: boolean;
-  color?: GithubColor;
-  // A status no unclaimed issue has right now.
-  dim?: boolean;
-  // A project, ticked as a whole, partly, or not, by its statuses.
-  strong?: boolean;
-  state?: "on" | "partial" | "off";
 }
 
 function FilterRow({ option, state, first, onPress }: { option: FilterOption; state: "on" | "partial" | "off"; first: boolean; onPress: () => void }) {

@@ -1,6 +1,6 @@
 // Made-up domain objects for tests: the shapes the server hands the screen, with defaults that don't matter to a test.
 // GitHub's own shapes, as searches return them, are built by `builders` in server/fixture.ts.
-import type { AgentSummary, FeedStatus, Item } from "./attention";
+import type { AgentSummary, FeedStatus, Item, NextUpIssue } from "./attention";
 import type { OthersChange } from "./changes";
 import { AttentionConfig } from "./config";
 
@@ -30,6 +30,12 @@ export function item(key: string, section: Item["section"], fields: Partial<Item
     othersActivityAt: "2026-10-01T00:00:00Z",
     ...fields,
   };
+}
+
+// A Next up issue keyed "owner/repo#number", found by no source of its own, on no known project, unless `fields` says otherwise.
+export function issue(key: string, fields: Partial<NextUpIssue> = {}): NextUpIssue {
+  const [repo, number] = [key.split("#")[0], Number(key.split("#")[1])];
+  return { key, repo, number, title: key, url: `https://github.com/${repo}/issues/${number}`, createdAt: "2026-10-01T00:00:00Z", sources: [], openPrs: [], ...fields };
 }
 
 // A Paseo session on an item, idle and seen, unless `fields` says otherwise.
