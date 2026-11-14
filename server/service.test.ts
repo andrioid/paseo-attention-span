@@ -1,0 +1,288 @@
+import { describe, expect, it, vi } from "vitest";
+import type { AttentionView } from "../shared/attention";
+import { AttentionConfig } from "../shared/config";
+import type { GitHub, ProbeResult } from "./fetch";
+import { fixture, REPO } from "./fixture";
+import type { Port } from "./port";
+import { AttentionService } from "./service";
+import { State, type Store } from "./store";
+
+const START = Date.parse("2026-11-14T12:00:00Z");
+const MINUTE = 60_000;
+const KEY = `${REPO}#101`; // a PR of mine in Doing
+
+// Lets a test hold a request open, and say when it answers.
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => ((resolve = yes), (reject = no)));
+  return { promise, resolve, reject };
+}
+
+// Lets every promise that can settle, settle.
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));
+};
+
+// The service on a made-up GitHub (server/fixture.ts), with a clock that moves only when told and saves kept in order.
+function harness(config: Record<string, unknown> = {}) {
+  let now = START;
+  let timers: { at: number; run: () => void }[] = [];
+  const saved: State[] = [];
+  const probe = (): ProbeResult => ({ data: { viewer: { projectsV2: { nodes: [] } } }, errors: [], failures: [] });
+  const github = {
+    login: vi.fn<GitHub["login"]>(async () => "me"),
+    probeProjects: vi.fn<GitHub["probeProjects"]>(async () => probe()),
+    live: vi.fn<GitHub["live"]>(async (_config, at) => fixture(at)),
+    changes: vi.fn<GitHub["changes"]>(async (ledger) => ledger),
+    history: vi.fn<GitHub["history"]>(async (_config, at) => fixture(at).data),
+    issueFields: vi.fn<GitHub["issueFields"]>(async () => []),
+  } satisfies GitHub;
+  const store = {
+    moveOldFiles: async () => {},
+    loadConfig: async () => AttentionConfig.parse(config),
+    loadState: async () => State.parse({}),
+    saveState: vi.fn(async (state: State) => void saved.push(structuredClone(state))),
+  } as Partial<Store> as Store;
+  const port: Port = {
+    github,
+    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true }) },
+    store,
+    now: () => now,
+    setTimer: (run, ms) => {
+      const timer = { at: now + ms, run };
+      timers.push(timer);
+      return () => void (timers = timers.filter((other) => other !== timer));
+    },
+  };
+  const service = new AttentionService(port);
+  return {
+    service,
+    github,
+    store,
+    saved,
+    // Moves the clock on, running the timers due on the way.
+    async advance(ms: number) {
+      const until = now + ms;
+      for (;;) {
+        const next = timers.filter((timer) => timer.at <= until).sort((a, b) => a.at - b.at)[0];
+        if (!next) break;
+        timers = timers.filter((timer) => timer !== next);
+        now = next.at;
+        next.run();
+        await settle();
+      }
+      now = until;
+    },
+    // Moves the clock on without running any timer, as if the app asked between them.
+    jump(ms: number) {
+      now += ms;
+    },
+    async start() {
+      await service.start();
+      await settle();
+    },
+  };
+}
+
+const chipsOf = (view: AttentionView, key: string) =>
+  view.doing
+    .flatMap((section) => section.items)
+    .find((item) => item.key === key)
+    ?.chips.map((chip) => chip.text);
+
+describe("refreshes", () => {
+  it("FRESH-01, GH-01: callers asking at once share one refresh per feed", async () => {
+    const { service, github, start } = harness();
+    await start();
+    expect([github.live.mock.calls.length, github.history.mock.calls.length]).toEqual([1, 1]);
+    const held = deferred<Awaited<ReturnType<GitHub["live"]>>>();
+    github.live.mockImplementationOnce(() => held.promise);
+    const views = Promise.all([service.get("live"), service.get("live"), service.refresh("live")]);
+    await settle();
+    held.resolve(fixture(new Date(START)));
+    await views;
+    expect(github.live).toHaveBeenCalledTimes(2);
+  });
+
+  it("FRESH-02: a fresh refresh waits for the one under way and starts after it, once for every caller", async () => {
+    const { service, github, start, jump } = harness();
+    await start();
+    const held = deferred<Awaited<ReturnType<GitHub["live"]>>>();
+    github.live.mockImplementationOnce(() => held.promise);
+    const running = service.refresh("live");
+    await settle();
+    jump(MINUTE);
+    const fresh = Promise.all([service.refresh("live", true), service.refresh("live", true)]);
+    await settle();
+    expect(github.live).toHaveBeenCalledTimes(2);
+    held.resolve(fixture(new Date(START)));
+    await Promise.all([running, fresh]);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    expect(github.live.mock.calls[2]![1].getTime()).toBe(START + MINUTE);
+  });
+
+  it("FRESH-01: the live feed refreshes every refreshMinutes, and asking in between answers from the cache", async () => {
+    const { service, github, start, advance } = harness({ refreshMinutes: 10 });
+    await start();
+    await advance(9 * MINUTE);
+    await service.get();
+    expect(github.live).toHaveBeenCalledTimes(1);
+    await advance(MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await service.get();
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    // History is fetched daily, not with every live refresh.
+    expect(github.history).toHaveBeenCalledTimes(1);
+  });
+
+  it("FRESH-01, GH-01: a failed refresh is retried at most every 5 minutes, except on ⟳", async () => {
+    const { service, github, start, jump } = harness();
+    github.live.mockRejectedValueOnce(new Error("GitHub is down"));
+    await start();
+    expect((await service.get()).feeds.live.error).toBe("GitHub is down");
+    jump(4 * MINUTE);
+    await service.get();
+    expect(github.live).toHaveBeenCalledTimes(1);
+    jump(MINUTE);
+    const view = await service.get();
+    expect(github.live).toHaveBeenCalledTimes(2);
+    expect(view.feeds.live).toMatchObject({ error: null, fetchedAt: new Date(START + 5 * MINUTE).toISOString() });
+    github.live.mockRejectedValueOnce(new Error("again"));
+    jump(15 * MINUTE);
+    await service.get();
+    await service.get("live");
+    expect(github.live).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("what I just did", () => {
+  const updating = { kind: "chip", chip: { text: "updating", tone: "neutral" } } as const;
+
+  it("FRESH-02: an action's effect shows until a fetch begun after GitHub caught up, which follows by itself", async () => {
+    const { service, github, start, advance, jump } = harness();
+    await start();
+    jump(1000);
+    const work = vi.fn(async () => {});
+    const after = await service.act(KEY, work, updating);
+    expect(work).toHaveBeenCalled();
+    expect([after.pending, chipsOf(after, KEY)]).toEqual([1, expect.arrayContaining(["updating"])]);
+    // A refresh begun within the 30 s GitHub's search takes can't show it yet.
+    jump(10_000);
+    expect((await service.get("live")).pending).toBe(1);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await advance(20_000);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    const view = await service.get(undefined, true);
+    expect([view.pending, chipsOf(view, KEY)]).toEqual([0, expect.not.arrayContaining(["updating"])]);
+  });
+
+  it("FRESH-02: while fetches keep failing, an effect stops showing after ten minutes", async () => {
+    const { service, github, start, jump } = harness();
+    await start();
+    github.live.mockRejectedValue(new Error("down"));
+    await service.act(KEY, async () => {}, updating);
+    jump(10 * MINUTE - 1);
+    expect((await service.get(undefined, true)).pending).toBe(1);
+    jump(1);
+    expect((await service.get(undefined, true)).pending).toBe(0);
+  });
+
+  it("FRESH-02, GH-01: actions in a row get one follow-up, after the last; a merge also brings History", async () => {
+    const { service, github, start, advance } = harness();
+    await start();
+    await service.act(KEY, async () => {}, updating);
+    await advance(20_000);
+    await service.act(KEY, async () => {}, { kind: "finished" });
+    await advance(29_000);
+    expect([github.live.mock.calls.length, github.history.mock.calls.length]).toEqual([1, 1]);
+    await advance(1000);
+    expect([github.live.mock.calls.length, github.history.mock.calls.length]).toEqual([2, 2]);
+    // Merged into History as it will be fetched, until it is.
+    expect((await service.get(undefined, true)).pending).toBe(0);
+  });
+
+  it("FRESH-02: a failed action changes nothing and follows up with nothing", async () => {
+    const { service, github, start, advance } = harness();
+    await start();
+    await expect(service.act(KEY, () => Promise.reject(new Error("no")), updating)).rejects.toThrow("no");
+    await advance(MINUTE);
+    expect([github.live.mock.calls.length, (await service.get(undefined, true)).pending]).toEqual([1, 0]);
+  });
+});
+
+describe("saving", () => {
+  it("ATT-08: saves go one at a time, so an older snapshot never lands last, even after Undo", async () => {
+    const { service, store, saved, start } = harness();
+    await start();
+    const before = saved.length;
+    const held = deferred();
+    vi.mocked(store.saveState).mockImplementationOnce(async (state) => {
+      saved.push(structuredClone(state));
+      await held.promise;
+    });
+    const dismissing = service.dismiss(KEY);
+    await settle();
+    const undoing = service.undismiss(KEY);
+    await settle();
+    expect(saved.length).toBe(before + 1);
+    expect(saved.at(-1)!.dismissed[KEY]).toBeDefined();
+    held.resolve();
+    await Promise.all([dismissing, undoing]);
+    expect(saved.length).toBe(before + 2);
+    expect(saved.at(-1)!.dismissed).toEqual({});
+  });
+
+  it("ATT-08: a failed save doesn't stop the next one", async () => {
+    const { service, store, saved, start } = harness();
+    await start();
+    vi.mocked(store.saveState).mockRejectedValueOnce(new Error("disk full"));
+    await expect(service.dismiss(KEY)).rejects.toThrow("disk full");
+    await service.setScopes(["Backend"]);
+    expect(saved.at(-1)!).toMatchObject({ scopes: ["Backend"], dismissed: { [KEY]: expect.anything() } });
+  });
+});
+
+describe("projects", () => {
+  it("NXT-12, GH-01: whether projects can be read is asked at most hourly, or when Settings asks, and shared", async () => {
+    const { service, github, start, jump } = harness();
+    await start();
+    expect(github.probeProjects).toHaveBeenCalledTimes(1);
+    expect(github.live.mock.calls[0]![3].on).toBe(true);
+    expect(await service.projectsAccess()).toMatchObject({ state: "on" });
+    jump(59 * MINUTE);
+    await service.get("live");
+    expect(github.probeProjects).toHaveBeenCalledTimes(1);
+    jump(MINUTE);
+    await service.get("live");
+    expect(github.probeProjects).toHaveBeenCalledTimes(2);
+    await Promise.all([service.projectsAccess(true), service.projectsAccess(true)]);
+    expect(github.probeProjects).toHaveBeenCalledTimes(3);
+  });
+
+  it("NXT-12: a probe that fails counts toward the hour, so an outage doesn't add one to every refresh", async () => {
+    const { service, github, start, jump } = harness();
+    github.probeProjects.mockResolvedValueOnce(new Error("timeout"));
+    await start();
+    expect(github.live.mock.calls[0]![3].on).toBe(false);
+    jump(30 * MINUTE);
+    await service.get("live");
+    expect(github.probeProjects).toHaveBeenCalledTimes(1);
+    expect((await service.projectsAccess()).state).toBe("failed");
+  });
+
+  it("NXT-12: a search that had to go without projects turns them off until the next probe, and Settings says why", async () => {
+    const { service, github, start } = harness();
+    github.live.mockImplementationOnce(async (_config, at, _unclaimed, projects) => {
+      projects.problems.push("missing read:project");
+      projects.failed("missing read:project");
+      return fixture(at);
+    });
+    await start();
+    expect(await service.projectsAccess()).toMatchObject({ state: "missing", warning: "missing read:project" });
+    await service.get("live");
+    expect(github.live.mock.calls[1]![3].on).toBe(false);
+  });
+});
