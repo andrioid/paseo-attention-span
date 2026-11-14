@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type AgentSummary, isIdle, type Item, type Section, type WrapItem } from "./attention";
 import { agent, item as base, change, clock } from "./test-builders";
-import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, unreadChanges, unsavedText, wrapItems } from "./wrap-up";
+import { cleanSingle, doingCount, rememberGroups, unreadChanges, wrapItems } from "./wrap-up";
 
 const { now, hoursAgo } = clock(new Date("2026-11-13T12:00:00Z"));
 const item = (key: string, section: Item["section"], hours: number, children: Item["children"] = []) =>
@@ -83,25 +83,13 @@ describe("Wrap up membership", () => {
   });
 });
 
-describe("unsaved work", () => {
-  it("ATT-22: clean, dirty and unknown worktrees read as they are", () => {
-    expect(sessionCleanliness(session("a", "x"))).toBe("clean");
-    expect(sessionCleanliness(session("a", "x", { workspace: { kind: "worktree", name: "wt", dirty: true, ahead: 0 } }))).toBe("dirty");
-    expect(sessionCleanliness(session("a", "x", { workspace: { kind: "worktree", name: "wt", dirty: true, ahead: 2 } }))).toBe("dirty");
-    expect(sessionCleanliness(session("a", "x", { workspace: { kind: "worktree", name: "wt" } }))).toBe("unknown");
-    expect(sessionCleanliness(session("a", "x", { workspace: undefined }))).toBe("unknown");
-    expect(unsavedText(session("a", "x", { workspace: { kind: "worktree", name: "wt", dirty: true, ahead: 1, branch: "split-invoice-pdf" } }))).toBe(
-      "uncommitted changes and 1 unpushed commit on split-invoice-pdf",
-    );
-    expect(unsavedText(session("a", "x", { workspace: undefined }))).toBe("Couldn't check for unsaved changes");
-  });
-
-  it("ATT-22: only one clean session makes a row ready for Archive all clean", () => {
+describe("Archive all clean", () => {
+  it("ATT-22: takes a row only with one session that's clean by Paseo's reading", () => {
     expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1")]))).toBe(true);
     expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1"), session("b", "acme/shop#1")]))).toBe(false);
-    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { kind: "worktree", name: "wt", dirty: true, ahead: 0 } })]))).toBe(false);
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { ...clean, dirty: true } })]))).toBe(false);
     // Paseo saying nothing about commits ahead isn't clean.
-    expect(sessionCleanliness(session("a", "x", { workspace: { kind: "worktree", name: "wt", dirty: false } }))).toBe("unknown");
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { kind: "worktree", name: "wt", dirty: false } })]))).toBe(false);
   });
 });
 

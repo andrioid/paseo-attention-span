@@ -1,4 +1,5 @@
-import { type AgentSummary, type AttentionView, isIdle, type Item, matchSessions, memberKeys, type RememberedGroups, type SessionWorkspace, type WrapItem } from "./attention";
+import { type AgentSummary, type AttentionView, isIdle, type Item, matchSessions, memberKeys, type RememberedGroups, type WrapItem } from "./attention";
+import { type UnsavedSession, unsavedOf } from "./archive";
 import { ago } from "./format";
 import { changeText } from "./changes";
 import { keySet } from "./names";
@@ -9,27 +10,16 @@ import { keySet } from "./names";
 
 export type SessionCleanliness = "clean" | "dirty" | "unknown";
 
-// What archiving would lose in a session's worktree, from Paseo's snapshot: clean only when it says both that nothing is
-// uncommitted and that nothing is ahead. The server asks git again before archiving [ATT-22].
-export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
+// What archiving a session would lose, from Paseo's reading of its worktree; the server asks git again before archiving.
+// Previews count the files [ATT-22].
+export function sessionUnsaved(agent: AgentSummary): UnsavedSession | null {
   const workspace = agent.workspace;
-  if (!workspace) return "unknown";
-  if (workspace.dirty === true || (workspace.ahead ?? 0) > 0) return "dirty";
-  if (workspace.dirty === false && workspace.ahead === 0) return "clean";
-  return "unknown";
+  return unsavedOf({ agentId: agent.id, title: agent.title }, workspace && { ...workspace, files: workspace.dirtyFiles });
 }
 
-// "uncommitted changes and 1 unpushed commit on branch": what the multi-session sheet says about a session, from Paseo's
-// snapshot, which doesn't count files.
-export function unsavedText(agent: AgentSummary): string {
-  const workspace: SessionWorkspace | undefined = agent.workspace;
-  if (sessionCleanliness(agent) === "unknown") return "Couldn't check for unsaved changes";
-  const parts: string[] = [];
-  if (workspace?.dirty) parts.push("uncommitted changes");
-  const ahead = workspace?.ahead ?? 0;
-  if (ahead > 0) parts.push(`${ahead} unpushed commit${ahead === 1 ? "" : "s"}`);
-  const what = parts.join(" and ") || "unsaved changes";
-  return workspace?.branch ? `${what} on ${workspace.branch}` : what;
+export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
+  const unsaved = sessionUnsaved(agent);
+  return !unsaved ? "clean" : unsaved.unknown ? "unknown" : "dirty";
 }
 
 // A row with one session, clean: Archive session archives it at once, whatever happened on GitHub [ATT-22].

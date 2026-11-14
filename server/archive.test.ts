@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { archiveSessions, type ArchiveSession, gitUnsaved, unsaved } from "./archive";
+import { archiveSessions, type ArchiveSession, gitUnsaved } from "./archive";
 
 type Paseo = PluginHandlerContext["paseo"];
 
@@ -80,15 +80,6 @@ describe("what git says archiving would lose", () => {
 
   it("ATT-22: a directory git can't read is unknown, never clean", async () => {
     expect(await gitUnsaved(session(), join(root, "missing"))).toMatchObject({ unknown: true });
-  });
-});
-
-describe("what Paseo's snapshot says, without a directory", () => {
-  it("ATT-22: clean needs both answers; either one unknown is unknown", () => {
-    expect(unsaved(session())).toBeNull();
-    expect(unsaved(session({ dirty: true, ahead: 1 }))).toMatchObject({ commits: 1 });
-    expect(unsaved(session({ dirty: false, ahead: null }))).toMatchObject({ unknown: true });
-    expect(unsaved(session({ dirty: null, ahead: 0 }))).toMatchObject({ unknown: true });
   });
 });
 
