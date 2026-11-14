@@ -28,7 +28,7 @@ export function cleanSingle(item: WrapItem): boolean {
 }
 
 // What finishing looked like, in the same words the cards use [HIS-05, HIS-07].
-function finishText(item: Item, now: Date): string {
+export function finishText(item: Item, now: Date): string {
   if (item.change) return changeText(item.change, now);
   const at = item.closedAt ?? item.othersActivityAt;
   const age = `${ago(at, now)} ago`;

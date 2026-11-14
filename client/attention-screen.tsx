@@ -4,10 +4,9 @@ import { Markdown, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn, type WrapItem } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, type NextUpIssue, type PersonRole, type Reviewer, type Section, type SectionId, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn, type WrapItem } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
-import { changeText } from "../shared/changes";
 import { ago, linkList } from "../shared/format";
 import { historyClear, isClear, nextUpClear, waitingClear } from "../shared/still";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
@@ -25,7 +24,7 @@ import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsK
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { AGENTS_QUERY_KEY, branchWorkspaces, type FetchProviders, findCheckout, githubProjects, listProfiles, noProjectMessage, resolveAgentConfig, startSession, useItemAgents } from "./sessions";
 import { ALL_NOTES, ALL_WRAP, noteBusy } from "../shared/got-it";
-import { cleanSingle, doingCount, unreadChanges, wrapItems } from "../shared/wrap-up";
+import { cleanSingle, unreadChanges, wrapItems } from "../shared/wrap-up";
 import { type ArchiveOutcome, archiveTarget } from "../shared/archive";
 import { History } from "./history";
 import { stateMark } from "./mark";
@@ -33,7 +32,7 @@ import { WrapUp } from "./wrap-up";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
 import { Avatar, Button, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
-import { sameName } from "../shared/names";
+import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, targetUrl, waitChips } from "../shared/item-view";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -55,72 +54,14 @@ const ACTION_ICONS: Record<ActionId, IconName> = {
   got_it: "check",
 };
 
-function actionLabel(action: ActionId, item: Item): string {
-  // Review takes the whole stack; Rebase, my PRs in it [ATT-04].
-  const stacked = ownStack(item.target).length > 1;
-  return {
-    reply: "Reply ↗",
-    acknowledge: "Acknowledge",
-    review: (item.target.stack?.length ?? 0) > 1 ? "Review stack" : "Review",
-    fix: "Fix CI",
-    rerun: "Rerun failed jobs",
-    address: "Address comments",
-    update: "Update branch",
-    rebase: stacked ? "Rebase stack" : "Rebase",
-    refresh: "Refresh draft",
-    ready: "Ready for review",
-    request_review: "Request review",
-    automerge: "Auto-merge",
-    merge: "Merge",
-    close: "Close draft",
-    start: "Start",
-    got_it: "Got it",
-  }[action];
-}
-
-// What an action will do, in the sheet, so pressing it makes sense [ATT-06]. Rerun's comes from the fetched checks.
-function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): string {
-  const { target } = item;
-  const pr = `#${target.number}`;
-  const base = target.baseRefName ?? target.defaultBranch ?? "its base";
-  const stacked = ownStack(target).length > 1;
-  const asking = (target.stack ?? []).filter((p) => p.review);
-  const comments = item.person?.comments ?? [];
-  return {
-    reply: item.person ? `Opens ${item.person.login}'s comment on GitHub` : "Opens it on GitHub",
-    acknowledge:
-      comments.length === 1 ? `Reacts to ${comments[0].author}'s comment, which clears it` : `Pick which of the ${comments.length} waiting comments to react to`,
-    review:
-      (target.stack?.length ?? 0) > 1
-        ? `An agent reviews ${asking.map((p) => `#${p.number}`).join(", ") || "the stack"} in a checkout of the stack's top and reports back. Nothing is posted`
-        : "An agent reviews the PR in a checkout and reports back. Nothing is posted",
-    fix: "An agent reads the failing logs and commits a fix, without pushing",
-    address: "An agent works through the unresolved comments and applies the trivial ones, without pushing",
-    update: `GitHub rebases ${pr} onto ${base}`,
-    rebase: `An agent rebases ${stacked ? "the stack" : pr} onto ${base}. It pushes only if there were no conflicts`,
-    refresh: `An agent rebases the draft onto ${base} and says what it still needs`,
-    ready: `Takes ${pr} out of draft, then asks who should review it`,
-    request_review: `Pick people or teams to review ${pr}`,
-    automerge: `GitHub merges ${pr} into ${base} (${target.mergeMethod}) once checks pass`,
-    merge: `Merges ${pr} into ${base} (${target.mergeMethod}) now`,
-    close: `Closes ${pr}. A comment is posted only if you write one`,
-    start: "An agent reads the issue and proposes a plan",
-    got_it: "Clears this note. Nothing changes on GitHub",
-  }[action];
-}
-
 // Rerun failed jobs as a sheet line: which checks failed and whether they were rerun before, flaky or real? [PRS-09]
 // It can be pressed before the checks are in: the sheet closes, and the rerun goes ahead once they are.
 function rerunEntry(label: string, details: SheetDetails | undefined, rerun: (runIds?: number[]) => void): SheetEntry {
   const base = { key: "rerun", icon: ACTION_ICONS.rerun, label, live: true };
-  if (!details || details.isLoading) return { ...base, detail: "Checking which checks failed…", onPress: () => rerun() };
-  const failing = details.data?.failing;
-  if (!failing) return { ...base, detail: "Couldn't find the failing checks", disabled: true, onPress: () => {} };
-  const summary = summarizeRerun(failing);
-  if (summary.failed === 0) return { ...base, detail: "No failed checks on the latest commit", disabled: true, onPress: () => {} };
-  if (summary.runIds.length === 0)
-    return { ...base, detail: `${summary.failed} failed, none in GitHub Actions, so none can be rerun here`, hint: failingList(failing), disabled: true, onPress: () => {} };
-  return { ...base, detailNode: <RerunDetail failing={failing} arrived={!!details.arrived} />, hint: failingList(failing), onPress: () => rerun(summary.runIds) };
+  const line = rerunState(details);
+  if (line.state === "ready") return { ...base, detailNode: <RerunDetail failing={line.failing} arrived={!!details?.arrived} />, hint: failingList(line.failing), onPress: () => rerun(line.runIds) };
+  if (line.state === "checking") return { ...base, detail: line.detail, onPress: () => rerun() };
+  return { ...base, detail: line.detail, ...(line.state === "elsewhere" ? { hint: failingList(line.failing) } : {}), disabled: true, onPress: () => {} };
 }
 
 // What an item's sheet has fetched, as its lines need it; `arrived` once it came in while the sheet was open.
@@ -404,13 +345,7 @@ function AttentionList({
   // ⟳ turns for any refresh of this tab's feed, but only my own press locks it: the cached view can still say a background one runs after it's done.
   const pressed = attention.isRefreshing(TAB_FEED[tab]);
   const refreshing = feed.refreshing || attention.isFetching || pressed;
-  const counts: Record<TabId, number> = {
-    history: view.history.filter((item) => item.section === "done").length,
-    doing: doingCount(view, wrap),
-    // Work waiting on several people counts once.
-    waiting: new Set(view.waiting.flatMap((group) => group.items.map((item) => item.key))).size,
-    next: view.assigned.length + view.unclaimed.length,
-  };
+  const counts = tabCounts(view, wrap);
 
   const actions: Actions = {
     agents: agentsNow,
@@ -749,37 +684,10 @@ interface Actions {
   started: (agentId: string) => Promise<void>;
 }
 
-// A card that works collapsed: its main action and ›. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
-const isRed = (chips: Chip[]) => chips.some((chip) => chip.tone === "bad");
-
 // The sheet, Acknowledge, or the reviewer picker (after Ready for review, or on its own).
 type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | null;
 
-// A session on an item that has no session action of its own starts with this prompt; it's editable first.
-const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
-
-// Why it waits and how long, in Waiting only; Doing says what's mine to do. Once it has waited too long, where nudging is
-// fair, the age itself turns amber with ⌛ and says so in words [WAI-01, ATT-11].
-function waitChips(item: Item, inWaiting: boolean, tooLongDays: number): Chip[] {
-  const { wait } = item;
-  if (!wait || !inWaiting) return [];
-  const age = ago(wait.since);
-  const reason: Chip[] = wait.reason ? [{ text: wait.reason, tone: "neutral" }] : [];
-  if (!wait.tooLong) return [...reason, { text: age, tone: "neutral" }];
-  const since = wait.reason === "question" ? "you asked" : "your last push or reply";
-  const limit = `${tooLongDays} day${tooLongDays === 1 ? "" : "s"}`;
-  return [...reason, { text: age, tone: "warn", icon: "hourglass", hint: `Waited too long: ${age} since ${since}, more than ${limit}` }];
-}
-
-// "Review 2h", "Question 3d": why and how long, to lead a line in a nudge [WAI-03].
-function nudgeLead(item: Item): string | undefined {
-  if (!item.wait) return undefined;
-  const { reason, since } = item.wait;
-  return reason ? `${reason[0].toUpperCase()}${reason.slice(1)} ${ago(since)}` : ago(since);
-}
-
-const samePerson = (a: WaitingOn, b: WaitingOn) => a.team === b.team && sameName(a.login, b.login);
-
+// A card that works collapsed: its main action and ›. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
 // In Waiting, a card sits under one of whom it waits on: its group.
 function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; actions: Actions; group?: WaitingGroup }) {
   const styles = useStyles();
@@ -787,25 +695,19 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const sessions = itemSessions(actions.agents, item);
   const waits = waitChips(item, !!group, actions.config.waitingTooLongDays);
   // The group names one; the card names the rest [WAI-01].
-  const others = group?.who ? (item.waitingOn ?? []).filter((who) => !samePerson(who, group.who!)) : [];
+  const others = alsoWaitingOn(item, group?.who);
   const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded={false} /> : null;
-  const alsoOn = others.length ? <Text style={styles.muted}>also waiting on {others.map((who) => who.login).join(", ")}</Text> : null;
+  const alsoOn = others.length ? <Text style={styles.muted}>also waiting on {others.join(", ")}</Text> : null;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
   const main = item.actions[0];
-  // The full stack is in the sheet; the card shows the PRs that need attention [ATT-04]. Once it shows any, it shows the PR an
-  // issue's actions apply to as well, tinted, and says that PR's facts there rather than in its meta, as the sheet does [ATT-06].
-  const target = targetUrl(item);
-  const needing = item.children.some((child) => child.attention || isRed(child.chips));
-  const children = needing ? item.children.filter((child) => child.attention || isRed(child.chips) || child.url === target) : [];
-  const targetRow = children.find((child) => child.url === target);
+  const { rows: children, target: targetRow } = cardStack(item);
   const shown = [...waits, ...stackMetaChips(item, targetRow)];
   const chips = sessions[0] ? [...shown, agentSignal(sessions[0])] : shown;
   // The sheet opens at once; what it fetches fills in [ATT-06].
   const open = () => setSheet("item");
   const prefetch = usePrefetchOnRest(itemDetailsQuery(item, actions.fetchDetails));
   const copy = useCopy();
-  const history = SECTIONS[item.section].tab === "history";
 
   function perform(action: ActionId) {
     setSheet(null);
@@ -817,9 +719,9 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
     else actions.act(item, action);
   }
   const handlers: SheetHandlers = { onPerform: perform, onClose: () => setSheet(null) };
-  // A sheet with one action is a wasted tap: show that action instead of ›. The card still opens the sheet, quiet lines and all [ATT-06].
-  const loud = sheetEntries(item, sessions, actions, handlers).filter((entry) => !entry.quiet);
-  const only = loud.length === 1 ? loud[0] : undefined;
+  // One action shows instead of ›; the card still opens the sheet, quiet lines and all [ATT-06].
+  const sole = soleStep(sheetPlan(item, sessions));
+  const only = sole && sheetEntry(sole, item, actions, handlers);
   const confirmed = (action: "merge" | "close") => (comment: string) => (setConfirm(null), actions.confirm(item, action, comment));
 
   return (
@@ -829,11 +731,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       title={item.title}
       meta={{
         place: { repo: item.repo, number: item.number, login: actions.login },
-        when: item.change
-          ? changeText(item.change)
-          : item.closedAt
-            ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago${(item.kind === "pr" ? item.mergedBy : item.closedBy) ? ` by ${item.kind === "pr" ? item.mergedBy : item.closedBy}` : ""}${item.notPlanned ? " as not planned" : ""}`
-            : undefined,
+        when: cardWhen(item),
         signals: chips,
       }}
       extra={
@@ -858,8 +756,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       }
       secondary={[
         only ? { label: only.label, accessibilityLabel: only.accessibilityLabel, icon: only.icon, onPress: only.onPress } : { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
-        // History is where I report from, so its cards copy their link in one tap [ATT-15]. Unread notes are not report rows.
-        ...(history && item.section !== "changed" ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
+        ...(copiesLink(item) ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
       ]}
       confirm={
         confirm === "merge"
@@ -910,18 +807,6 @@ function itemDetailsQuery(item: Item, fetchDetails: FetchDetails): DetailsQuery 
   return { queryKey: detailsKey(subject, item.target, checks), queryFn: () => fetchDetails({ subject, target: item.target, checks }) };
 }
 
-// The PR an item's actions apply to, where that isn't the item itself, like an issue's PR.
-const targetUrl = (item: Item) => (item.target.number !== item.number || item.target.kind !== item.kind ? item.target.url : undefined);
-
-// An issue's chips are about the PR its actions apply to. Where its stack line shows that PR, each is said once, on that PR's
-// row, and the meta keeps only what the row doesn't say; "PR #103" and "stack of 2" are the stack line itself. The sheet always
-// shows the row; a card only when a PR in the stack needs attention [ATT-04, ATT-06].
-function stackMetaChips(item: Item, targetRow: SubRow | undefined): Chip[] {
-  if (!targetRow) return item.chips;
-  const onRow = new Set(targetRow.chips.map((chip) => chip.text));
-  return item.chips.filter((chip) => !/^PR #\d+$/.test(chip.text) && !/^stack of \d+$/.test(chip.text) && !onRow.has(chip.text));
-}
-
 function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: Item; waitChips: Chip[]; sessions: AgentSummary[]; actions: Actions } & SheetHandlers) {
   const details = useQuery({ ...itemDetailsQuery(item, actions.fetchDetails), staleTime: DETAILS_STALE_MS });
   const arrived = useArrived(details.isLoading);
@@ -963,49 +848,31 @@ function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: 
 }
 
 // Everything an item's sheet offers, each saying what it will do [ATT-06]. Rerun's line says more once the checks are in.
-function sheetEntries(
-  item: Item,
-  sessions: AgentSummary[],
-  actions: Actions,
-  { onPerform, onClose }: SheetHandlers,
-  details?: SheetDetails,
-): SheetEntry[] {
-  const inDoing = SECTIONS[item.section].tab === "doing";
-  const close = (then: () => void) => () => (onClose(), then());
-
-  const open = (agentId: string) => close(() => actions.openAgent(agentId))();
-  const withOptions = (label: string, kind: SessionKind) => close(() => actions.startWithOptions({ itemKey: item.key, title: `${label}: ${item.title}`, kind, target: item.target }));
-  // Sessions none of its actions would start lead, needs me first [SES-03].
-  const kinds = item.actions.flatMap((action) => ACTION_SESSION[action] ?? []);
-  const entries: SheetEntry[] = looseSessions(sessions, kinds).map((agent) => sessionEntry(agent, sessionLabel(agent.kind, item), open));
-  for (const action of item.actions) {
-    const kind = ACTION_SESSION[action];
-    const label = actionLabel(action, item);
-    if (kind) {
-      // An action's session takes its line once it runs, so work on it stays in one place [SES-03].
-      // Until then it asks first: the card's button is the one-tap start [SES-01, SES-02].
-      const running = sessions.filter((agent) => agent.kind === kind);
-      if (running.length) entries.push(...running.map((agent) => sessionEntry(agent, sessionLabel(kind, item), open)));
-      else entries.push({ key: action, icon: "agent", label: `${label}…`, detail: actionDetail(action as Exclude<ActionId, "rerun">, item), onPress: withOptions(label, kind) });
-    } else if (action === "rerun") {
-      entries.push(rerunEntry(label, details, (runIds) => close(() => actions.rerun(item, runIds))()));
-    } else {
-      // Closing it sits apart, below the work, with Dismiss [ATT-06].
-      entries.push({ key: action, icon: ACTION_ICONS[action], label, detail: actionDetail(action, item), housekeeping: action === "close", onPress: () => onPerform(action) });
-    }
-  }
-  // Anything Attention Span doesn't cover [ATT-12], with an issue's PR beside it: the one its actions apply to, or in
-  // History, where an issue is its own target, the first of the PRs that closed it.
-  const pr = targetUrl(item) && item.target.kind === "pr" ? item.target : item.kind === "issue" && item.children[0] ? item.children[0] : undefined;
-  entries.push(githubEntry(item, (url) => close(() => void openExternalUrl(url))(), pr));
-  // Nothing's left to start on once it's merged or closed, or out of my hands; a note is cleared with Got it, not dismissed [HIS-07].
-  if (!item.closedAt && !item.change) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
-  if (inDoing && !item.change) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) });
-  return entries;
+function sheetEntries(item: Item, sessions: AgentSummary[], actions: Actions, handlers: SheetHandlers, details?: SheetDetails): SheetEntry[] {
+  return sheetPlan(item, sessions).map((step) => sheetEntry(step, item, actions, handlers, details));
 }
 
-// A session is named for what started it; one of no kind, or a Start's, just continues.
-const sessionLabel = (kind: SessionKind | undefined, item: Item) => (kind && kind !== "start" ? actionLabel(kind, item) : "Continue session");
+function sheetEntry(step: SheetStep, item: Item, actions: Actions, { onPerform, onClose }: SheetHandlers, details?: SheetDetails): SheetEntry {
+  const close = (then: () => void) => () => (onClose(), then());
+  const open = (agentId: string) => close(() => actions.openAgent(agentId))();
+  const withOptions = (label: string, kind: SessionKind) => close(() => actions.startWithOptions({ itemKey: item.key, title: `${label}: ${item.title}`, kind, target: item.target }));
+  switch (step.kind) {
+    case "session":
+      return sessionEntry(step.agent, step.label, open);
+    case "ask":
+      return { key: step.action, icon: "agent", label: `${step.label}…`, detail: step.detail, onPress: withOptions(step.label, step.session) };
+    case "rerun":
+      return rerunEntry(step.label, details, (runIds) => close(() => actions.rerun(item, runIds))());
+    case "action":
+      return { key: step.action, icon: ACTION_ICONS[step.action], label: step.label, detail: step.detail, housekeeping: step.housekeeping, onPress: () => onPerform(step.action) };
+    case "github":
+      return githubEntry(item, (url) => close(() => void openExternalUrl(url))(), step.pr);
+    case "start":
+      return startAnotherEntry(step.any, withOptions("Start session", step.session));
+    case "dismiss":
+      return { key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) };
+  }
+}
 
 // Pick which waiting comments get a 👍, after reading them in full; all are picked to start [MEN-07].
 function AcknowledgeSheet({ item, onReact, onClose }: { item: Item; onReact: (ids: string[]) => void; onClose: () => void }) {
