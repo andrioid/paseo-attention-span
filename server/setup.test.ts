@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { blocks, type SetupStatus } from "../shared/setup";
+import { fixtureAnswers } from "./fixture";
 import { checkCoverage, setupStatus } from "./setup";
 import { createStore, type Store } from "./store";
 
-// Fixture mode: names are checked against made-up GitHub data, and gh counts as signed in.
+// Previews' answers: names are checked against made-up GitHub data, and gh counts as signed in.
 let dir: string;
 let store: Store;
 beforeAll(async () => {
@@ -29,16 +30,16 @@ describe("setup", () => {
 
   it("SET-01: reports a broken config.json with the reason", async () => {
     await writeFile(join(dir, "config.json"), "{ not json");
-    const result = await setupStatus(store, true);
+    const result = await setupStatus(store, fixtureAnswers.ghStatus);
     expect(result.gh.login).toBe("me");
     expect(result.config.error).toMatch(/Can't read .*config\.json/);
   });
 
   it("SRC-02: checks an org or repo before it's saved, keeping GitHub's exact name", async () => {
-    expect(await checkCoverage("repo", " https://github.com/ACME/Shop/ ", true)).toEqual({ name: "acme/shop", error: null });
-    expect(await checkCoverage("org", "Acme", true)).toEqual({ name: "acme", error: null });
-    expect((await checkCoverage("repo", "acme/shpo", true)).error).toMatch(/acme\/shpo wasn't found/);
-    expect((await checkCoverage("repo", "shop", true)).error).toMatch(/owner\/name/);
-    expect((await checkCoverage("org", "acme/shop", true)).error).toMatch(/organization's name/);
+    expect(await checkCoverage("repo", " https://github.com/ACME/Shop/ ", fixtureAnswers.coverageOnGitHub)).toEqual({ name: "acme/shop", error: null });
+    expect(await checkCoverage("org", "Acme", fixtureAnswers.coverageOnGitHub)).toEqual({ name: "acme", error: null });
+    expect((await checkCoverage("repo", "acme/shpo", fixtureAnswers.coverageOnGitHub)).error).toMatch(/acme\/shpo wasn't found/);
+    expect((await checkCoverage("repo", "shop", fixtureAnswers.coverageOnGitHub)).error).toMatch(/owner\/name/);
+    expect((await checkCoverage("org", "acme/shop", fixtureAnswers.coverageOnGitHub)).error).toMatch(/organization's name/);
   });
 });

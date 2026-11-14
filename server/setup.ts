@@ -1,19 +1,17 @@
 import { FIELD_ROLES } from "../shared/config";
 import type { ConfigStatus, CoverageCheck, CoverageKind, SetupStatus } from "../shared/setup";
-import { FIXTURE_MY_ORGS, FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
 import { graphql, runGh } from "./gh";
 import type { Store } from "./store";
-import { sameName } from "../shared/names";
 
-// Previews (`fixture`) check names against made-up GitHub data, and gh counts as signed in.
+// What GitHub says, which previews answer from made-up data instead (fixtureAnswers in fixture.ts).
 
 // What the setup checklist needs [SET-01]. Asked only when Attention Span can't load.
-export async function setupStatus(store: Pick<Store, "loadConfig">, fixture: boolean): Promise<SetupStatus> {
-  return { gh: fixture ? { found: true, login: "me", error: null } : await ghStatus(), config: await configStatus(store) };
+export async function setupStatus(store: Pick<Store, "loadConfig">, gh: () => Promise<SetupStatus["gh"]>): Promise<SetupStatus> {
+  return { gh: await gh(), config: await configStatus(store) };
 }
 
 // `gh api user` answers both questions at once: is gh there, and who is it signed in as.
-async function ghStatus(): Promise<SetupStatus["gh"]> {
+export async function ghStatus(): Promise<SetupStatus["gh"]> {
   try {
     const { code, stdout, stderr } = await runGh(["api", "user", "--jq", ".login"]);
     const login = stdout.trim();
@@ -34,22 +32,22 @@ export async function configStatus(store: Pick<Store, "loadConfig">): Promise<Co
 }
 
 // The orgs I belong to, for Next up's org picker [NXT-04]. Only these can be picked.
-export async function myOrgs(fixture: boolean): Promise<string[]> {
-  if (fixture) return FIXTURE_MY_ORGS;
+export async function myOrgs(): Promise<string[]> {
   const { viewer } = await graphql<{ viewer: { organizations: { nodes: { login: string }[] } } }>("{ viewer { organizations(first: 100) { nodes { login } } } }");
   return viewer.organizations.nodes.map((org) => org.login).sort((a, b) => a.localeCompare(b));
 }
 
 // An org or repo is checked on GitHub before it's saved, so a typo shows right away [SRC-02].
 // Pasted GitHub URLs are accepted. The exact name GitHub returns is what gets saved.
-export async function checkCoverage(kind: CoverageKind, input: string, fixture: boolean): Promise<CoverageCheck> {
+export async function checkCoverage(kind: CoverageKind, input: string, lookUp: typeof coverageOnGitHub): Promise<CoverageCheck> {
   const name = input.trim().replace(/^(https?:\/\/)?github\.com\//i, "").replace(/\/+$/, "");
   if (kind === "org" && !/^[\w.-]+$/.test(name)) return { name: null, error: "Use the organization's name, like acme" };
   if (kind === "repo" && !/^[\w.-]+\/[\w.-]+$/.test(name)) return { name: null, error: "Use owner/name, like acme/shop" };
-  if (fixture) {
-    const known = (kind === "org" ? FIXTURE_ORGS : FIXTURE_REPOS).find((candidate) => sameName(candidate, name));
-    return known ? { name: known, error: null } : { name: null, error: `${name} wasn't found on GitHub` };
-  }
+  return lookUp(kind, name);
+}
+
+// GitHub's exact name for an org or repo, or why it isn't one [SRC-02].
+export async function coverageOnGitHub(kind: CoverageKind, name: string): Promise<CoverageCheck> {
   const { code, stdout, stderr } = await runGh(["api", kind === "org" ? `users/${name}` : `repos/${name}`, "--jq", kind === "org" ? ".login + \" \" + .type" : ".full_name"]);
   if (code !== 0) return { name: null, error: /404|Not Found/i.test(stderr) ? `${name} wasn't found on GitHub, or gh's account can't see it` : stderr.trim() || `gh exited with ${code}` };
   if (kind === "repo") return { name: stdout.trim(), error: null };

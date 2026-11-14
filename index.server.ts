@@ -21,7 +21,7 @@ import { feedbackInfo } from "./server/feedback";
 import { fixtureAnswers, fixturePort } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { realPort } from "./server/port";
-import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
+import { checkCoverage, configStatus, coverageOnGitHub, ghStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
 import { createStore, DIR, OLD_DIR } from "./server/store";
 import { fixtureUpdates, paseoUpdates, UpdateCheck } from "./server/update";
@@ -33,7 +33,7 @@ export default function contribute(server: PluginServerContext) {
   // Previews run on made-up data and never reach GitHub; which one is picked here, once.
   const store = createStore(DIR, OLD_DIR);
   const attention = new AttentionService(FIXTURE ? fixturePort(store, DIR) : realPort(store));
-  const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext };
+  const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext, ghStatus, myOrgs, coverageOnGitHub };
   const updates = new UpdateCheck(FIXTURE ? fixtureUpdates : paseoUpdates);
   const archived = new ArchivedInPaseo({ groupKeysOf: (itemKey) => attention.groupKeysOf(itemKey), acknowledge: (keys, upTo) => attention.acknowledge(keys, upTo) });
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
@@ -68,15 +68,15 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)));
-  server.handle(rpc.setupStatus, () => setupStatus(store, FIXTURE));
+  server.handle(rpc.setupStatus, () => setupStatus(store, answers.ghStatus));
   server.handle(rpc.getCoverage, () => configStatus(store));
-  server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name, FIXTURE));
+  server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name, answers.coverageOnGitHub));
   server.handle(rpc.setCoverage, ({ orgs, repos }) => ready(() => attention.setCoverage(orgs, repos)).then(() => ({ ok: true as const })));
   server.handle(rpc.setNextUpSources, (sources) => ready(() => attention.setNextUpSources(sources)).then(() => ({ ok: true as const })));
   server.handle(rpc.issueFields, () => ready(async () => ({ fields: await attention.issueFields() })));
   server.handle(rpc.setNextUpFields, (fields) => ready(() => attention.setNextUpFields(fields)).then(() => ({ ok: true as const })));
   server.handle(rpc.setFollowThreads, ({ on }) => ready(() => attention.setFollowThreads(on)).then(() => ({ ok: true as const })));
-  server.handle(rpc.myOrgs, async () => ({ orgs: await myOrgs(FIXTURE) }));
+  server.handle(rpc.myOrgs, async () => ({ orgs: await answers.myOrgs() }));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
   server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(() => ({ ok: true as const })));

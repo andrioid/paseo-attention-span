@@ -3,7 +3,8 @@ import { join } from "node:path";
 import type { AgentSummary, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { OthersChange } from "../shared/changes";
 import type { SessionKind } from "../shared/config";
-import type { IssueField } from "../shared/setup";
+import type { CoverageCheck, CoverageKind, IssueField, SetupStatus } from "../shared/setup";
+import { sameName } from "../shared/names";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
 import type { Port } from "./port";
 import { setTimer } from "./port";
@@ -15,10 +16,10 @@ export const REPO = "acme/shop";
 // Issues kept apart from the code, as some orgs do; its code lives in REPO [SES-07].
 export const ISSUES_REPO = "acme/issues";
 // What the settings screen can add in previews [SRC-02]; anything else isn't found.
-export const FIXTURE_ORGS = ["acme"];
-export const FIXTURE_REPOS = [REPO, ISSUES_REPO, "acme/web", "me/tool"];
+const FIXTURE_ORGS = ["acme"];
+const FIXTURE_REPOS = [REPO, ISSUES_REPO, "acme/web", "me/tool"];
 // The orgs Next up's org picker offers in previews [NXT-04].
-export const FIXTURE_MY_ORGS = ["acme", "globex"];
+const FIXTURE_MY_ORGS = ["acme", "globex"];
 // The org issue fields settings offers for Next up [NXT-04].
 export const FIXTURE_ISSUE_FIELDS: IssueField[] = [
   { name: "Effort", options: ["🐟 Tiny (< 4h)", "🐇 Small (0.5-2d)", "🐂 Medium (2-5d)", "🦑 Large (1-2w)"], orgs: ["acme"] },
@@ -490,8 +491,14 @@ export function fixturePort(store: Store, dir: string): Port {
   };
 }
 
-// The sheet's, picker's and session's asks, answered from made-up data.
+// The sheet's, picker's, session's and setup's asks, answered from made-up data; gh counts as signed in.
 export const fixtureAnswers = {
+  ghStatus: async (): Promise<SetupStatus["gh"]> => ({ found: true, login: "me", error: null }),
+  myOrgs: async () => FIXTURE_MY_ORGS,
+  coverageOnGitHub: async (kind: CoverageKind, name: string): Promise<CoverageCheck> => {
+    const known = (kind === "org" ? FIXTURE_ORGS : FIXTURE_REPOS).find((candidate) => sameName(candidate, name));
+    return known ? { name: known, error: null } : { name: null, error: `${name} wasn't found on GitHub` };
+  },
   reviewerChoices: async (_target: Target, recent: Reviewer[]) => fixtureReviewerChoices(recent),
   itemDetails: async (subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean) => fixtureDetails(subject, target, checks),
   defaultBranch: async () => "main",
