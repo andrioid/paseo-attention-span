@@ -160,7 +160,7 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
 function sessionStateText(session: AgentSummary): string {
   const unsaved = sessionUnsaved(session);
   if (!unsaved) return "idle · nothing unsaved";
-  return unsaved.unknown ? "idle · couldn't check for unsaved changes" : `idle · ${unsavedWords(unsaved)}`;
+  return sessionCleanliness(session) === "unknown" ? "idle · couldn't check for unsaved changes" : `idle · ${unsavedWords(unsaved)}`;
 }
 
 // What the confirm sheet names for a session the server hasn't checked: Paseo's reading of it.

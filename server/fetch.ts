@@ -179,7 +179,7 @@ export async function projectStatuses(gh: Gh, ids: string[], problems: string[])
 // My PRs' merge state, a few per request in parallel, as GitHub only works it out for a few at a time; search's answer
 // for more is BLOCKED for all [PRS-13]. A request that fails leaves its PRs to search's answer.
 async function mergeStates(gh: Gh, prs: PullRequestNode[]): Promise<Details["mergeState"]> {
-  const found = await lookupBatches<PullRequestNode, { pullRequest: { mergeStateStatus?: MergeStateStatus } | null }>(gh, prs, "m", (batch) => mergeStateQuery(batch).query, {
+  const found = await lookupBatches<PullRequestNode, { pullRequest: { mergeStateStatus?: MergeStateStatus } | null }>(gh, prs, "m", mergeStateQuery, {
     size: MERGE_STATE_BATCH,
     atOnce: Infinity,
   });

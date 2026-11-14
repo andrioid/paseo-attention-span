@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type AgentSummary, isIdle, type Item, type Section, type WrapItem } from "./attention";
 import { agent, item as base, change, clock } from "./test-builders";
-import { cleanSingle, doingCount, rememberGroups, unreadChanges, wrapItems } from "./wrap-up";
+import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, unreadChanges, wrapItems } from "./wrap-up";
 
 const { now, hoursAgo } = clock(new Date("2026-11-13T12:00:00Z"));
 const item = (key: string, section: Item["section"], hours: number, children: Item["children"] = []) =>
@@ -90,6 +90,15 @@ describe("Archive all clean", () => {
     expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { ...clean, dirty: true } })]))).toBe(false);
     // Paseo saying nothing about commits ahead isn't clean.
     expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { kind: "worktree", name: "wt", dirty: false } })]))).toBe(false);
+  });
+
+  it("ATT-22: a session Paseo calls dirty is dirty, even when it can't say what's ahead; knowing of nothing unsaved but not clean is unknown", () => {
+    const reading = (workspace: AgentSummary["workspace"]) => sessionCleanliness(session("a", "x", { workspace }));
+    expect(reading(clean)).toBe("clean");
+    expect(reading({ kind: "worktree", name: "wt", dirty: true })).toBe("dirty");
+    expect(reading({ kind: "worktree", name: "wt", ahead: 2 })).toBe("dirty");
+    expect(reading({ kind: "worktree", name: "wt", dirty: false })).toBe("unknown");
+    expect(reading(undefined)).toBe("unknown");
   });
 });
 

@@ -319,14 +319,10 @@ export function issueFieldsQuery(orgs: string[]): string {
 // in search and in a repo's PR list. Seen on 2026-11-04 [PRS-13].
 export const MERGE_STATE_BATCH = 5;
 
-// The merge state of up to MERGE_STATE_BATCH PRs, in one request; m0, m1, … map back to their keys.
-export function mergeStateQuery(prs: PullRequestNode[]): { query: string; keys: Record<string, string> } {
-  const keys: Record<string, string> = {};
-  const fields = prs.map((pr, index) => {
-    keys[`m${index}`] = prKey(pr);
-    return `m${index}: ${repository(pr.repository.nameWithOwner)} { pullRequest(number: ${pr.number}) { mergeStateStatus } }`;
-  });
-  return { query: `query MergeState {\n${fields.join("\n")}\n}`, keys };
+// The merge state of up to MERGE_STATE_BATCH PRs, in one request, as m0, m1, … in the order given.
+export function mergeStateQuery(prs: PullRequestNode[]): string {
+  const fields = prs.map((pr, index) => `m${index}: ${repository(pr.repository.nameWithOwner)} { pullRequest(number: ${pr.number}) { mergeStateStatus } }`);
+  return `query MergeState {\n${fields.join("\n")}\n}`;
 }
 
 export type CheckContext = { status?: string; conclusion?: string | null; state?: string; isRequired?: boolean };

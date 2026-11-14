@@ -91,9 +91,15 @@ function buildStacks(prs: PullRequestNode[]) {
 // What each PR's checks, reviews and branches say, worked out once per PR.
 function prState(
   pr: PullRequestNode,
-  { details, config, now, isMe, parentOf }: { details: Details; config: AttentionConfig; now: Date; isMe: (actor: Actor | null | undefined) => boolean; parentOf: (pr: PullRequestNode) => PullRequestNode | undefined },
+  {
+    details,
+    config,
+    now,
+    isMe,
+    isOther,
+    parentOf,
+  }: { details: Details; config: AttentionConfig; now: Date; isMe: (actor: Actor | null | undefined) => boolean; isOther: (actor: Actor | null | undefined) => boolean; parentOf: (pr: PullRequestNode) => PullRequestNode | undefined },
 ) {
-  const isOther = (actor: Actor | null | undefined) => !!actor && !isMe(actor);
   const commit = pr.commits.nodes[0]?.commit;
   const ci = commit?.statusCheckRollup?.state;
   const anyFailing = ci === "FAILURE" || ci === "ERROR";
@@ -211,7 +217,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   const prs = [...mine, ...requests];
   const { stacks, parentOf } = buildStacks(prs);
 
-  const states = new Map(prs.map((pr) => [pr, prState(pr, { details, config, now, isMe, parentOf })]));
+  const states = new Map(prs.map((pr) => [pr, prState(pr, { details, config, now, isMe, isOther, parentOf })]));
   const state = (pr: PullRequestNode) => states.get(pr)!;
 
   const items: Item[] = [];

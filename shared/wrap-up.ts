@@ -17,9 +17,12 @@ export function sessionUnsaved(agent: AgentSummary): UnsavedSession | null {
   return unsavedOf({ agentId: agent.id, title: agent.title }, workspace && { ...workspace, files: workspace.dirtyFiles });
 }
 
+// Dirty as soon as Paseo says something is unsaved, even when it couldn't tell the other half; unknown only when it knows
+// of nothing unsaved but can't say it's clean.
 export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
   const unsaved = sessionUnsaved(agent);
-  return !unsaved ? "clean" : unsaved.unknown ? "unknown" : "dirty";
+  if (!unsaved) return "clean";
+  return unsaved.files || unsaved.uncommitted || unsaved.commits ? "dirty" : "unknown";
 }
 
 // A row with one session, clean: Archive session archives it at once, whatever happened on GitHub [ATT-22].

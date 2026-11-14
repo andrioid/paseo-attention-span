@@ -7,6 +7,7 @@ import { classify, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, fixtureChanges, fixtureGotIt, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
 import {
+  detailsQuery,
   HISTORY_SEARCHES,
   mergeUnclaimed,
   requiredChecks,
@@ -195,6 +196,12 @@ describe("ready to merge and behind base", () => {
       { state: "PENDING", isRequired: false },
     ];
     expect(requiredChecks(contexts)).toEqual({ required: 6, failing: 2, pending: 2 });
+  });
+
+  it("PRS-14: asks which checks are required apart from the compare", () => {
+    const { query, compares } = detailsQuery([pr(7)], []);
+    expect(query).toContain("isRequired(pullRequestNumber: 7)");
+    expect(compares).toEqual({ c0: key(7), r0: key(7) });
   });
 
   it("PRS-04: uses the merge method from config, else the first the repo allows", () => {
@@ -1048,6 +1055,10 @@ describe("GitHub requests", () => {
     const variables = searchVariables(AttentionConfig.parse({ orgs: ["acme"], repos: ["acme/web"] }), NOW);
     for (const query of Object.values(variables)) expect(query).toContain("org:acme repo:acme/web");
     expect(variables.reviews).toContain("user-review-requested:@me");
+  });
+
+  it("GH-01: refreshes every 15 minutes by default; the screen never forces a fetch", () => {
+    expect(AttentionConfig.parse({}).refreshMinutes).toBe(15);
   });
 
   it("GH-01: sends each live search as its own request, and History's three as one", () => {

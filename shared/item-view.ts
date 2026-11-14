@@ -4,6 +4,7 @@ import { type ActionId, type AgentSummary, type AttentionView, type Chip, type F
 import { summarizeRerun } from "./checks";
 import type { SessionKind } from "./config";
 import { ago } from "./format";
+import { oldestWeek } from "./history-report";
 import { sameName } from "./names";
 import { ACTION_SESSION } from "./prompts";
 import { doingCount, finishText } from "./wrap-up";
@@ -208,11 +209,16 @@ export function stackMetaChips(item: Item, targetRow: SubRow | undefined): Chip[
   return item.chips.filter((chip) => !/^PR #\d+$/.test(chip.text) && !/^stack of \d+$/.test(chip.text) && !onRow.has(chip.text));
 }
 
-// Each tab's count: History's finished work, Doing with Wrap up's rows [ATT-09, ATT-22], work waiting on several people once,
-// and every issue in Next up.
-export function tabCounts(view: Pick<AttentionView, "history" | "count" | "waiting" | "assigned" | "unclaimed">, wrap: WrapItem[]): Record<TabId, number> {
+// Each tab's count: History's finished work in the weeks it shows [HIS-01], Doing with Wrap up's rows [ATT-09, ATT-22], work
+// waiting on several people once, and every issue in Next up.
+export function tabCounts(
+  view: Pick<AttentionView, "history" | "count" | "waiting" | "assigned" | "unclaimed" | "config">,
+  wrap: WrapItem[],
+  now = new Date(),
+): Record<TabId, number> {
+  const since = oldestWeek(view.config.historyWeeks, now);
   return {
-    history: view.history.filter((item) => item.section === "done").length,
+    history: view.history.filter((item) => item.section === "done" && !!item.closedAt && new Date(item.closedAt) >= since).length,
     doing: doingCount(view, wrap),
     waiting: new Set(view.waiting.flatMap((group) => group.items.map((item) => item.key))).size,
     next: view.assigned.length + view.unclaimed.length,
