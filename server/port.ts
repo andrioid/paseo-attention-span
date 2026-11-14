@@ -1,5 +1,4 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import type { AgentSummary } from "../shared/attention";
 import type { ArchiveResult } from "../shared/archive";
 import { githubRepoOf } from "../shared/config";
 import { archiveSessions } from "./archive";
@@ -22,8 +21,6 @@ export interface Port {
   now(): number;
   // Runs `run` once after `ms`; calling the answer cancels it.
   setTimer(run: () => void, ms: number): () => void;
-  // Sessions previews show as started from items.
-  agents?: AgentSummary[];
 }
 
 export function setTimer(run: () => void, ms: number): () => void {

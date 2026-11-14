@@ -18,14 +18,14 @@ import { ArchivedInPaseo } from "./server/archived";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { feedbackInfo } from "./server/feedback";
-import { fixtureAnswers, fixturePort } from "./server/fixture";
+import { fixtureAnswers, fixturePort, fixtureView } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { realPort } from "./server/port";
 import { checkCoverage, configStatus, coverageOnGitHub, ghStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
 import { createStore, DIR, OLD_DIR } from "./server/store";
 import { fixtureUpdates, paseoUpdates, UpdateCheck } from "./server/update";
-import type { Chip } from "./shared/attention";
+import type { AttentionView, Chip } from "./shared/attention";
 import { readyProviders } from "./shared/providers";
 import * as rpc from "./shared/rpc";
 
@@ -35,12 +35,14 @@ export default function contribute(server: PluginServerContext) {
   const attention = new AttentionService(FIXTURE ? fixturePort(store, DIR) : realPort(store));
   const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext, ghStatus, myOrgs, coverageOnGitHub };
   const updates = new UpdateCheck(FIXTURE ? fixtureUpdates : paseoUpdates);
+  // Each view the screen gets; previews add their made-up sessions [ATT-22].
+  const shown: (view: AttentionView) => AttentionView = FIXTURE ? fixtureView : (view) => view;
   const archived = new ArchivedInPaseo({ groupKeysOf: (itemKey) => attention.groupKeysOf(itemKey), acknowledge: (keys, upTo) => attention.acknowledge(keys, upTo) });
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
 
   // A change on GitHub, answered with the list after it; what it does to the card shows right away [FRESH-02].
-  const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, work, change));
+  const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, work, change)).then(shown);
   const chip = (text: string, tone: Chip["tone"] = "neutral", icon?: Chip["icon"]): Change => ({ kind: "chip", chip: { text, tone, ...(icon ? { icon } : {}) } });
 
   // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08],
@@ -50,12 +52,12 @@ export default function contribute(server: PluginServerContext) {
       attention.connect(paseo);
       if (archived.waiting) void archived.notice(paseo);
       return attention.get(refresh, cached, timeZone);
-    }),
+    }).then(shown),
   );
-  server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)));
-  server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)));
-  server.handle(rpc.gotIt, ({ ids, on }) => ready(() => attention.gotIt(ids, on)));
-  server.handle(rpc.setHistoryFilter, ({ filter }) => ready(() => attention.setHistoryFilter(filter)));
+  server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)).then(shown));
+  server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)).then(shown));
+  server.handle(rpc.gotIt, ({ ids, on }) => ready(() => attention.gotIt(ids, on)).then(shown));
+  server.handle(rpc.setHistoryFilter, ({ filter }) => ready(() => attention.setHistoryFilter(filter)).then(shown));
   // A session Attention Span started, archived in Paseo itself, even with Attention Span closed [HIS-07, ATT-22]. Each
   // event, and each request for the list, also tries again the ones that failed, as both bring a Paseo connection.
   server.on("agent.archived", ({ agent, archivedAt }, { paseo }) => {
@@ -65,9 +67,9 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_ended", (_event, { paseo }) => {
     if (archived.waiting) void ready(() => archived.notice(paseo));
   });
-  server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)));
-  server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));
-  server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)));
+  server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })));
+  server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()).then(shown));
+  server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)).then(shown));
   server.handle(rpc.setupStatus, () => setupStatus(store, answers.ghStatus));
   server.handle(rpc.getCoverage, () => configStatus(store));
   server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name, answers.coverageOnGitHub));

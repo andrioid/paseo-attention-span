@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentSummary, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
+import type { AgentSummary, AttentionView, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { OthersChange } from "../shared/changes";
 import type { SessionKind } from "../shared/config";
 import type { CoverageCheck, CoverageKind, IssueField, SetupStatus } from "../shared/setup";
@@ -487,9 +487,11 @@ export function fixturePort(store: Store, dir: string): Port {
     store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
     now: Date.now,
     setTimer,
-    agents: FIXTURE_AGENTS,
   };
 }
+
+// A view with the made-up sessions, as the preview daemon has no agents [ATT-22].
+export const fixtureView = (view: AttentionView): AttentionView => ({ ...view, fixtureAgents: FIXTURE_AGENTS });
 
 // The sheet's, picker's, session's and setup's asks, answered from made-up data; gh counts as signed in.
 export const fixtureAnswers = {

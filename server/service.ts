@@ -441,7 +441,6 @@ export class AttentionService {
       groups: Object.fromEntries(Object.entries(this.state.groups).map(([key, group]) => [key, group.keys])),
       config: this.config,
       pending: Object.keys(pending).length,
-      ...(this.port.agents ? { fixtureAgents: this.port.agents } : {}),
       },
       this.state.changes,
       new Date(now),
