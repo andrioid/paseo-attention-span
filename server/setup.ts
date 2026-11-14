@@ -1,13 +1,15 @@
 import { FIELD_ROLES } from "../shared/config";
 import type { ConfigStatus, CoverageCheck, CoverageKind, SetupStatus } from "../shared/setup";
 import { FIXTURE_MY_ORGS, FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
-import { FIXTURE, graphql, runGh } from "./gh";
-import { loadConfig } from "./store";
+import { graphql, runGh } from "./gh";
+import type { Store } from "./store";
 import { sameName } from "../shared/names";
 
+// Previews (`fixture`) check names against made-up GitHub data, and gh counts as signed in.
+
 // What the setup checklist needs [SET-01]. Asked only when Attention Span can't load.
-export async function setupStatus(): Promise<SetupStatus> {
-  return { gh: FIXTURE ? { found: true, login: "me", error: null } : await ghStatus(), config: await configStatus() };
+export async function setupStatus(store: Pick<Store, "loadConfig">, fixture: boolean): Promise<SetupStatus> {
+  return { gh: fixture ? { found: true, login: "me", error: null } : await ghStatus(), config: await configStatus(store) };
 }
 
 // `gh api user` answers both questions at once: is gh there, and who is it signed in as.
@@ -21,9 +23,9 @@ async function ghStatus(): Promise<SetupStatus["gh"]> {
   }
 }
 
-export async function configStatus(): Promise<ConfigStatus> {
+export async function configStatus(store: Pick<Store, "loadConfig">): Promise<ConfigStatus> {
   try {
-    const { orgs, repos, nextUp, followThreads } = await loadConfig();
+    const { orgs, repos, nextUp, followThreads } = await store.loadConfig();
     const fields = Object.fromEntries(FIELD_ROLES.flatMap((role) => (nextUp[role] === undefined ? [] : [[role, nextUp[role]?.field ?? null]])));
     return { error: null, orgs, repos, nextUp: { mine: nextUp.mine, orgs: nextUp.orgs, repos: nextUp.repos }, fields, followThreads };
   } catch (error) {
@@ -32,19 +34,19 @@ export async function configStatus(): Promise<ConfigStatus> {
 }
 
 // The orgs I belong to, for Next up's org picker [NXT-04]. Only these can be picked.
-export async function myOrgs(): Promise<string[]> {
-  if (FIXTURE) return FIXTURE_MY_ORGS;
+export async function myOrgs(fixture: boolean): Promise<string[]> {
+  if (fixture) return FIXTURE_MY_ORGS;
   const { viewer } = await graphql<{ viewer: { organizations: { nodes: { login: string }[] } } }>("{ viewer { organizations(first: 100) { nodes { login } } } }");
   return viewer.organizations.nodes.map((org) => org.login).sort((a, b) => a.localeCompare(b));
 }
 
 // An org or repo is checked on GitHub before it's saved, so a typo shows right away [SRC-02].
 // Pasted GitHub URLs are accepted. The exact name GitHub returns is what gets saved.
-export async function checkCoverage(kind: CoverageKind, input: string): Promise<CoverageCheck> {
+export async function checkCoverage(kind: CoverageKind, input: string, fixture: boolean): Promise<CoverageCheck> {
   const name = input.trim().replace(/^(https?:\/\/)?github\.com\//i, "").replace(/\/+$/, "");
   if (kind === "org" && !/^[\w.-]+$/.test(name)) return { name: null, error: "Use the organization's name, like acme" };
   if (kind === "repo" && !/^[\w.-]+\/[\w.-]+$/.test(name)) return { name: null, error: "Use owner/name, like acme/shop" };
-  if (FIXTURE) {
+  if (fixture) {
     const known = (kind === "org" ? FIXTURE_ORGS : FIXTURE_REPOS).find((candidate) => sameName(candidate, name));
     return known ? { name: known, error: null } : { name: null, error: `${name} wasn't found on GitHub` };
   }

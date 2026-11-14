@@ -1,20 +1,17 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { createStore, State, type Store } from "./store";
 
 let home: string;
-let store: typeof import("./store");
+let store: Store;
 const oldDir = () => join(home, ".config", "paseo-github-attention");
 const newDir = () => join(home, ".config", "paseo-attention-span");
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "attention-span-home-"));
-  process.env.HOME = home;
-  delete process.env.PASEO_ATTENTION_SPAN_DIR;
-  delete process.env.PASEO_GITHUB_ATTENTION_DIR;
-  vi.resetModules(); // the folders are read once, at import
-  store = await import("./store");
+  store = createStore(newDir(), oldDir());
   return () => rm(home, { recursive: true, force: true });
 });
 
@@ -53,7 +50,7 @@ describe("local files", () => {
     const state = await store.loadState();
     expect([state.live, state.history]).toEqual([null, null]);
     const fine = { ...live, attention: { ...live.attention, items: [{ ...old, section: "wait_review" }] } };
-    expect(store.State.parse({ live: fine }).live).toEqual(fine);
+    expect(State.parse({ live: fine }).live).toEqual(fine);
   });
 });
 

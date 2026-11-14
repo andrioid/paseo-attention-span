@@ -18,17 +18,22 @@ import { ArchivedInPaseo } from "./server/archived";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { feedbackInfo } from "./server/feedback";
-import { FIXTURE_CONTEXT, fixtureDetails, fixtureReviewerChoices } from "./server/fixture";
+import { fixtureAnswers, fixturePort } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
+import { realPort } from "./server/port";
 import { checkCoverage, configStatus, myOrgs, setupStatus } from "./server/setup";
 import { AttentionService, type Change } from "./server/service";
+import { createStore, DIR, OLD_DIR } from "./server/store";
 import { UpdateCheck } from "./server/update";
 import type { Chip } from "./shared/attention";
 import { readyProviders } from "./shared/providers";
 import * as rpc from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
-  const attention = new AttentionService();
+  // Previews run on made-up data and never reach GitHub; which one is picked here, once.
+  const store = createStore(DIR, OLD_DIR);
+  const attention = new AttentionService(FIXTURE ? fixturePort(store, DIR) : realPort(store));
+  const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext };
   const updates = new UpdateCheck();
   const archived = new ArchivedInPaseo({ groupKeysOf: (itemKey) => attention.groupKeysOf(itemKey), acknowledge: (keys, upTo) => attention.acknowledge(keys, upTo) });
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
@@ -62,15 +67,15 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)));
-  server.handle(rpc.setupStatus, () => setupStatus());
-  server.handle(rpc.getCoverage, () => configStatus());
-  server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name));
+  server.handle(rpc.setupStatus, () => setupStatus(store, FIXTURE));
+  server.handle(rpc.getCoverage, () => configStatus(store));
+  server.handle(rpc.checkCoverage, ({ kind, name }) => checkCoverage(kind, name, FIXTURE));
   server.handle(rpc.setCoverage, ({ orgs, repos }) => ready(() => attention.setCoverage(orgs, repos)).then(() => ({ ok: true as const })));
   server.handle(rpc.setNextUpSources, (sources) => ready(() => attention.setNextUpSources(sources)).then(() => ({ ok: true as const })));
   server.handle(rpc.issueFields, () => ready(async () => ({ fields: await attention.issueFields() })));
   server.handle(rpc.setNextUpFields, (fields) => ready(() => attention.setNextUpFields(fields)).then(() => ({ ok: true as const })));
   server.handle(rpc.setFollowThreads, ({ on }) => ready(() => attention.setFollowThreads(on)).then(() => ({ ok: true as const })));
-  server.handle(rpc.myOrgs, async () => ({ orgs: await myOrgs() }));
+  server.handle(rpc.myOrgs, async () => ({ orgs: await myOrgs(FIXTURE) }));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
   server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(() => ({ ok: true as const })));
@@ -90,13 +95,13 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.reviewerChoices, ({ target }) =>
     ready(() => {
       const { recent, login } = attention.reviewers(target.repo);
-      return FIXTURE ? Promise.resolve(fixtureReviewerChoices(recent)) : reviewerChoices(target, recent, login);
+      return answers.reviewerChoices(target, recent, login);
     }),
   );
   server.handle(rpc.react, ({ key, subjectIds, on }) => act(key, () => react(subjectIds, on), on ? chip("acknowledged", "neutral", "thumbUp") : null));
   server.handle(rpc.rerunFailed, ({ key, repo, runIds }) => act(key, () => rerunFailed(repo, runIds), chip("rerunning")));
-  server.handle(rpc.itemDetails, ({ subject, target, checks }) => (FIXTURE ? Promise.resolve(fixtureDetails(subject, target, checks)) : itemDetails(subject, target, checks)));
-  server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: FIXTURE ? "main" : await defaultBranch(repo) }));
+  server.handle(rpc.itemDetails, ({ subject, target, checks }) => answers.itemDetails(subject, target, checks));
+  server.handle(rpc.defaultBranch, async ({ repo }) => ({ name: await answers.defaultBranch(repo) }));
   server.handle(rpc.feedbackInfo, () => feedbackInfo());
   // [UPD-01]
   server.handle(rpc.checkUpdate, () => ready(async () => {
@@ -107,7 +112,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.skipUpdate, ({ latest }) => ready(() => attention.skipUpdate(latest)).then(() => ({ ok: true as const })));
   // The server's Paseo connection expands the snapshot; the app's may not (getpaseo compact snapshots) [SES-06].
   server.handle(rpc.readyProviders, async (_input, { paseo }) => ({ providers: readyProviders((await paseo.providers.snapshot()).entries) }));
-  server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: FIXTURE ? FIXTURE_CONTEXT : await sessionContext(kind, target) }));
+  server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: await answers.sessionContext(kind, target) }));
 
   return () => attention.stop();
 }

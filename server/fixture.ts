@@ -5,7 +5,9 @@ import type { OthersChange } from "../shared/changes";
 import type { SessionKind } from "../shared/config";
 import type { IssueField } from "../shared/setup";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
-import { DIR } from "./store";
+import type { Port } from "./port";
+import { setTimer } from "./port";
+import { State, type Store } from "./store";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_ATTENTION_SPAN_FIXTURE=1).
 
@@ -327,14 +329,10 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
   };
 }
 
-// A quiet day: GitHub has nothing for me, so the preview can show the empty tabs' scenes [ATT-18, HIS-08, WAI-04, NXT-13].
-// On while this file exists in the plugin's folder; the shooter creates it last.
-export const quiet = () => existsSync(join(DIR, "fixture-quiet"));
-
 // The fixture, or nothing in it on a quiet day.
-export function fixtureNow(now: Date): ReturnType<typeof fixture> {
+function fixtureNow(now: Date, quiet: boolean): ReturnType<typeof fixture> {
   const { data, details } = fixture(now);
-  if (!quiet()) return { data, details };
+  if (!quiet) return { data, details };
   const empty = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, key === "viewer" ? value : { nodes: [] }]));
   return { data: empty as unknown as SearchResult, details };
 }
@@ -465,3 +463,37 @@ export function fixtureDetails(subject: { kind: "pr" | "issue"; repo: string; nu
         : [],
   };
 }
+
+// What the service sees in previews: this made-up GitHub, no Paseo projects or sessions to archive, and state kept in
+// memory. config.json is still the file in `dir`, as the shooter edits it.
+export function fixturePort(store: Store, dir: string): Port {
+  // A quiet day: GitHub has nothing for me, so the preview can show the empty tabs' scenes [ATT-18, HIS-08, WAI-04, NXT-13].
+  // On while this file exists in the plugin's folder; the shooter creates it last.
+  const quiet = () => existsSync(join(dir, "fixture-quiet"));
+  return {
+    github: {
+      login: async () => "me",
+      // Previews can always read projects [NXT-12].
+      probeProjects: async () => ({ data: { viewer: { projectsV2: { nodes: [] } } }, errors: [], failures: [] }),
+      live: async (_config, now) => fixtureNow(now, quiet()),
+      // Previews start each layout with a refresh, which brings the notes back: Got it would otherwise outlive a layout.
+      changes: async (ledger, _data, now) => ({ ...ledger, events: quiet() ? [] : fixtureChanges(now), gotIt: fixtureGotIt(now) }),
+      history: async (_config, now) => fixtureNow(now, quiet()).data,
+      issueFields: async () => FIXTURE_ISSUE_FIELDS,
+    },
+    // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
+    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true }) },
+    store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
+    now: Date.now,
+    setTimer,
+    agents: FIXTURE_AGENTS,
+  };
+}
+
+// The sheet's, picker's and session's asks, answered from made-up data.
+export const fixtureAnswers = {
+  reviewerChoices: async (_target: Target, recent: Reviewer[]) => fixtureReviewerChoices(recent),
+  itemDetails: async (subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean) => fixtureDetails(subject, target, checks),
+  defaultBranch: async () => "main",
+  sessionContext: async () => FIXTURE_CONTEXT,
+};
