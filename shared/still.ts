@@ -1,5 +1,5 @@
 import type { AttentionView, FeedStatus } from "./attention";
-import { historyWeeks } from "./history-report";
+import { historyWeeks, oldestWeek } from "./history-report";
 
 // The empty tabs: a horizon that follows the device's clock [ATT-18, HIS-08, WAI-04, NXT-13].
 export type Scene = "morning" | "midday" | "evening" | "night";
@@ -29,8 +29,8 @@ export function waitingClear(view: Pick<AttentionView, "waiting" | "feeds">, fai
 
 // Nothing finished in History's weeks and no unread notes above them. A filter hiding everything isn't rest:
 // that week still holds something, so it shows plainly [HIS-08].
-export function historyClear(view: Pick<AttentionView, "history" | "feeds">, notes: number, failed = false): boolean {
-  return notes === 0 && !historyWeeks(view.history, []).anything && refreshed(view.feeds.history, failed);
+export function historyClear(view: Pick<AttentionView, "history" | "feeds" | "config">, notes: number, failed = false, now = new Date()): boolean {
+  return notes === 0 && !historyWeeks(view.history, [], oldestWeek(view.config.historyWeeks, now)).anything && refreshed(view.feeds.history, failed);
 }
 
 // Next up with nothing in it at all, not even behind a filter [NXT-13]. Nowhere to look is a setting, so it shows

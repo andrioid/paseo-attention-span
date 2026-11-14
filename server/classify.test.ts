@@ -348,8 +348,11 @@ describe("drafts", () => {
     expect(run({ mine: [pr(1, { isDraft: true }), pr(2, {}, "FAILURE")] }).items.map((item) => item.section)).toEqual(["ci", "drafts"]);
   });
 
-  it("PRS-06: other people's drafts are not work items", () => {
-    expect(run({ mentions: [mention(90, [comment(alice, "wip", 1)], { __typename: "PullRequest" })] }).items).toEqual([]);
+  it("PRS-06: other people's drafts show only where they ask something of me", () => {
+    const draft = pr(90, { author: alice, isDraft: true });
+    expect(sections(run({ reviews: [draft] }).items)).toEqual([[90, "review"]]);
+    const busy = issue(90, [comment(alice, "wip, pushing more tonight", 1)], "Draft", { __typename: "PullRequest" });
+    expect(run({ involved: [busy] }).items).toEqual([]);
   });
 
   it("PRS-11: a healthy draft offers Ready for review; a failing one, Fix and Rerun", () => {
@@ -806,8 +809,19 @@ describe("history", () => {
     expect(query.match(/labels\(first: 20\) \{ nodes \{ name \} \}/g)).toHaveLength(3);
   });
 
-  it("HIS-01: searches whole weeks back from Monday", () => {
-    expect(searchVariables(config, NOW).merged).toContain("merged:>=2026-10-05"); // 4 weeks: Oct 5, 12, 19, 26
+  it("HIS-01: searches whole weeks back from the oldest week's Monday, wherever the device is", () => {
+    // The oldest Monday's midnight in a time zone `offset` hours from UTC, as an instant.
+    const oldestMonday = (now: Date, offset: number) => {
+      const local = new Date(now.getTime() + offset * 3_600_000);
+      const monday = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - ((local.getUTCDay() + 6) % 7) - 21);
+      return new Date(monday - offset * 3_600_000);
+    };
+    for (const now of [NOW, new Date("2026-11-01T20:00:00Z"), new Date("2026-11-02T06:00:00Z")]) {
+      const since = searchVariables(config, now).merged.match(/merged:>=(\S+)/)![1];
+      const earliest = Math.min(...[-12, -5, 0, 1, 9, 14].map((offset) => oldestMonday(now, offset).getTime()));
+      expect(new Date(since).getTime()).toBeLessThanOrEqual(earliest);
+      expect(earliest - new Date(since).getTime()).toBeLessThan(2 * 86_400_000); // and not much more
+    }
   });
 });
 
@@ -838,7 +852,9 @@ describe("mentions", () => {
   });
 
   it("MEN-03: counts mentions in other people's drafts", () => {
-    expect(run({ mentions: [mention(82, [comment(alice, "early look please @me", 1)], { __typename: "PullRequest" })] }).items.map((item) => item.number)).toEqual([82]);
+    // The mention search doesn't ask whether a PR is a draft; GitHub's node still is one, and must keep counting.
+    const draft = { __typename: "PullRequest", isDraft: true } as Partial<Parameters<typeof mention>[2]>;
+    expect(run({ mentions: [mention(82, [comment(alice, "early look please @me", 1)], draft)] }).items.map((item) => item.number)).toEqual([82]);
   });
 
   it("MEN-04: ignores team mentions and quoted mentions", () => {

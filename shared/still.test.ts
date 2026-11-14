@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionView, FeedStatus, Item, NextUpIssue, Section, WaitingGroup } from "./attention";
+import { AttentionConfig } from "./config";
 import { historyClear, isClear, nextUpClear, sceneAt, waitingClear } from "./still";
 
 const at = (hour: number, minute = 0) => new Date(2026, 10, 9, hour, minute);
@@ -75,8 +76,8 @@ describe("waitingClear", () => {
 });
 
 describe("historyClear", () => {
-  const done = { key: "a", title: "Ship it", url: "https://github.com/o/r/pull/1", section: "done", closedAt: "2026-11-09T10:00:00Z" } as Item;
-  const history = (items: Item[], feed = ok) => ({ history: items, feeds: { live: ok, history: feed } });
+  const done = { key: "a", title: "Ship it", url: "https://github.com/o/r/pull/1", section: "done", closedAt: new Date().toISOString() } as Item;
+  const history = (items: Item[], feed = ok) => ({ history: items, feeds: { live: ok, history: feed }, config: AttentionConfig.parse({}) });
 
   it("HIS-08: is clear when nothing was finished and nothing is unread, after a refresh that worked", () => {
     expect(historyClear(history([]), 0)).toBe(true);

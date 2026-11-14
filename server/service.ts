@@ -122,7 +122,7 @@ export class AttentionService {
 
   async undismiss(key: string): Promise<AttentionView> {
     delete this.state.dismissed[key];
-    await saveState(this.state);
+    await this.save();
     return this.view();
   }
 

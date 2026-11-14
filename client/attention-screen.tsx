@@ -564,6 +564,7 @@ function AttentionList({
       ))}
       {tab === "history" ? (
         <History
+          weekCount={view.config.historyWeeks}
           calm={calm.history}
           notes={notes}
           items={view.history}

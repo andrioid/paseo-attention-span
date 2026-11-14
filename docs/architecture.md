@@ -206,7 +206,7 @@ A live refresh is 10 requests and about 87 points, of the 5,000 GitHub allows pe
 
 ### History
 
-One request with three searches, each from the Monday `historyWeeks` back: `is:pr is:merged author:@me` (with `mergedBy` [HIS-05]), `is:pr is:merged reviewed-by:@me -author:@me` (with `mergedBy` [HIS-02]), `is:issue is:closed assignee:@me` (with the last close event's actor [HIS-07]), and the viewer's login. Each result brings up to 20 label names, and issues their type [HIS-04]. About 4 points, mostly the label lists.
+One request with three searches, each from the Monday `historyWeeks` back, reaching to where that Monday begins in the earliest time zone, since the server doesn't know the device's; the screen leaves out what's older than its own oldest week: `is:pr is:merged author:@me` (with `mergedBy` [HIS-05]), `is:pr is:merged reviewed-by:@me -author:@me` (with `mergedBy` [HIS-02]), `is:issue is:closed assignee:@me` (with the last close event's actor [HIS-07]), and the viewer's login. Each result brings up to 20 label names, and issues their type [HIS-04]. About 4 points, mostly the label lists.
 
 Every search is scoped to the configured orgs and repos; Next up's unclaimed issues as described under Next up.
 

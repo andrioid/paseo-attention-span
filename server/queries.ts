@@ -148,9 +148,13 @@ function startOfWeek(now: Date): Date {
   return monday;
 }
 
-// Where History starts: whole weeks, from a Monday, so the oldest week isn't cut short [HIS-01].
+// Where History starts: whole weeks, from a Monday, so the oldest week isn't cut short [HIS-01]. The weeks are the
+// device's, which the server doesn't know, so this reaches back to the earliest that Monday can begin in any time zone
+// (UTC−12 to UTC+14); the screen leaves out what's older than its own oldest week.
 export function historySince(now: Date, weeks: number): string {
-  return new Date(startOfWeek(now).getTime() - (weeks - 1) * 7 * 86_400_000).toISOString();
+  const hour = 3_600_000;
+  const monday = startOfWeek(new Date(now.getTime() - 12 * hour)).getTime() - 14 * hour;
+  return new Date(monday - (weeks - 1) * 7 * 86_400_000).toISOString();
 }
 
 // Where Next up looks for unclaimed issues [NXT-04, NXT-08]: one search per chosen source, so each issue says which
