@@ -1,5 +1,6 @@
 import type { IssueCloseReason, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import { graphql, runGh } from "./gh";
+import { sameName } from "../shared/names";
 
 // Each action runs only from an explicit tap in Attention Span [SAFE-01].
 
@@ -106,7 +107,7 @@ export async function rerunFailed(repo: string, runIds: number[]): Promise<void>
 // Who the reviewer picker suggests: GitHub's picks for the PR and the repo's teams; recent reviewers come from the last fetch [PRS-12].
 // Fetched when the picker opens, not in every refresh [GH-01]. My own repos have no teams, so they aren't asked for.
 export async function reviewerChoices(target: Target, recent: Reviewer[], login: string | null): Promise<ReviewerChoices> {
-  const isMe = (name: string) => !!login && name.toLowerCase() === login.toLowerCase();
+  const isMe = (name: string) => sameName(name, login);
   const [owner] = target.repo.split("/");
   const [suggested, teams] = await Promise.all([
     graphql<{ node: { suggestedReviewers: { reviewer: { login: string; avatarUrl?: string } }[] } | null }>(

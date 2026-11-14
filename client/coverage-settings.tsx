@@ -4,10 +4,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import * as rpc from "../shared/rpc";
-import { DEFAULT_FIELD, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
+import { DEFAULT_FIELD, FIELD_ROLES, type FieldRole } from "../shared/config";
 import type { ConfigStatus, CoverageKind, IssueField } from "../shared/setup";
 import { VIEW_QUERY_KEY } from "./data";
 import { Button, StylesProvider, useCopy, useStyles } from "./ui";
+import { sameName } from "../shared/names";
 
 const COVERAGE_QUERY_KEY = ["attention-span", "coverage"] as const;
 const MY_ORGS_QUERY_KEY = ["attention-span", "my-orgs"] as const;
@@ -143,7 +144,7 @@ function Coverage() {
 function NextUpSources({ value, disabled, onChange }: { value: ConfigStatus["nextUp"]; disabled: boolean; onChange: (next: ConfigStatus["nextUp"]) => Promise<void> }) {
   const fetchOrgs = useRpc(rpc.myOrgs);
   const myOrgs = useQuery({ queryKey: MY_ORGS_QUERY_KEY, queryFn: () => fetchOrgs({}) });
-  const choosable = (myOrgs.data?.orgs ?? []).filter((org) => !value.orgs.some((added) => added.toLowerCase() === org.toLowerCase()));
+  const choosable = (myOrgs.data?.orgs ?? []).filter((org) => !value.orgs.some((added) => sameName(added, org)));
   return (
     <SettingsSection title="Next up">
       <SettingsCard>
@@ -186,7 +187,7 @@ function NextUpFields({ value, disabled, onChange }: { value: ConfigStatus["fiel
   const fetchFields = useRpc(rpc.issueFields);
   const available = useQuery({ queryKey: FIELDS_QUERY_KEY, queryFn: () => fetchFields({}) });
   const fields: IssueField[] = available.data?.fields ?? [];
-  const find = (name: string | null | undefined) => fields.find((field) => sameField(field.name, name ?? undefined));
+  const find = (name: string | null | undefined) => fields.find((field) => sameName(field.name, name ?? undefined));
   // What each role uses now: the chosen field, or the one named after it if an org has it. Names match without case,
   // so a field typed "priority" shows as GitHub's "Priority".
   const current = (role: FieldRole): string | null => {
@@ -278,7 +279,7 @@ function AddRow({ kind, placeholder, existing, disabled, onAdd }: { kind: Covera
     try {
       const result = await check({ kind, name: text });
       if (result.error !== null) return setError(result.error);
-      if (existing.some((name) => name.toLowerCase() === result.name.toLowerCase())) return setError(`${result.name} is already in the list`);
+      if (existing.some((name) => sameName(name, result.name))) return setError(`${result.name} is already in the list`);
       await onAdd(result.name);
       setText("");
     } catch (failure) {

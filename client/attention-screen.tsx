@@ -33,6 +33,7 @@ import { WrapUp } from "./wrap-up";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
 import { Avatar, Button, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
+import { sameName } from "../shared/names";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -777,7 +778,7 @@ function nudgeLead(item: Item): string | undefined {
   return reason ? `${reason[0].toUpperCase()}${reason.slice(1)} ${ago(since)}` : ago(since);
 }
 
-const samePerson = (a: WaitingOn, b: WaitingOn) => a.team === b.team && a.login.toLowerCase() === b.login.toLowerCase();
+const samePerson = (a: WaitingOn, b: WaitingOn) => a.team === b.team && sameName(a.login, b.login);
 
 // In Waiting, a card sits under one of whom it waits on: its group.
 function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; actions: Actions; group?: WaitingGroup }) {

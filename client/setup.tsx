@@ -5,6 +5,7 @@ import { AttentionConfig } from "../shared/config";
 import type { SetupStatus } from "../shared/setup";
 import { githubProjects, listProfiles } from "./sessions";
 import { Button, useCopy, useStyles } from "./ui";
+import { sameName } from "../shared/names";
 
 type State = "done" | "missing" | "optional";
 
@@ -118,7 +119,7 @@ function Mark({ state }: { state: State }) {
 
 // Which agent sessions will use: the profile named for the session type, then "default", then Paseo's defaults [SES-06].
 function agentLine(names: string[], profiles: AttentionConfig["profiles"]): Line {
-  const has = (name: string) => names.some((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  const has = (name: string) => names.some((candidate) => sameName(candidate, name));
   const fallback = has(profiles.default) ? `the ${profiles.default} profile` : "Paseo's default agent";
   const review = has(profiles.review ?? "") ? `the ${profiles.review} profile` : fallback;
   if (!has(profiles.default) && !has(profiles.review ?? ""))

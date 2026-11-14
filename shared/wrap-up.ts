@@ -1,6 +1,7 @@
-import { type AgentSummary, type AttentionView, isIdle, type Item, keySet, matchSessions, memberKeys, type RememberedGroups, type SessionWorkspace, type WrapItem } from "./attention";
+import { type AgentSummary, type AttentionView, isIdle, type Item, matchSessions, memberKeys, type RememberedGroups, type SessionWorkspace, type WrapItem } from "./attention";
 import { ago } from "./format";
 import { changeText } from "./changes";
+import { keySet } from "./names";
 
 // Wrap up: finished or out-of-my-hands work whose unarchived Paseo sessions are all idle [ATT-22]. Pure, so the rules are
 // testable. It's assembled on the client, which already polls Paseo's sessions for the screen and the sidebar's count; the

@@ -6,6 +6,7 @@ import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 import { getAttention } from "../shared/rpc";
 import { VIEW_QUERY_KEY } from "./data";
+import { sameName } from "../shared/names";
 
 type Paseo = ReturnType<typeof usePaseo>;
 
@@ -110,7 +111,7 @@ export async function githubProjects(paseo: Paseo): Promise<GitHubProject[]> {
 
 // The local checkout is the registered Paseo project with the repo's GitHub remote [SES-05].
 export async function findProject(paseo: Paseo, repo: string): Promise<ProjectMatch | null> {
-  return (await githubProjects(paseo)).find((project) => project.repo.toLowerCase() === repo.toLowerCase()) ?? null;
+  return (await githubProjects(paseo)).find((project) => sameName(project.repo, repo)) ?? null;
 }
 
 export interface Checkout {
@@ -129,12 +130,12 @@ export async function findCheckout(
 ): Promise<Checkout> {
   const repo = target.kind === "issue" ? codeRepoFor(config, target.repo) : target.repo;
   const project = await findProject(paseo, repo);
-  if (repo.toLowerCase() === target.repo.toLowerCase()) return { repo, project, baseBranch: target.defaultBranch };
+  if (sameName(repo, target.repo)) return { repo, project, baseBranch: target.defaultBranch };
   return { repo, project, baseBranch: project ? ((await defaultBranch(repo)) ?? undefined) : undefined };
 }
 
 export function noProjectMessage(checkout: Checkout, target: Target): string {
-  const where = checkout.repo === target.repo ? checkout.repo : `${checkout.repo}, where ${target.repo}'s code lives,`;
+  const where = sameName(checkout.repo, target.repo) ? checkout.repo : `${checkout.repo}, where ${target.repo}'s code lives,`;
   return `No Paseo project has ${where} as its GitHub remote. Add the repository as a project first.`;
 }
 
@@ -177,7 +178,7 @@ export async function resolveAgentConfig(
   const { config: daemon } = await paseo.config.get();
   const profiles = daemon.agentProfiles ?? [];
   const byName = (name: string | undefined) =>
-    name ? profiles.find((p) => p.id === name || p.name.toLowerCase() === name.toLowerCase()) : undefined;
+    name ? profiles.find((p) => p.id === name || sameName(p.name, name)) : undefined;
   const profile = profileId ? byName(profileId) : (byName(config.profiles[kind]) ?? byName(config.profiles.default));
   // A profile that names its model needs no provider lookup.
   const providers = profile?.model ? [] : await fetchProviders();

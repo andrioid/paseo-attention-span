@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, type FeedId, type FeedStatus, type GithubColor, type HistoryFilter, type Item, keySet, memberKeys, type ProjectsAccess, type Reviewer, uniqueKeys } from "../shared/attention";
+import { type Attention, type AttentionView, type FeedId, type FeedStatus, type GithubColor, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
@@ -37,6 +37,7 @@ import {
 import { toLookUp } from "./references";
 import { loadConfig, loadState, moveOldFiles, saveCodeRepo, saveCoverage, saveFollowThreads, saveNextUpFields, saveNextUpSources, saveState, State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
+import { keySet, uniqueKeys } from "../shared/names";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
 const HISTORY_MAX_AGE_SECONDS = 24 * 60 * 60;
@@ -211,7 +212,7 @@ export class AttentionService {
     const live = this.state.live?.attention;
     const shown = [...(live?.unclaimed ?? []), ...(live?.assigned ?? [])].map((issue) => issue.repo);
     const owners = [...orgs, ...nextUp.orgs, ...[...repos, ...nextUp.repos, ...this.state.projectRepos, ...shown].map((repo) => repo.split("/")[0])];
-    const unique = [...new Map(owners.map((owner) => [owner.toLowerCase(), owner])).values()];
+    const unique = uniqueKeys(owners);
     if (unique.length === 0) return [];
     const result = await graphql<Record<string, OrgFields>>(issueFieldsQuery(unique));
     const merged = new Map<string, IssueField>();

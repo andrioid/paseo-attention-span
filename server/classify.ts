@@ -15,7 +15,7 @@ import {
   type Target,
   type WaitingOn,
 } from "../shared/attention";
-import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField, sameField } from "../shared/config";
+import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import { workChip, workKind } from "../shared/work";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, ProjectItemNode, PullRequestNode, RequestedReviewer } from "./github-types";
@@ -23,6 +23,7 @@ import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
 import { ISSUE_RULES, type IssueState, nudgeable, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
+import { sameName } from "../shared/names";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
@@ -519,7 +520,7 @@ function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
   const tagged: WaitingOn[] = [];
   for (const comment of run) {
     for (const { login, team } of taggedIn(comment.bodyHTML)) {
-      const seen = (other: { login: string }) => other.login.toLowerCase() === login.toLowerCase();
+      const seen = (other: { login: string }) => sameName(other.login, login);
       if (login.toLowerCase() === me || tagged.some(seen)) continue;
       tagged.push({ login, team, avatarUrl: team ? undefined : `${origin}/${login}.png?size=64`, since: comment.createdAt });
     }
@@ -531,7 +532,7 @@ function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
 function reviewers(actors: (Actor | null | undefined)[], since: string): WaitingOn[] {
   const list: WaitingOn[] = [];
   for (const actor of actors) {
-    if (!actor || list.some((other) => other.login.toLowerCase() === actor.login.toLowerCase())) continue;
+    if (!actor || list.some((other) => sameName(other.login, actor.login))) continue;
     list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", ...(actor.__typename === "Bot" ? { bot: true } : {}), since });
   }
   return list;
@@ -593,11 +594,11 @@ export function mergeMethodFor(pr: PullRequestNode, config: AttentionConfig): Me
 
 function rankIssues(nodes: PickableNode[], details: Details, config: AttentionConfig): NextUpIssue[] {
   const [priority, effort, scope] = FIELD_ROLES.map((role) => nextUpField(config, role));
-  const valueOf = (node: PickableNode, field: string | undefined) => node.issueFieldValues.nodes.find((value) => sameField(value.field?.name, field))?.name;
+  const valueOf = (node: PickableNode, field: string | undefined) => node.issueFieldValues.nodes.find((value) => sameName(value.field?.name, field))?.name;
   // A field of the issue's own org: its options' order, or the colors it gave them. Two orgs may both have a Priority field,
   // ordered and colored differently [NXT-02, NXT-10].
   const ofOrg = <T,>(byOrg: Record<string, Record<string, T>> | undefined, node: PickableNode, field: string) =>
-    Object.entries(byOrg?.[node.repository.nameWithOwner.split("/")[0].toLowerCase()] ?? {}).find(([name]) => sameField(name, field))?.[1];
+    Object.entries(byOrg?.[node.repository.nameWithOwner.split("/")[0].toLowerCase()] ?? {}).find(([name]) => sameName(name, field))?.[1];
   // Position in the configured order (matched by name), else in the issue's org's own options; missing goes last.
   const position = (node: PickableNode, ranked: { field: string; order?: string[] } | undefined) => {
     const value = valueOf(node, ranked?.field);

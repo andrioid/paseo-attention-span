@@ -1,4 +1,5 @@
 import type { OthersChange } from "./changes";
+import { keySet, uniqueKeys } from "./names";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
 import type { WorkKind } from "./work";
 
@@ -265,16 +266,6 @@ export type WrapItem = Item & { section: "wrap"; wrap: WrapInfo };
 export function memberKeys(item: Pick<Item, "key" | "children"> & { change?: Pick<OthersChange, "key"> }): string[] {
   return uniqueKeys([item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)]);
 }
-
-// Each key once, ignoring case, in the first spelling seen.
-export function uniqueKeys(keys: string[]): string[] {
-  const unique = new Map<string, string>();
-  for (const key of keys) if (!unique.has(key.toLowerCase())) unique.set(key.toLowerCase(), key);
-  return [...unique.values()];
-}
-
-// Keys for comparing: GitHub's owner and repo names ignore case.
-export const keySet = (keys: Iterable<string>): Set<string> => new Set([...keys].map((key) => key.toLowerCase()));
 
 // Each open stack's and issue group's member keys, lower case, under every member, and when it was last seen open; so a
 // member that merges still knows its open siblings [ATT-04, ATT-22].

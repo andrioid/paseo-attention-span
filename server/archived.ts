@@ -1,4 +1,5 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import { keySet } from "../shared/names";
 
 // A session Attention Span started, archived in Paseo itself: once no session it started is left open on any part of the
 // item's stack or issue group, what others did to that work up to the archive is acknowledged, so it doesn't come back as
@@ -44,7 +45,7 @@ function archivedItem(event: ArchiveEvent, found: FoundSession): { itemKey: stri
 // Whether an open session Attention Span started is on any of the keys, which are compared ignoring case. The archived
 // session itself counts too: if it's listed open, it was restored while this was being decided.
 function stillOpen(keys: string[], open: Pick<ListedAgent, "labels" | "archivedAt">[]): boolean {
-  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  const wanted = keySet(keys);
   return open.some((agent) => {
     if (agent.archivedAt) return false;
     const itemKey = itemKeyOf(agent.labels);

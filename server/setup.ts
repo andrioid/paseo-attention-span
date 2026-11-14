@@ -3,6 +3,7 @@ import type { ConfigStatus, CoverageCheck, CoverageKind, SetupStatus } from "../
 import { FIXTURE_MY_ORGS, FIXTURE_ORGS, FIXTURE_REPOS } from "./fixture";
 import { FIXTURE, graphql, runGh } from "./gh";
 import { loadConfig } from "./store";
+import { sameName } from "../shared/names";
 
 // What the setup checklist needs [SET-01]. Asked only when Attention Span can't load.
 export async function setupStatus(): Promise<SetupStatus> {
@@ -44,7 +45,7 @@ export async function checkCoverage(kind: CoverageKind, input: string): Promise<
   if (kind === "org" && !/^[\w.-]+$/.test(name)) return { name: null, error: "Use the organization's name, like acme" };
   if (kind === "repo" && !/^[\w.-]+\/[\w.-]+$/.test(name)) return { name: null, error: "Use owner/name, like acme/shop" };
   if (FIXTURE) {
-    const known = (kind === "org" ? FIXTURE_ORGS : FIXTURE_REPOS).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+    const known = (kind === "org" ? FIXTURE_ORGS : FIXTURE_REPOS).find((candidate) => sameName(candidate, name));
     return known ? { name: known, error: null } : { name: null, error: `${name} wasn't found on GitHub` };
   }
   const { code, stdout, stderr } = await runGh(["api", kind === "org" ? `users/${name}` : `repos/${name}`, "--jq", kind === "org" ? ".login + \" \" + .type" : ".full_name"]);

@@ -3,10 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { type Attention, type HistoryFilter, type Item, type RememberedGroups, type SectionId, SECTIONS } from "../shared/attention";
-import { AttentionConfig, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
+import { AttentionConfig, FIELD_ROLES, type FieldRole } from "../shared/config";
 import type { OthersChange } from "../shared/changes";
 import { type ChangeLedger, EMPTY_LEDGER } from "./changes";
 import type { Pending } from "./view";
+import { sameName } from "../shared/names";
 
 // Local files in ~/.config/paseo-attention-span/ [PRIV-01].
 const CHOSEN_DIR = process.env.PASEO_ATTENTION_SPAN_DIR ?? process.env.PASEO_GITHUB_ATTENTION_DIR;
@@ -98,7 +99,7 @@ export async function loadConfig(): Promise<AttentionConfig> {
 export function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionConfig> {
   return updateConfig((file) => {
     const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
-    const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => issues.toLowerCase() !== issueRepo.toLowerCase()));
+    const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => !sameName(issues, issueRepo)));
     return { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
   });
 }
@@ -125,7 +126,7 @@ export function saveNextUpFields(fields: Partial<Record<FieldRole, string | null
       FIELD_ROLES.filter((role) => fields[role] !== undefined).map((role) => {
         const before = nextUp[role] as { field?: unknown } | null | undefined;
         const field = fields[role]!;
-        return [role, field === null ? null : before && typeof before.field === "string" && sameField(before.field, field) ? { ...before, field } : { field }];
+        return [role, field === null ? null : before && typeof before.field === "string" && sameName(before.field, field) ? { ...before, field } : { field }];
       }),
     );
     return { ...file, nextUp: { ...nextUp, ...chosen } };
