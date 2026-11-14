@@ -24,7 +24,7 @@ export interface CardAction {
   onPress: () => void;
   // Defaults to the label.
   accessibilityLabel?: string;
-  // Icon only, still in the main action's style, for an action whose icon says it all, like Got it's check [ATT-21].
+  // Icon only, still in the main action's style, for an action whose icon says it all, like Got it's check [HIS-07].
   iconOnly?: boolean;
 }
 

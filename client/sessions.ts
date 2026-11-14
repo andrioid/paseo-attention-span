@@ -1,10 +1,13 @@
 import type { usePaseo } from "@getpaseo/plugin/client";
-import { type AgentSummary, checkoutPr, sessionTitle, type Target } from "../shared/attention";
+import { type AgentSummary, checkoutPr, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
 import { linkedSessions } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 
 type Paseo = ReturnType<typeof usePaseo>;
+
+// The app's session list, shared by the screen and the sidebar's count [ATT-09, ATT-22].
+export const AGENTS_QUERY_KEY = ["attention-span", "agents"] as const;
 
 // Labels tie an agent to the item it works on [ATT-07, SES-03].
 export const LABEL = "attention-span";
@@ -13,6 +16,20 @@ export const ITEM_LABEL = "attention-span-item";
 export const KIND_LABEL = "attention-span-kind";
 // Sessions started under the plugin's earlier names, "GitHub attention" and "GitHub inbox".
 const OLD_LABELS = ["github-attention", "github-inbox"];
+
+// What Paseo knows about the workspace a session runs in, for Wrap up's unsaved-work check [ATT-22].
+function sessionWorkspace(workspace: (Awaited<ReturnType<Paseo["workspaces"]["list"]>>["entries"][number])): SessionWorkspace {
+  const git = workspace.gitRuntime;
+  return {
+    kind: workspace.workspaceKind,
+    name: workspace.title ?? workspace.name,
+    directory: workspace.workspaceDirectory ?? workspace.projectRootPath,
+    ...(git?.currentBranch ? { branch: git.currentBranch } : {}),
+    ...(typeof git?.isDirty === "boolean" ? { dirty: git.isDirty } : {}),
+    ...(typeof git?.aheadOfOrigin === "number" ? { ahead: git.aheadOfOrigin } : {}),
+    ownedWorktree: workspace.workspaceKind === "worktree",
+  };
+}
 
 // Agents started from Attention Span, each with the item it was started on, and the agents
 // started outside it in a workspace that belongs to an item [SES-08].
@@ -40,7 +57,11 @@ export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
   }
   const labelled = [...byId.values()];
   const unlabelled = all.entries.map((entry) => entry.agent).filter((agent) => !labels.some((label) => agent.labels?.[label]));
-  return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)];
+  const byWorkspace = new Map(workspaces.entries.map((workspace) => [workspace.id, sessionWorkspace(workspace)]));
+  return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)].map((agent) => {
+    const workspace = agent.workspaceId ? byWorkspace.get(agent.workspaceId) : undefined;
+    return workspace ? { ...agent, workspace } : agent;
+  });
 }
 
 export interface ProjectMatch {

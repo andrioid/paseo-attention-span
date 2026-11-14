@@ -28,7 +28,7 @@ const SEARCHES = {
   asked: { first: 50, nodes: THREAD },
   assigned: { first: 50, nodes: "...pickable" },
   unclaimed: { first: 100, nodes: "...pickable" },
-  // My PRs closed lately, with who merged or closed them, for Changed by others [ATT-21]. Who closed one comes from its last
+  // My PRs closed lately, with who merged or closed them, for Changed by others [HIS-07]. Who closed one comes from its last
   // close event; assignees tell a PR handed over before it closed [PRS-08].
   ended: {
     first: 50,
@@ -38,19 +38,31 @@ const SEARCHES = {
       timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { createdAt actor { login } } } }
     }`,
   },
+  // Issues assigned to me closed lately, so someone else's close is a change too [HIS-07]. Bounded like `ended`.
+  closedIssues: {
+    first: 50,
+    nodes: `... on Issue {
+      id number title url closedAt stateReason repository { nameWithOwner }
+      timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { createdAt actor { login } } } }
+    }`,
+  },
   // Who merged it, when it wasn't me [HIS-05].
   merged: {
     first: 100,
     nodes: "... on PullRequest { number title url body mergedAt mergedBy { login } repository { nameWithOwner } labels(first: 20) { nodes { name } } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
   },
-  reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt repository { nameWithOwner } author { ...author } labels(first: 20) { nodes { name } } }" },
-  // Labels and type say what kind of work each was [HIS-04].
-  closed: { first: 100, nodes: "... on Issue { number title url closedAt stateReason repository { nameWithOwner } issueType { name } labels(first: 20) { nodes { name } } }" },
+  // Who merged someone else's PR I reviewed, for the week's Changed by others copy and Wrap up [HIS-02, ATT-22].
+  reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt mergedBy { login } repository { nameWithOwner } author { ...author } labels(first: 20) { nodes { name } } }" },
+  // Labels and type say what kind of work each was [HIS-04]; the close event's actor says who closed it [HIS-07].
+  closed: {
+    first: 100,
+    nodes: "... on Issue { number title url closedAt stateReason repository { nameWithOwner } issueType { name } labels(first: 20) { nodes { name } } timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { actor { login } } } } }",
+  },
 };
 export type SearchName = keyof typeof SEARCHES;
 
 // Doing, Waiting and Next up. History has its own, slower schedule.
-export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed", "ended"] as const;
+export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed", "ended", "closedIssues"] as const;
 export const HISTORY_SEARCHES = ["merged", "reviewed", "closed"] as const;
 
 const FRAGMENTS: Record<string, string> = {
@@ -193,8 +205,10 @@ export function searchVariables(config: AttentionConfig, now: Date): Record<Excl
     reviews: `is:pr is:open user-review-requested:@me ${scope}`,
     mentions: `is:open mentions:@me updated:>=${since} ${scope}`,
     assigned: `is:issue is:open assignee:@me ${scope}`,
-    // Within the window Changed by others catches up over [ATT-21].
+    // Within the window Changed by others catches up over [HIS-07].
     ended: `is:pr is:closed author:@me closed:>=${since} sort:updated-desc ${scope}`,
+    // Issues assigned to me that closed lately: someone else's close is a change too [HIS-07].
+    closedIssues: `is:issue is:closed assignee:@me closed:>=${since} sort:updated-desc ${scope}`,
     // Threads I opened, commented on, was assigned or mentioned in, active lately: answers, and fresh questions [ATT-16].
     involved: `is:open involves:@me updated:>=${since} sort:updated-desc ${scope}`,
     // On my own issues a question nobody answered stays however old [ATT-11]. Newest first, so old ones go last.
@@ -206,7 +220,7 @@ export function searchVariables(config: AttentionConfig, now: Date): Record<Excl
   };
 }
 
-// Who assigned and unassigned whom on PRs and issues that may have left my hands, by node id, a batch per request [ATT-21, GH-01].
+// Who assigned and unassigned whom on PRs and issues that may have left my hands, by node id, a batch per request [HIS-07, GH-01].
 // The last events are enough: a handover is the latest change of hands.
 export const ASSIGNMENT_BATCH = 20;
 const ASSIGNMENT_EVENT = "createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } }";
@@ -215,6 +229,18 @@ export function assignmentsQuery(ids: string[]): string {
       timelineItems(itemTypes: [ASSIGNED_EVENT, UNASSIGNED_EVENT], last: 30) { nodes { __typename ... on AssignedEvent { ${ASSIGNMENT_EVENT} } ... on UnassignedEvent { ${ASSIGNMENT_EVENT} } } }`;
   const fields = ids.map((id, index) => `a${index}: node(id: ${JSON.stringify(id)}) { __typename ... on PullRequest { ${subject} } ... on Issue { ${subject} } }`);
   return `query Assignments {\n${fields.join("\n")}\n}`;
+}
+
+// PRs Attention Span saw closed, by node id, a batch per request: only a state and a reopen event [HIS-07, GH-01].
+export function reopenQuery(ids: string[]): string {
+  const fields = ids.map(
+    (id, index) => `a${index}: node(id: ${JSON.stringify(id)}) {
+      ... on PullRequest { id number title url state repository { nameWithOwner }
+        timelineItems(itemTypes: [REOPENED_EVENT], last: 1) { nodes { ... on ReopenedEvent { createdAt actor { login } } } }
+      }
+    }`,
+  );
+  return `query Reopened {\n${fields.join("\n")}\n}`;
 }
 
 export function prKey(node: { repository: { nameWithOwner: string }; number: number }): string {

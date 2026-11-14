@@ -12,6 +12,8 @@ export const TAB_FEED: Record<TabId, FeedId> = { history: "history", doing: "liv
 // Within a tab, top to bottom. The order is also the priority: an item appears once, under the first section whose rule
 // holds, its most urgent reason [ATT-02]. Moving a line here changes which section wins.
 export const SECTIONS = {
+  // Finished or out of my hands, with open Paseo sessions left to tidy up [ATT-22].
+  wrap: { tab: "doing", title: "Wrap up" },
   reply: { tab: "doing", title: "Waiting for your reply" },
   // Someone answered my question without mentioning me [ATT-16].
   answered: { tab: "doing", title: "Answered" },
@@ -23,18 +25,18 @@ export const SECTIONS = {
   // Nobody has the next move until I ask someone [PRS-12].
   needs_reviewer: { tab: "doing", title: "Needs a reviewer" },
   drafts: { tab: "doing", title: "My drafts" },
-  // What someone else did to my work: a note until Got it, never counted as needing me [ATT-21].
-  changed: { tab: "doing", title: "Changed by others" },
   // Waiting groups these by who they wait on, not by section [WAI-01].
   wait_review: { tab: "waiting", title: "Waiting for review" },
   wait_reviewer: { tab: "waiting", title: "Waiting for the reviewer" },
   wait_ci: { tab: "waiting", title: "CI running" },
   wait_answer: { tab: "waiting", title: "Questions I asked" },
+  // What someone else did to my work, unread at the top of History [HIS-07].
+  changed: { tab: "history", title: "Changed by others" },
   // [HIS-01, HIS-02]
   done: { tab: "history", title: "Done" },
   reviewed: { tab: "history", title: "Reviewed" },
-  // My PRs closed unmerged by others, and work taken out of my hands, out of the week's copy [HIS-06].
-  handed_off: { tab: "history", title: "Closed or handed off" },
+  // Cleared changes that weren't my finished work: a PR closed unmerged, work taken out of my hands, a reopen [HIS-06, HIS-07].
+  handed_off: { tab: "history", title: "Changed by others" },
 } as const satisfies Record<string, { tab: TabId; title: string }>;
 export type SectionId = keyof typeof SECTIONS;
 export const SECTION_ORDER = Object.keys(SECTIONS) as SectionId[];
@@ -56,8 +58,11 @@ export type ActionId =
   | "merge"
   | "close"
   | "start"
-  // Clears a Changed by others note; nothing changes on GitHub [ATT-21].
+  // Clears a Changed by others note; nothing changes on GitHub [HIS-07].
   | "got_it";
+
+// What History's filter can add to each week, both off at first [HIS-07].
+export type HistoryFilter = "reviewed" | "changed";
 
 // A short state label on a row [ATT-05]; tone picks its color.
 export interface Chip {
@@ -229,8 +234,23 @@ export interface Item {
   notPlanned?: true;
   // History only: who merged my PR, when it wasn't me [HIS-05].
   mergedBy?: string;
-  // Changed by others and Closed or handed off: what someone else did [ATT-21, HIS-06].
+  // History only: who closed an issue assigned to me, when it wasn't me [HIS-07].
+  closedBy?: string;
+  // A Changed by others note, unread or cleared [HIS-06, HIS-07].
   change?: OthersChange;
+  // Doing's Wrap up only: its open sessions and what finishing looked like [ATT-22].
+  wrap?: WrapInfo;
+}
+
+// A Wrap up row's sessions: all idle, or it wouldn't be there [ATT-22].
+export interface WrapInfo {
+  sessions: AgentSummary[];
+  // The item and its children's keys, before the row's own key was prefixed, for sessions and change notes [ATT-22].
+  keys: string[];
+  // "merged by dave 2h ago" or "closed 6h ago by alice", made when the row is.
+  finish: string;
+  // A session on someone else's PR that merged: its card says "review session" in words.
+  review?: true;
 }
 
 // The colors GitHub lets an org give issue field options and a project its Status options. GRAY is what nothing chosen looks
@@ -341,12 +361,34 @@ export interface AgentSummary {
   title: string | null;
   workspaceId: string | null;
   lastActivityAt: string | null;
+  // Its workspace, for Wrap up: whether its worktree holds unsaved work, and whether it's Paseo's own worktree [ATT-22].
+  workspace?: SessionWorkspace;
+}
+
+export interface SessionWorkspace {
+  kind: "directory" | "worktree" | "checkout" | "local_checkout";
+  name: string;
+  directory?: string;
+  branch?: string;
+  // Paseo's own reading: true when there are uncommitted changes; missing when it couldn't tell.
+  dirty?: boolean;
+  // Commits not on the upstream branch, from Paseo; missing when it couldn't tell.
+  ahead?: number;
+  // Previews only, where Paseo has no worktree: how many files are uncommitted, for the confirm sheet's words.
+  dirtyFiles?: number;
+  // Paseo made the worktree and may archive it; a local checkout never is [ATT-22].
+  ownedWorktree?: boolean;
 }
 
 // An item's open sessions: started on it or on any PR under it, until it's merged or closed.
 // One that needs me comes first, then the most recent [SES-03].
 export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "closedAt" | "children">): AgentSummary[] {
   if (item.closedAt) return [];
+  return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
+}
+
+// Wrap up's sessions: a finished item's open sessions, which itemSessions leaves out once it's closed [ATT-22].
+export function wrapSessions(agents: AgentSummary[], item: Pick<Item, "key" | "children">): AgentSummary[] {
   return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
 }
 
@@ -384,11 +426,13 @@ export interface FeedStatus {
 export interface AttentionView {
   feeds: Record<FeedId, FeedStatus>;
   login: string | null;
-  // Items in Doing that need me; the sidebar shows it. Changed by others notes don't count [ATT-09, ATT-21].
+  // Items in Doing that need me; the sidebar shows it, adding Wrap up's rows client-side [ATT-09, ATT-22].
   count: number;
   doing: Section[];
   waiting: WaitingGroup[];
   history: Item[];
+  // Every item key on Doing, Waiting or Next up before dismissals, so Wrap up knows what still isn't done [ATT-22].
+  activeKeys?: string[];
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom: UnclaimedSource;
@@ -401,6 +445,8 @@ export interface AttentionView {
   sources: string[];
   // Project statuses ticked in Next up's filter, as projectFilterId makes them; none means all [NXT-03].
   projectFilter: string[];
+  // Reviewed and Changed by others shown in each of History's weeks; none means finished only [HIS-07].
+  historyFilter: HistoryFilter[];
   config: AttentionConfig;
   // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
   pending: number;

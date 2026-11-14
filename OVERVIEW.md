@@ -6,7 +6,9 @@ There are four tabs. I think of them as a little story: what needs me now, what'
 
 ## Doing: what needs you now
 
-This is the one you'll live in. It's split by reason: someone's waiting for your reply, someone answered your question, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, nobody's been asked to review it yet, or it's one of your drafts. Only things you can act on, though. Nudging people lives in Waiting.
+This is the one you'll live in. At the top is **Wrap up**: finished or handed-off work whose Paseo sessions are still open, waiting for you to put them away. Below that it's split by reason: someone's waiting for your reply, someone answered your question, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, nobody's been asked to review it yet, or it's one of your drafts. Only things you can act on, though. Nudging people lives in Waiting.
+
+Wrap up is the cleanup pass. A PR that merged, an issue that closed, work that left your hands, a review you finished on someone else's PR: if one of your sessions is still open on it, it sits here once the agent is idle, newest finish first. **Archive session** puts the session and its worktree away. If anything is uncommitted or unpushed you get a sheet first, naming it, with **Open session** beside **Archive anyway**; several sessions get a list of their own. **Archive all clean** does the tidy ones in one go. A worktree shared with anything else, or a local checkout, is never archived, and there's no Undo, which is exactly why it checks first. Archived work goes to History as already read, not as a new note.
 
 ![Doing](docs/screenshots/desktop-dark-doing.png)
 
@@ -18,7 +20,7 @@ When there's nothing in it, you get a quiet horizon that follows the time of day
 
 Mentions only count while the person is still waiting for you. Reply or react and it's gone. On your own issues and PRs, a new comment from the last 30 days shows up under **Answered** even if it doesn't tag you. On other people's threads only tags count. The point is to pick out the signal, and most of what happens in threads you once commented on isn't. If you do want those replies, turn on **Follow threads I've commented on** in Settings. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
-Sometimes other people move your work without asking: they merge your PR, close it, take it over, or unassign you from an issue. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one gets a line at the bottom of Doing, like "merged by dave 2h ago" or "phil took over", until you tap its check, or **Mark all as read** to clear them all.
+Sometimes other people move your work without asking: they merge your PR, close it, close an issue assigned to you, reopen a PR you'd seen closed, take work over, or unassign you. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one waits at the top of **History**, like "merged by dave 2h ago" or "phil took over", and the tab gets a little green dot until you tap its check, or **Mark all as read** to clear them all. If the work is already in Wrap up, archiving the session acknowledges it instead.
 
 Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
 
@@ -75,13 +77,15 @@ Some orgs keep issues in a separate repo from the code. When that happens, the f
 
 ## History: what you got done
 
-The issues and PRs you finished in recent weeks, grouped by week, plus the PRs you reviewed that got merged. Reviews are work too, even if nobody counts them.
+The issues and PRs you finished in recent weeks, grouped by week, with what others did at the top until you've seen it. Reviews are work too, even if nobody counts them, so **Filter** can show them under each week, along with the changes by others you've cleared. Finished work is always there; the other two are off until you ask, and the button remembers.
 
-There's a copy button per week that gives you a Markdown list of links, each led by what kind of work it was: 🐞 bug, 🚀 feature, 🔧 task, or 🔀 for a PR that's none of those. The kind comes from the issue type, else the labels, else a title like "fix: …", so it works whether or not your repos use issue types. Cards show it too. Issues closed as not planned stay out of the list. A PR someone else merged says who, and work that left your hands (a PR someone closed or took over, an issue you were taken off) sits apart under **Closed or handed off**, out of the list, even if its new owner merges it later. That's my standup prep now, and it takes about four seconds.
+There's a copy button per week that gives you Markdown lists of what's shown, each line led by what kind of work it was: 🐞 bug, 🚀 feature, 🔧 task, or 🔀 for a PR that's none of those. The kind comes from the issue type, else the labels, else a title like "fix: …", so it works whether or not your repos use issue types. Cards show it too. Issues closed as not planned stay out of the list. A PR someone else merged says who, and so does an issue someone else closed. Work that left your hands (a PR someone closed or took over, an issue you were taken off) sits under **Changed by others** when that's shown, out of the list, even if its new owner merges it later. Changes by others are never copied. That's my standup prep now, and it takes about four seconds.
 
 ![History](docs/screenshots/desktop-dark-history.png)
 
-![History with reviews](docs/screenshots/desktop-dark-history-reviewed.png)
+![History filtered to Reviewed and changes](docs/screenshots/desktop-dark-history-filtered.png)
+
+![Both lists under a week](docs/screenshots/desktop-dark-history-groups.png)
 
 ## Agent sessions
 

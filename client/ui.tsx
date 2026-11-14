@@ -286,7 +286,7 @@ export function Avatar({ url, bot, team, size = 18 }: { url?: string; bot?: bool
 }
 
 // ghost: no background until hovered or pressed, for secondary icons on every row.
-type Variant = "calm" | "solid" | "plain" | "ghost";
+type Variant = "calm" | "solid" | "plain" | "ghost" | "danger";
 
 export function useHover() {
   const [hovered, setHovered] = useState(false);
@@ -315,7 +315,7 @@ export function Button({
   const styles = useStyles();
   const { hovered, hover } = useHover();
   const { c } = styles;
-  const color = variant === "solid" ? c.accentForeground : variant === "calm" ? styles.action : variant === "ghost" ? c.foregroundMuted : c.foreground;
+  const color = variant === "solid" ? c.accentForeground : variant === "calm" ? styles.action : variant === "ghost" ? c.foregroundMuted : variant === "danger" ? c.statusDanger : c.foreground;
   return (
     <Pressable
       accessibilityRole="button"
@@ -331,7 +331,7 @@ export function Button({
         height: 30,
         paddingHorizontal: label ? 11 : 8,
         borderRadius: 8,
-        backgroundColor: variant === "solid" ? c.accent : hovered || (pressed && variant === "ghost") ? c.border : variant === "ghost" ? "transparent" : c.surface2,
+        backgroundColor: variant === "solid" ? c.accent : variant === "danger" ? mix(c.statusDanger, c.surface1, 0.18) : hovered || (pressed && variant === "ghost") ? c.border : variant === "ghost" ? "transparent" : c.surface2,
         opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
       })}
     >

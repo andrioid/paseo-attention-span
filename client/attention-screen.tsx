@@ -2,9 +2,9 @@ import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Markdown, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type HistoryFilter, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
 import { changeText } from "../shared/changes";
@@ -24,11 +24,13 @@ import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FadeIn, githubEntry, Modal, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
-import { branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
-import { ALL_NOTES, allNotesBusy, noteBusy } from "../shared/got-it";
+import { AGENTS_QUERY_KEY, branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
+import { ALL_NOTES, ALL_WRAP, allNotesBusy, allWrapBusy, noteBusy, wrapBusy } from "../shared/got-it";
+import { cleanSingle, doingCount, sessionCleanliness, unreadChanges, unsavedText, wrapItems } from "../shared/wrap-up";
+import type { ArchiveOutcome, ArchiveSessionInfo, ArchiveTarget } from "../shared/archive";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
-import { Avatar, Button, Disclosure, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
+import { Avatar, Button, Hint, KeepStyles, LINE_HEIGHT, Loading, Meta, mix, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, Toggle, useCopy, useHover, useStrongText, useStyles } from "./ui";
 
 // The agent icon marks every action that starts an agent session; the rest act on GitHub right away [ATT-13].
 const ACTION_ICONS: Record<ActionId, IconName> = {
@@ -184,10 +186,11 @@ const SECTION_ICONS: Record<SectionId, IconName> = {
   wait_reviewer: "replyArrow",
   wait_ci: "clock",
   wait_answer: "reply",
+  wrap: "archive",
   changed: "team",
   done: "merge",
   reviewed: "review",
-  handed_off: "userShare",
+  handed_off: "team",
 };
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
@@ -197,7 +200,6 @@ const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: "next", label: "Next up", icon: "nextUp" },
 ];
 
-const AGENTS_QUERY_KEY = ["attention-span", "agents"] as const;
 type FetchContext = (input: RpcInput<typeof rpc.sessionContext>) => Promise<RpcOutput<typeof rpc.sessionContext>>;
 export type FetchDetails = (input: RpcInput<typeof rpc.itemDetails>) => Promise<RpcOutput<typeof rpc.itemDetails>>;
 type DefaultBranch = (repo: string) => Promise<string | null>;
@@ -255,6 +257,9 @@ function AttentionList({
   const undismiss = useRpc(rpc.undismissItem);
   const restore = useRpc(rpc.restoreDismissed);
   const gotIt = useRpc(rpc.gotIt);
+  const saveHistoryFilter = useRpc(rpc.setHistoryFilter);
+  const acknowledge = useRpc(rpc.acknowledgeChanges);
+  const archiveSessions = useRpc(rpc.archiveSessions);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
   const saveProjects = useRpc(rpc.setProjectFilter);
@@ -280,9 +285,14 @@ function AttentionList({
   const [tab, setTab] = useState<TabId>("doing");
   // Every card with a change still running: each runs on its own.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  // Sessions archived here, hidden before Paseo's list catches up; in previews, where nothing really archives, this is what
+  // makes a Wrap up row go away after its screenshot [ATT-22].
+  const [archivedSessions, setArchivedSessions] = useState<ReadonlySet<string>>(new Set());
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [options, setOptions] = useState<OptionsSpec | null>(null);
+  // History's Filter sheet: Reviewed and Changed by others per week [HIS-07].
+  const [filtering, setFiltering] = useState(false);
   // The feedback sheet, then the first words for the kind picked in it [FB-01].
   const [feedback, setFeedback] = useState<"sheet" | FeedbackKind | null>(null);
   const view = attention.data;
@@ -291,6 +301,33 @@ function AttentionList({
   const failing = !!attention.error || !!view?.feeds.live.error;
   const setup = useQuery({ queryKey: ["attention-span", "setup"], queryFn: () => fetchSetup({}), enabled: failing });
   const [checking, setChecking] = useState(false);
+  // A session archived in Paseo itself: when Wrap up loses a row because every one of its sessions is gone, acknowledge what
+  // others did to its work, so it goes to the week as cleared rather than becoming an unread note [HIS-07, ATT-22].
+  const seenWrap = useRef(new Map<string, { ids: string[]; keys: string[] }>());
+  const acknowledging = useRef(new Set<string>());
+  useEffect(() => {
+    if (!view || !agents.data) return;
+    const now = wrapItems(view, agents.data);
+    const current = new Map(
+      now.map((item) => [
+        item.key,
+        { ids: (item.wrap?.sessions ?? []).map((session) => session.id), keys: item.wrap?.keys ?? [item.key.replace(/^wrap:/, ""), ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)] },
+      ]),
+    );
+    const gone = [...seenWrap.current].filter(([key, row]) => !current.has(key) && row.ids.length > 0 && row.ids.every((id) => !agents.data!.some((agent) => agent.id === id)));
+    seenWrap.current = current;
+    for (const [key, row] of gone) {
+      const busy = [key, ...row.keys].find((other) => acknowledging.current.has(other));
+      if (busy) continue;
+      for (const other of [key, ...row.keys]) acknowledging.current.add(other);
+      void acknowledge({ keys: row.keys })
+        .then((next) => attention.setView(next))
+        .catch(() => {})
+        .finally(() => {
+          for (const other of [key, ...row.keys]) acknowledging.current.delete(other);
+        });
+    }
+  }, [view, agents.data]);
 
   async function run(key: string, label: string, work: () => Promise<unknown>) {
     setBusy((keys) => new Set(keys).add(key));
@@ -375,21 +412,27 @@ function AttentionList({
 
   // Each tab shows how fresh its own feed is.
   const feed = view.feeds[TAB_FEED[tab]];
-  // Calm only once a refresh that worked says Doing is empty [ATT-18].
-  const clear = isClear(view, !!attention.error);
+  // Sessions drive Wrap up, so it's made here where Paseo is; the server can't see them [ATT-22].
+  const agentsNow = (view.fixtureAgents ?? agents.data ?? []).filter((agent) => !archivedSessions.has(agent.id));
+  const wrap = wrapItems(view, agentsNow);
+  // Notes about work Already in Wrap up wait there; archiving acknowledges them [HIS-07, ATT-22].
+  const notes = unreadChanges(view.history.filter((item) => item.section === "changed"), wrap);
+  // Calm only once a refresh that worked says Doing is empty, Wrap up included [ATT-18, ATT-22].
+  const clear = isClear(view, !!attention.error, wrap.length);
   // ⟳ turns for any refresh of this tab's feed, but only my own press locks it: the cached view can still say a background one runs after it's done.
   const pressed = attention.isRefreshing(TAB_FEED[tab]);
   const refreshing = feed.refreshing || attention.isFetching || pressed;
   const counts: Record<TabId, number> = {
     history: view.history.filter((item) => item.section === "done").length,
-    doing: view.count,
+    doing: doingCount(view, wrap),
     // Work waiting on several people counts once.
     waiting: new Set(view.waiting.flatMap((group) => group.items.map((item) => item.key))).size,
     next: view.assigned.length + view.unclaimed.length,
   };
 
   const actions: Actions = {
-    agents: view.fixtureAgents ?? agents.data ?? [],
+    agents: agentsNow,
+    fixture: !!view.fixtureAgents,
     startWithOptions: setOptions,
     busy,
     config: view.config,
@@ -405,7 +448,7 @@ function AttentionList({
       const session = ACTION_SESSION[action];
       const { target } = item;
       if (action === "reply") return void openExternalUrl(item.person?.url ?? item.url);
-      // [ATT-21]
+      // [HIS-07]
       if (action === "got_it" && item.change) {
         const { id } = item.change;
         return change(item.key, "Got it", () => gotIt({ ids: [id], on: true }), `Cleared the note on “${item.title}”`, () => gotIt({ ids: [id], on: false }));
@@ -450,7 +493,7 @@ function AttentionList({
       action === "merge"
         ? change(item.key, "Merge", () => merge({ key: item.key, target: item.target }), `PR ${item.target.number} merged`)
         : change(item.key, "Close", () => close({ key: item.key, target: item.target, comment }), `PR ${item.target.number} closed`),
-    // Got it on every Changed by others note at once; one Undo brings them all back [ATT-21].
+    // Got it on every Changed by others note at once; one Undo brings them all back [HIS-07].
     gotItAll: (items) => {
       const ids = items.flatMap((item) => (item.change ? [item.change.id] : []));
       const notes = `${ids.length} note${ids.length === 1 ? "" : "s"}`;
@@ -458,6 +501,38 @@ function AttentionList({
     },
     dismiss: (item) => change(item.key, "Dismiss", () => dismiss({ key: item.key }), `Dismissed “${item.title}”`, () => undismiss({ key: item.key }), true),
   };
+
+  // What a Wrap up row's archive names: the item (whose key carries a wrap: prefix), its children, and its sessions.
+  const archiveTarget = (item: Item): ArchiveTarget => ({
+    itemKey: item.key,
+    agentIds: item.wrap?.sessions.map((session) => session.id) ?? [],
+    keys: item.wrap?.keys ?? [item.key.replace(/^wrap:/, ""), ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)],
+  });
+
+  // Archive sessions, with the busy key that makes it wait for Archive all clean and the other way round [ATT-22].
+  // No Undo: Paseo's SDK can't restore a workspace and its agents, so the sheet is the safeguard instead.
+  async function archiveRows(items: Item[], confirm: boolean, key = ALL_WRAP): Promise<ArchiveOutcome | null> {
+    if (items.length === 0) return null;
+    setBusy((keys) => new Set(keys).add(key));
+    try {
+      const outcome = await archiveSessions({ targets: items.map(archiveTarget), confirm });
+      attention.setView(outcome.view);
+      if (outcome.ok) {
+        const archived = new Set(items.flatMap((item) => item.wrap?.sessions.map((session) => session.id) ?? []));
+        setArchivedSessions((known) => new Set([...known, ...archived]));
+        const sessions = archived.size;
+        toast.show(sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`, { variant: "success" });
+      } else if (outcome.reason === "working") {
+        toast.error(`Couldn't archive: ${outcome.message}`);
+      }
+      return outcome;
+    } catch (error) {
+      toast.error(`Archive failed: ${(error as Error).message}`);
+      return null;
+    } finally {
+      setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
+    }
+  }
 
   const switchTab = (id: TabId) => {
     setTab(id);
@@ -470,7 +545,7 @@ function AttentionList({
       <View style={[styles.row, { justifyContent: "space-between", flexWrap: "wrap" }]}>
         <View style={styles.row}>
           {TABS.map(({ id, label, icon }) => (
-            <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} onPress={() => switchTab(id)} />
+            <Tab key={id} icon={icon} label={label} count={counts[id]} active={tab === id} dot={id === "history" && notes.length > 0} onPress={() => switchTab(id)} />
           ))}
         </View>
         <View style={[styles.row, { gap: 16 }]}>
@@ -512,10 +587,46 @@ function AttentionList({
           />
         </View>
       ))}
-      {tab === "history" ? <History items={view.history} actions={actions} /> : null}
+      {tab === "history" ? (
+        <History
+          notes={notes}
+          items={view.history}
+          filter={view.historyFilter ?? []}
+          filtering={filtering}
+          onFiltering={setFiltering}
+          onFilter={(next) => {
+            // Ticks apply right away, like Next up's; the server remembers them [HIS-07].
+            attention.setView({ ...view, historyFilter: next });
+            saveHistoryFilter({ filter: next })
+              .then((saved) => attention.setView(saved))
+              .catch((error: Error) => toast.error(`Saving the filter failed: ${error.message}`));
+          }}
+          actions={actions}
+        />
+      ) : null}
       {tab === "doing" ? (
         <>
-          {clear ? <Still /> : view.doing.length ? <Sections sections={view.doing} actions={actions} /> : !feed.fetchedAt && !feed.error ? <Loading text="Checking GitHub…" /> : null}
+          {clear ? <Still /> : wrap.length || view.doing.length ? (
+            <>
+              {wrap.length > 0 ? (
+                <WrapUp
+                  items={wrap}
+                  actions={actions}
+                  onArchive={async (item, confirm) => {
+                    const outcome = await archiveRows([item], confirm, item.key);
+                    return outcome;
+                  }}
+                  onArchiveAll={async () => {
+                    const clean = wrap.filter(cleanSingle);
+                    if (clean.length === 0) return;
+                    const outcome = await archiveRows(clean, false);
+                    if (outcome && !outcome.ok && outcome.reason === "unsaved") toast.error("Some sessions have unsaved changes. Archive them one by one.");
+                  }}
+                />
+              ) : null}
+              {view.doing.length > 0 ? <Sections sections={view.doing} actions={actions} /> : null}
+            </>
+          ) : !feed.fetchedAt && !feed.error ? <Loading text="Checking GitHub…" /> : null}
           {view.dismissedCount > undoable.filter((row) => row.dismissal).length ? (
             <Pressable
               accessibilityRole="button"
@@ -591,19 +702,21 @@ function AttentionList({
   );
 }
 
-function Tab({ icon, label, count, active, onPress }: { icon: IconName; label: string; count: number; active: boolean; onPress: () => void }) {
+function Tab({ icon, label, count, active, dot, onPress }: { icon: IconName; label: string; count: number; active: boolean; dot?: boolean; onPress: () => void }) {
   const styles = useStyles();
   const color = active ? styles.c.foreground : styles.c.foregroundMuted;
-  // A soft round badge for the count, a shade brighter on the open tab; green marks only where I am.
+  // A soft round badge for the count, a shade brighter on the open tab; green marks only where I am. A dot says History
+  // has unread changes without adding them to the count [HIS-07].
   return (
     <Pressable
       accessibilityRole="tab"
-      accessibilityLabel={`${label}, ${count}`}
+      accessibilityLabel={`${label}, ${count}${dot ? ", unread changes" : ""}`}
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={[styles.row, { gap: 6, paddingVertical: 7, paddingHorizontal: styles.compact ? 9 : 12, borderRadius: 9, backgroundColor: active ? styles.c.surface2 : "transparent" }]}
     >
       <TablerIcon name={icon} size={16} color={active ? styles.action : color} />
+      {dot ? <View style={{ position: "absolute", top: 6, right: 6, width: 7, height: 7, borderRadius: 4, backgroundColor: styles.action }} /> : null}
       {/* On phones only the active tab is labelled, so four tabs fit. */}
       {active || !styles.compact ? <Text style={{ color, fontSize: 14, fontWeight: active ? "600" : "400" }}>{label}</Text> : null}
       <View style={{ minWidth: 20, alignItems: "center", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 9, backgroundColor: tint(styles.c.foreground, active ? 0.14 : 0.08) }}>
@@ -623,6 +736,8 @@ function tint(color: string, alpha: number): string {
 
 interface Actions {
   agents: AgentSummary[];
+  // Previews have made-up sessions: show their sheets locally instead of asking a daemon that has none.
+  fixture: boolean;
   startWithOptions: (spec: OptionsSpec) => void;
   busy: ReadonlySet<string>;
   config: AttentionConfig;
@@ -645,12 +760,15 @@ interface Actions {
 }
 
 // What the card is: open, draft, merged or closed. Urgency stays in the chips and section headers.
-// A note on what someone else did shows what happened instead; its words say it too, so color isn't the only sign [ATT-21].
+// A note on what someone else did shows what happened instead; its words say it too, so color isn't the only sign [HIS-07].
 function stateMark(item: Item): CardProps["mark"] {
+  if (item.section === "reviewed" || item.wrap?.review) return { icon: "review", tone: "neutral" };
   if (item.change) {
     const kind = item.change.kind;
     if (kind === "merged") return { icon: "merge", tone: "good" };
     if (kind === "closed") return { icon: "prClosed", tone: "bad" };
+    if (kind === "issue_closed") return item.change.reason === "not_planned" ? { icon: "close", tone: "bad" } : { icon: "issueClosed", tone: "good" };
+    if (kind === "reopened") return { icon: "pr", tone: "warn" };
     return { icon: kind === "unassigned" ? "userMinus" : "userShare", tone: "warn" };
   }
   if (item.closedAt) return item.kind === "pr" ? { icon: "merge", tone: "good" } : { icon: "issueClosed", tone: item.chips.length ? "neutral" : "good" };
@@ -741,7 +859,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
         when: item.change
           ? changeText(item.change)
           : item.closedAt
-            ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago${item.mergedBy ? ` by ${item.mergedBy}` : ""}`
+            ? `${item.kind === "pr" ? "merged" : "closed"} ${ago(item.closedAt)} ago${(item.kind === "pr" ? item.mergedBy : item.closedBy) ? ` by ${item.kind === "pr" ? item.mergedBy : item.closedBy}` : ""}${item.notPlanned ? " as not planned" : ""}`
             : undefined,
         signals: chips,
       }}
@@ -767,8 +885,8 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       }
       secondary={[
         only ? { label: only.label, accessibilityLabel: only.accessibilityLabel, icon: only.icon, onPress: only.onPress } : { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
-        // History is where I report from, so its cards copy their link in one tap [ATT-15].
-        ...(history ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
+        // History is where I report from, so its cards copy their link in one tap [ATT-15]. Unread notes are not report rows.
+        ...(history && item.section !== "changed" ? [{ label: `Copy link to #${item.number}`, icon: "copy" as const, onPress: () => copy(item.url, `Copied link to #${item.number}`) }] : []),
       ]}
       confirm={
         confirm === "merge"
@@ -907,7 +1025,7 @@ function sheetEntries(
   // History, where an issue is its own target, the first of the PRs that closed it.
   const pr = targetUrl(item) && item.target.kind === "pr" ? item.target : item.kind === "issue" && item.children[0] ? item.children[0] : undefined;
   entries.push(githubEntry(item, (url) => close(() => void openExternalUrl(url))(), pr));
-  // Nothing's left to start on once it's merged or closed, or out of my hands; a note is cleared with Got it, not dismissed [ATT-21].
+  // Nothing's left to start on once it's merged or closed, or out of my hands; a note is cleared with Got it, not dismissed [HIS-07].
   if (!item.closedAt && !item.change) entries.push(startAnotherEntry(sessions.length > 0, withOptions("Start session", fallbackKind(item))));
   if (inDoing && !item.change) entries.push({ key: "dismiss", icon: "dismiss", label: "Dismiss", detail: "Hides it until something new happens on it", housekeeping: true, onPress: close(() => actions.dismiss(item)) });
   return entries;
@@ -1167,22 +1285,9 @@ function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked
 }
 
 function Sections({ sections, actions }: { sections: Section[]; actions: Actions }) {
-  const styles = useStyles();
   return sections.map((section) => (
     <View key={section.id}>
-      <SectionHeader
-        icon={SECTION_ICONS[section.id]}
-        title={section.title}
-        count={section.items.length}
-        action={
-          // Clears every Changed by others note in one tap [ATT-21].
-          section.id === "changed" && section.items.length > 1 ? (
-            <View style={styles.overCard}>
-              <Button label="Mark all as read" icon="check" variant="ghost" disabled={allNotesBusy(actions.busy, section.items.map((item) => item.key))} onPress={() => actions.gotItAll(section.items)} />
-            </View>
-          ) : null
-        }
-      />
+      <SectionHeader icon={SECTION_ICONS[section.id]} title={section.title} count={section.items.length} />
       <Card items={section.items} actions={actions} />
     </View>
   ));
@@ -1196,6 +1301,186 @@ function Card({ items, actions, group }: { items: Item[]; actions: Actions; grou
       ))}
     </CardList>
   );
+}
+
+// Finished or out-of-my-hands work whose Paseo sessions are all idle: the cleanup Doing owns [ATT-22].
+function WrapUp({
+  items,
+  actions,
+  onArchive,
+  onArchiveAll,
+}: {
+  items: Item[];
+  actions: Actions;
+  onArchive: (item: Item, confirm: boolean) => Promise<ArchiveOutcome | null>;
+  onArchiveAll: () => Promise<void>;
+}) {
+  const styles = useStyles();
+  const clean = items.filter(cleanSingle);
+  return (
+    <View>
+      <SectionHeader
+        icon="archive"
+        title="Wrap up"
+        count={items.length}
+        action={
+          items.length > 1 && clean.length > 0 ? (
+            <View style={styles.overCard}>
+              <Button
+                label={`Archive all clean · ${clean.length}`}
+                icon="archive"
+                variant="ghost"
+                disabled={allWrapBusy(actions.busy, items.map((item) => item.key))}
+                onPress={() => void onArchiveAll()}
+              />
+            </View>
+          ) : null
+        }
+      />
+      <CardList>
+        {items.map((item, index) => (
+          <WrapRow key={item.key} item={item} first={index === 0} actions={actions} onArchive={onArchive} />
+        ))}
+      </CardList>
+    </View>
+  );
+}
+
+// "merged by dave 2h ago · your session's still open": what finishing looked like, then the session it left behind [ATT-22].
+function wrapMeta(item: Item): string {
+  const sessions = item.wrap?.sessions.length ?? 0;
+  const still = item.wrap?.review ? "your review session's still open" : sessions > 1 ? `${sessions} sessions still open` : "your session's still open";
+  return `${item.wrap?.finish ?? ""} · ${still}`;
+}
+
+function WrapRow({ item, first, actions, onArchive }: { item: Item; first: boolean; actions: Actions; onArchive: (item: Item, confirm: boolean) => Promise<ArchiveOutcome | null> }) {
+  const styles = useStyles();
+  const sessions = item.wrap?.sessions ?? [];
+  const [sheet, setSheet] = useState<"multi" | "dirty" | null>(null);
+  const [unsaved, setUnsaved] = useState<ArchiveSessionInfo[]>([]);
+  const dirty = sessions.some((session) => sessionCleanliness(session) === "dirty");
+  const openSession = (id: string) => actions.openAgent(id);
+  const press = async () => {
+    if (sessions.length > 1) return setSheet("multi");
+    // A preview has no daemon to ask; its made-up snapshot is the answer. Elsewhere the server checks git too, so the sheet
+    // can name the files and commits it found.
+    if (sessionCleanliness(sessions[0]) !== "clean" && actions.fixture) {
+      setUnsaved([dirtyFallback(sessions[0])]);
+      return setSheet("dirty");
+    }
+    const outcome = await onArchive(item, false);
+    if (outcome && !outcome.ok && outcome.reason === "unsaved") {
+      setUnsaved(outcome.sessions);
+      setSheet("dirty");
+    }
+  };
+  const confirm = async (confirm: boolean) => {
+    const outcome = await onArchive(item, confirm);
+    if (outcome?.ok) setSheet(null);
+  };
+  return (
+    <CardRow
+      first={first}
+      mark={stateMark(item)}
+      title={item.title}
+      meta={{
+        place: { repo: item.repo, number: item.number, login: actions.login },
+        when: wrapMeta(item),
+        signals: dirty ? [{ text: "unsaved changes", tone: "warn" }] : [],
+      }}
+      onOpen={() => (sessions.length > 1 ? setSheet("multi") : sessions[0] ? openSession(sessions[0].id) : undefined)}
+      busy={wrapBusy(actions.busy, item.key)}
+      primary={{
+        label: sessions.length > 1 ? "Archive sessions" : "Archive session",
+        accessibilityLabel: `Archive the ${sessions.length > 1 ? "sessions" : "session"} on #${item.number}`,
+        icon: "archive",
+        onPress: () => void press(),
+      }}
+      secondary={[{ label: `Details for #${item.number}`, icon: "chevronRight", onPress: () => (sessions.length > 1 ? setSheet("multi") : sessions[0] ? openSession(sessions[0].id) : undefined) }]}
+      overlay={
+        sheet === "multi" ? (
+          <Modal title={`Sessions on #${item.number}`} open onOpenChange={(open) => (open ? null : setSheet(null))}>
+            <Modal.Content>
+              <KeepStyles styles={styles}>
+                <Text style={styles.muted}>
+                  {item.title} · {item.wrap?.finish}
+                </Text>
+                <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
+                  {sessions.map((session, index) => (
+                    <View key={session.id} style={[styles.row, { paddingVertical: 10, paddingHorizontal: 12 }, index > 0 ? styles.divider : null]}>
+                      <TablerIcon name="agent" size={16} />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.text}>{session.title ?? "Session"}</Text>
+                        <Text style={styles.muted}>{sessionStateText(session)}</Text>
+                      </View>
+                      <Button label="Open" variant="ghost" onPress={() => openSession(session.id)} />
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.muted}>
+                  Archives {sessions.length} sessions. Their worktrees go too when nothing else lives in them
+                  {sessions.some((session) => sessionCleanliness(session) === "unknown") ? "; the one that couldn't be checked may hold unsaved work" : ""}.
+                </Text>
+                <View style={[styles.row, { justifyContent: "flex-end" }]}>
+                  <Button label="Cancel" onPress={() => setSheet(null)} />
+                  <Button label={sessions.length === 2 ? "Archive both" : `Archive ${sessions.length}`} variant="danger" onPress={() => void confirm(true)} />
+                </View>
+              </KeepStyles>
+            </Modal.Content>
+          </Modal>
+        ) : sheet === "dirty" ? (
+          <Modal title={`Archive the session on #${item.number}?`} open onOpenChange={(open) => (open ? null : setSheet(null))}>
+            <Modal.Content>
+              <KeepStyles styles={styles}>
+                <Text style={styles.text}>{sessions[0]?.title ?? "Session"}</Text>
+                <Text style={{ color: styles.c.statusWarning, fontSize: 13 }}>
+                  {unsaved[0]?.unknown
+                    ? "Couldn't check for unsaved changes. Archiving may remove the worktree."
+                    : `Its worktree has ${unsavedTextFrom(unsaved[0] ?? dirtyFallback(sessions[0]))}. Archiving may remove them.`}
+                </Text>
+                <View style={[styles.row, { justifyContent: "flex-end" }]}>
+                  <Button label="Open session" icon="agent" variant="calm" onPress={() => sessions[0] && openSession(sessions[0].id)} />
+                  <Button label="Archive anyway" variant="danger" onPress={() => void confirm(true)} />
+                </View>
+              </KeepStyles>
+            </Modal.Content>
+          </Modal>
+        ) : null
+      }
+    />
+  );
+}
+
+// What a session in Wrap up's multi sheet says about its worktree [ATT-22].
+function sessionStateText(session: AgentSummary): string {
+  const state = sessionCleanliness(session);
+  if (state === "clean") return "idle · nothing unsaved";
+  if (state === "dirty") return `idle · ${unsavedText(session)}`;
+  return "idle · couldn't check for unsaved changes";
+}
+
+function dirtyFallback(session: AgentSummary | undefined): ArchiveSessionInfo {
+  const workspace = session?.workspace;
+  return session
+    ? {
+        agentId: session.id,
+        title: session.title,
+        ...(workspace?.branch ? { branch: workspace.branch } : {}),
+        ...(workspace?.dirtyFiles ? { files: workspace.dirtyFiles } : {}),
+        ...(workspace?.ahead ? { commits: workspace.ahead } : {}),
+        ...(sessionCleanliness(session) === "unknown" ? { unknown: true as const } : {}),
+      }
+    : { agentId: "", title: null, unknown: true };
+}
+
+// "2 uncommitted files and 1 unpushed commit on branch", from the archive check's git counts [ATT-22].
+function unsavedTextFrom(info: ArchiveSessionInfo): string {
+  if (info.unknown) return "changes Paseo couldn't check";
+  const parts: string[] = [];
+  if (info.files) parts.push(`${info.files} uncommitted file${info.files === 1 ? "" : "s"}`);
+  if (info.commits) parts.push(`${info.commits} unpushed commit${info.commits === 1 ? "" : "s"}`);
+  const what = parts.join(" and ") || "unsaved changes";
+  return info.branch ? `${what} on ${info.branch}` : what;
 }
 
 // Waiting by who it waits on, each with a list to copy for a nudge, oldest first; a bot gets none, as there's nobody to send
@@ -1246,28 +1531,50 @@ function weekLabel(monday: Date): string {
   return `${format(monday)} – ${format(sunday)}`;
 }
 
-// What I finished, by week, with reviews tucked away per week [HIS-01, HIS-02].
-// A week copies as a list of links to paste into a report, each led by its kind; its reviews copy as a list of their own [HIS-03, HIS-04].
-function History({ items, actions }: { items: Item[]; actions: Actions }) {
+// What I finished, by week, with what others did at the top until Got it or an archive [HIS-01, HIS-02, HIS-07].
+// A week copies what's shown as Markdown lists, per kind; Changed by others is never copied [HIS-03].
+function History({
+  notes,
+  items,
+  filter,
+  filtering,
+  onFiltering,
+  onFilter,
+  actions,
+}: {
+  notes: Item[];
+  items: Item[];
+  filter: HistoryFilter[];
+  filtering: boolean;
+  onFiltering: (open: boolean) => void;
+  onFilter: (filter: HistoryFilter[]) => void;
+  actions: Actions;
+}) {
   const styles = useStyles();
   const copy = useCopy();
-  // Groups opened, as "<week>:<group>"; each opens on its own.
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const toggle = (id: string) => setOpen((now) => (now.has(id) ? new Set([...now].filter((other) => other !== id)) : new Set([...now, id])));
-  if (items.length === 0) return <Text style={styles.text}>Nothing finished in this period.</Text>;
+  // Weeks hold finished work and cleared changes; unread notes sit above them [HIS-07].
   const weeks = new Map<number, Item[]>();
   for (const item of items) {
-    const week = weekOf(item.closedAt!).getTime();
+    if (item.section === "changed" || !item.closedAt) continue;
+    const week = weekOf(item.closedAt).getTime();
     weeks.set(week, [...(weeks.get(week) ?? []), item]);
   }
+  const reviewedShown = filter.includes("reviewed");
+  const changedShown = filter.includes("changed");
   const blocks: ReactNode[] = [];
   for (const [week, all] of [...weeks].sort((a, b) => b[0] - a[0])) {
     const done = all.filter((item) => item.section === "done").sort((a, b) => b.closedAt!.localeCompare(a.closedAt!));
-    const reviewed = all.filter((item) => item.section === "reviewed");
-    // Out of the week's copy: it wasn't my finished work [HIS-06].
-    const handed = all.filter((item) => item.section === "handed_off").sort((a, b) => b.closedAt!.localeCompare(a.closedAt!));
+    const reviewed = reviewedShown ? all.filter((item) => item.section === "reviewed") : [];
+    // Cleared notes that aren't already a finished item: a merge or an issue close is the week's Finished [HIS-07].
+    const handed = changedShown ? all.filter((item) => item.section === "handed_off").sort((a, b) => b.closedAt!.localeCompare(a.closedAt!)) : [];
+    // A week with nothing shown, only reviews or cleared changes while those are off, has no heading either.
+    if (done.length + reviewed.length + handed.length === 0) continue;
     // What was done, each led by its kind; not planned issues stay on screen but out of the report [HIS-03, HIS-04].
-    const copied = done.filter((item) => !item.notPlanned);
+    const finished = done.filter((item) => !item.notPlanned);
+    const finishedCopy = linkList(finished.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) })));
+    const reviewedCopy = linkList(reviewed.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) })));
+    const copyText = [finishedCopy && reviewedCopy ? `## Finished\n\n${finishedCopy}` : finishedCopy, reviewedCopy ? `## Reviewed\n\n${reviewedCopy}` : ""].filter(Boolean).join("\n\n");
+    const copied = finished.length + reviewed.length;
     const label = weekLabel(new Date(week));
     blocks.push(
       <View key={week} style={{ gap: 8 }}>
@@ -1276,18 +1583,13 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
           title={label}
           count={done.length}
           action={
-            copied.length > 0 ? (
+            copied > 0 ? (
               <View style={styles.overCard}>
                 <Button
                   icon="markdown"
                   variant="ghost"
                   accessibilityLabel={`Copy links from ${label}`}
-                  onPress={() =>
-                    copy(
-                      linkList(copied.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
-                      `Copied ${copied.length} link${copied.length === 1 ? "" : "s"} from ${label}`,
-                    )
-                  }
+                  onPress={() => copy(copyText, `Copied ${copied} link${copied === 1 ? "" : "s"} from ${label}`)}
                 />
               </View>
             ) : null
@@ -1296,37 +1598,116 @@ function History({ items, actions }: { items: Item[]; actions: Actions }) {
         {done.length > 0 ? <Card items={done} actions={actions} /> : null}
         {reviewed.length > 0 ? (
           <View style={{ gap: 8 }}>
-            {/* Its copy lines up under the week's, at the right edge, like every Markdown copy. */}
-            <View style={styles.row}>
-              <Disclosure label="Reviewed" count={reviewed.length} open={open.has(`${label}:reviewed`)} onPress={() => toggle(`${label}:reviewed`)} />
-              <View style={{ flex: 1 }} />
-              <View style={styles.overCard}>
-                <Button
-                  icon="markdown"
-                  variant="ghost"
-                  accessibilityLabel={`Copy reviewed links from ${label}`}
-                  onPress={() =>
-                    copy(
-                      linkList(reviewed.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) }))),
-                      `Copied ${reviewed.length} reviewed link${reviewed.length === 1 ? "" : "s"} from ${label}`,
-                    )
-                  }
-                />
-              </View>
-            </View>
-            {open.has(`${label}:reviewed`) ? <Card items={reviewed} actions={actions} /> : null}
+            <Subgroup icon="review" label="Reviewed" count={reviewed.length} />
+            <Card items={reviewed} actions={actions} />
           </View>
         ) : null}
         {handed.length > 0 ? (
           <View style={{ gap: 8 }}>
-            <Disclosure label="Closed or handed off" count={handed.length} open={open.has(`${label}:handed`)} onPress={() => toggle(`${label}:handed`)} />
-            {open.has(`${label}:handed`) ? <Card items={handed} actions={actions} /> : null}
+            <Subgroup icon="team" label="Changed by others" count={handed.length} />
+            <Card items={handed} actions={actions} />
           </View>
         ) : null}
       </View>,
     );
   }
-  return blocks;
+  if (notes.length === 0 && blocks.length === 0) return <Text style={styles.text}>Nothing finished in this period.</Text>;
+  return (
+    <>
+      {notes.length > 0 ? (
+        <View>
+          <SectionHeader
+            icon="team"
+            title="Changed by others"
+            count={notes.length}
+            action={
+              notes.length > 1 ? (
+                <View style={styles.overCard}>
+                  <Button
+                    label="Mark all as read"
+                    icon="check"
+                    variant="ghost"
+                    disabled={allNotesBusy(actions.busy, notes.map((item) => item.key))}
+                    onPress={() => actions.gotItAll(notes)}
+                  />
+                </View>
+              ) : null
+            }
+          />
+          <Card items={notes} actions={actions} />
+        </View>
+      ) : null}
+      {blocks.length > 0 ? (
+        <View style={[styles.row, { justifyContent: "flex-end" }]}>
+          <Button
+            label={filter.length ? `Filter · ${filter.length}` : "Filter"}
+            accessibilityLabel={filter.length ? `Filter, ${filter.length} on` : "Filter"}
+            icon="filter"
+            variant={filter.length ? "calm" : "ghost"}
+            onPress={() => onFiltering(true)}
+          />
+        </View>
+      ) : null}
+      {blocks}
+      {filtering ? <HistoryFilterSheet filter={filter} onChange={onFilter} onClose={() => onFiltering(false)} /> : null}
+    </>
+  );
+}
+
+// A quiet name for a week's second list, like Reviewed or its cleared changes [HIS-02, HIS-07].
+function Subgroup({ icon, label, count }: { icon: IconName; label: string; count: number }) {
+  const styles = useStyles();
+  return (
+    <View style={[styles.row, { gap: 6, paddingVertical: 2 }]}>
+      <TablerIcon name={icon} size={13} />
+      <Text style={styles.muted}>
+        {label} · {count}
+      </Text>
+    </View>
+  );
+}
+
+// History's filter: Finished always, plus Reviewed and cleared Changed by others per week [HIS-07]. Ticks apply right away.
+function HistoryFilterSheet({ filter, onChange, onClose }: { filter: HistoryFilter[]; onChange: (filter: HistoryFilter[]) => void; onClose: () => void }) {
+  const styles = useStyles();
+  const flip = (id: HistoryFilter) => onChange(filter.includes(id) ? filter.filter((other) => other !== id) : [...filter, id]);
+  const row = (id: HistoryFilter | null, label: string, note?: string) => {
+    const on = id === null || filter.includes(id);
+    return (
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: on, disabled: id === null }}
+        disabled={id === null}
+        accessibilityLabel={label}
+        onPress={() => id && flip(id)}
+        style={[styles.row, { paddingVertical: 11, paddingHorizontal: 14, opacity: id === null ? 0.65 : 1 }]}
+      >
+        <TablerIcon name={on ? "squareCheck" : "square"} size={18} color={on ? styles.action : styles.c.foregroundMuted} />
+        <Text style={[styles.text, { flex: 1 }]}>{label}</Text>
+        {note ? <Text style={styles.muted}>{note}</Text> : null}
+      </Pressable>
+    );
+  };
+  return (
+    <Modal title="Filter" open onOpenChange={(open) => (open ? null : onClose())}>
+      <Modal.Content>
+        <KeepStyles styles={styles}>
+          <Text style={styles.muted}>Show in each week</Text>
+          <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
+            {row(null, "Finished", "always")}
+            <View style={{ height: 1, backgroundColor: styles.c.surface1 }} />
+            {row("reviewed", "Reviewed")}
+            <View style={{ height: 1, backgroundColor: styles.c.surface1 }} />
+            {row("changed", "Changed by others")}
+          </View>
+          <View style={[styles.row, { justifyContent: "flex-end" }]}>
+            <Button label="Clear" variant="ghost" disabled={filter.length === 0} onPress={() => onChange([])} />
+            <Button label="Done" variant="solid" onPress={onClose} />
+          </View>
+        </KeepStyles>
+      </Modal.Content>
+    </Modal>
+  );
 }
 
 // Stacked or linked PRs as a connected line; collapsed, only those needing attention [ATT-03, ATT-04].

@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
+import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import { workChip, workKind } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
@@ -10,6 +10,7 @@ export interface ViewMeta {
   scopes: string[];
   sources: string[];
   projectFilter: string[];
+  historyFilter: HistoryFilter[];
   config: AttentionConfig;
   pending: number;
 }
@@ -135,9 +136,13 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
   const visible = items
     .filter((item) => !isDismissed(item, dismissed) && !(item.section === "done" && handed.has(item.key)))
     .map((item) => (item.section === "done" && item.children.some((child) => handed.has(child.key)) ? { ...item, children: item.children.filter((child) => !handed.has(child.key)) } : item));
-  // Notes on what others did, and work that left my hands; never dismissed, only cleared with Got it [ATT-21, HIS-06].
+  // Notes on what others did, what was cleared into a week, and finished work a live refresh saw first; never dismissed,
+  // only cleared with Got it or an archive [HIS-06, HIS-07, ATT-22].
   const changes = changeItems(ledger, now, meta.config.mentionDays, historySince(now, meta.config.historyWeeks));
-  const shown = [...visible, ...changes.doing, ...changes.history];
+  // History's daily fetch has the richer item; one seen live fills in until then, so a merge or close shows in its week now.
+  const knownDone = new Set(visible.filter((item) => SECTIONS[item.section].tab === "history" && item.section === "done").flatMap((item) => [item.key, ...item.children.map((child) => child.key)]));
+  const liveFinished = changes.finished.filter((item) => !knownDone.has(item.key));
+  const shown = [...visible, ...liveFinished, ...changes.notes, ...changes.history];
   const sections = (tab: TabId): Section[] =>
     SECTION_ORDER.filter((id) => SECTIONS[id].tab === tab)
       .map((id) => ({ id, title: SECTIONS[id].title, items: shown.filter((item) => item.section === id) }))
@@ -146,11 +151,13 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
   return {
     ...meta,
     login: attention?.login ?? null,
-    // What needs me; notes on others' doings don't [ATT-09, ATT-21].
-    count: doing.reduce((sum, section) => sum + (section.id === "changed" ? 0 : section.items.length), 0),
+    // What needs me; Wrap up's cleanup rows are added client-side, where the sessions are [ATT-09, ATT-22].
+    count: doing.reduce((sum, section) => sum + section.items.length, 0),
     doing,
     waiting: waitingGroups(visible.filter(inWaiting)),
     history: shown.filter((item) => SECTIONS[item.section].tab === "history"),
+    // Dismissed or not, these are still open; Wrap up must not call their sessions finished [ATT-22].
+    activeKeys: (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]),
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],
     unclaimedFrom: attention?.unclaimedFrom ?? "config",

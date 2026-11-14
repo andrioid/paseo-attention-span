@@ -1,13 +1,15 @@
-import type { Attention, AttentionView, FeedId, FeedStatus, GithubColor, Item, ProjectsAccess, Reviewer } from "../shared/attention";
+import type { Attention, AttentionView, FeedId, FeedStatus, GithubColor, HistoryFilter, Item, ProjectsAccess, Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
-import { changeCandidates, nextLedger, type Lookups, withGotIt } from "./changes";
+import type { ArchiveOutcome, ArchiveTarget } from "../shared/archive";
+import { archiveSessions } from "./archive";
+import { acknowledge, changeCandidates, nextLedger, type Lookups, type ReopenLookups, reopenCandidates, withGotIt } from "./changes";
 import { classify, classifyHistory, issueBoardIds } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning, searchWithProjects } from "./projects";
 import { FIXTURE, graphql, graphqlResult } from "./gh";
-import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS, fixtureChanges } from "./fixture";
-import type { AssignmentSubject, Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
+import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS, fixtureChanges, fixtureGotIt } from "./fixture";
+import type { AssignmentSubject, Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode, ReopenSubject } from "./github-types";
 import {
   ASSIGNMENT_BATCH,
   assignmentsQuery,
@@ -23,6 +25,7 @@ import {
   PROJECTS_PROBE,
   projectStatusesQuery,
   type ProjectStatusesResult,
+  reopenQuery,
   requiredChecks,
   type SearchName,
   searchQuery,
@@ -121,7 +124,7 @@ export class AttentionService {
     return this.view();
   }
 
-  // Clears Changed by others notes, or brings them back for Undo; nothing changes on GitHub [ATT-21].
+  // Clears Changed by others notes, or brings them back for Undo; nothing changes on GitHub [HIS-07].
   async gotIt(ids: string[], on: boolean): Promise<AttentionView> {
     const gotIt = this.state.changes.gotIt.filter((other) => !ids.includes(other));
     const known = ids.filter((id) => this.state.changes.events.some((event) => event.id === id));
@@ -134,6 +137,42 @@ export class AttentionService {
     this.state.dismissed = {};
     await this.save();
     return this.view();
+  }
+
+  // Reviewed and Changed by others in each of History's weeks [HIS-07].
+  async setHistoryFilter(filter: HistoryFilter[]): Promise<AttentionView> {
+    this.state.historyFilter = [...new Set(filter)];
+    await this.save();
+    return this.view();
+  }
+
+  // Archive acknowledges exactly the events on the work at that moment, including ones a refresh added meanwhile
+  // [HIS-07, ATT-22].
+  async acknowledge(keys: string[]): Promise<AttentionView> {
+    this.state.changes = acknowledge(this.state.changes, keys);
+    await this.save();
+    return this.view();
+  }
+
+  // A session on this item archived in Paseo itself, with none of its sessions left: acknowledge the events on the item's
+  // whole group, as Wrap up's own archive does, so they go to their week as cleared [HIS-07, ATT-22].
+  async acknowledgeItem(itemKey: string): Promise<void> {
+    const wanted = itemKey.toLowerCase();
+    const view = this.view();
+    const items = [...view.history, ...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)];
+    const groupOf = (item: Item) => [item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)];
+    const keys = new Set([itemKey, ...items.filter((item) => groupOf(item).some((key) => key.toLowerCase() === wanted)).flatMap(groupOf)]);
+    await this.acknowledge([...keys]);
+  }
+
+  // Archive a Wrap up row's sessions; success acknowledges the events on that work, so they go to their week as cleared, not
+  // History's unread notes [ATT-22, HIS-07]. A failure leaves the row to try again.
+  async archive(paseo: PluginHandlerContext["paseo"], targets: ArchiveTarget[], confirm: boolean): Promise<ArchiveOutcome> {
+    // Previews have no Paseo agents, but still acknowledge, so their screenshots can show the cleanup.
+    if (FIXTURE) return { ok: true, view: await this.acknowledge(targets.flatMap((target) => target.keys)) };
+    const answer = await archiveSessions(paseo, targets, confirm);
+    if (!answer.ok) return { ...answer, view: this.view() };
+    return { ok: true, view: await this.acknowledge(targets.flatMap((target) => target.keys)) };
   }
 
   // Remember where an issue repo's code lives [SES-07].
@@ -298,13 +337,13 @@ export class AttentionService {
     return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from };
   }
 
-  // What others did to my work since the last refresh [ATT-21]. Only PRs whose hands changed and issues that left my assigned
+  // What others did to my work since the last refresh [HIS-07]. Only PRs whose hands changed and issues that left my assigned
   // search are looked up, a batch per request; a failed batch is asked again next time [GH-01]. Kept long enough for History.
   private async trackChanges(data: LiveResult, now: Date): Promise<void> {
     const ledger = this.state.changes;
     if (FIXTURE) {
       // Previews start each layout with a refresh, which brings the notes back: Got it would otherwise outlive a layout.
-      this.state.changes = { ...ledger, events: fixtureChanges(now), gotIt: [] };
+      this.state.changes = { ...ledger, events: fixtureChanges(now), gotIt: fixtureGotIt(now) };
       return;
     }
     const me = data.viewer.login;
@@ -324,9 +363,30 @@ export class AttentionService {
         console.error("Couldn't look up who changed my work:", (error as Error).message);
       }
     }
+    const reopens = await this.reopenLookups(reopenCandidates(ledger, data));
     const keepDays = Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7);
-    // A Got it tapped while this refresh ran still counts.
-    this.state.changes = withGotIt(nextLedger(ledger, data, me, lookups, now, this.config.mentionDays, keepDays), this.state.changes.gotIt);
+    // A Got it tapped, or an archive acknowledging, while this refresh ran still counts.
+    this.state.changes = withGotIt(nextLedger(ledger, data, me, lookups, now, this.config.mentionDays, keepDays, reopens), this.state.changes.gotIt);
+  }
+
+  // PRs Attention Span saw closed, asked about a batch per request so a reopen by someone else is noticed [HIS-07, GH-01].
+  // A batch that fails leaves its PRs tracked for the next refresh; one GitHub can't find is gone.
+  private async reopenLookups(candidates: string[]): Promise<ReopenLookups> {
+    const lookups: ReopenLookups = new Map();
+    for (let at = 0; at < candidates.length; at += ASSIGNMENT_BATCH) {
+      const batch = candidates.slice(at, at + ASSIGNMENT_BATCH);
+      try {
+        const { data, failures } = await graphqlResult<Record<string, ReopenSubject | null>>(reopenQuery(batch));
+        batch.forEach((id, index) => {
+          const alias = `a${index}`;
+          const failed = failures.some((failure) => failure.path?.[0] === alias && failure.type !== "NOT_FOUND");
+          if (!failed) lookups.set(id, data?.[alias] ?? null);
+        });
+      } catch (error) {
+        console.error("Couldn't check whether a closed PR reopened:", (error as Error).message);
+      }
+    }
+    return lookups;
   }
 
   // The account gh is signed in as, for My repos [NXT-04]. Asked once, unless the last fetch already says.
@@ -406,7 +466,7 @@ export class AttentionService {
     };
     const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
     const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
-    const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked"), search("ended")]);
+    const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked"), search("ended"), search("closedIssues")]);
     const afterThem = forDetails.then((parts) => this.details(merge(parts), projects, problems));
     try {
       const [first, rest, details] = await Promise.all([forDetails, others, afterThem]);
@@ -560,6 +620,7 @@ export class AttentionService {
       scopes: this.state.scopes,
       sources: this.state.sources,
       projectFilter: this.state.projectFilter,
+      historyFilter: this.state.historyFilter,
       config: this.config,
       pending: Object.keys(pending).length,
       ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),

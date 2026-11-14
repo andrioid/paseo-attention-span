@@ -101,11 +101,26 @@ for (const layout of layouts) {
       await page.screenshot({ path: `/out/${prefix}-doing-needs-reviewer.png`, clip: await band("Needs a reviewer", "My drafts") });
       // Optional checks failing or still running leave a PR ready [PRS-14].
       await page.screenshot({ path: `/out/${prefix}-doing-ready.png`, clip: await band("Ready to merge", "Needs upstream") });
-      // What others did to my work, last in Doing with Got it [ATT-21].
-      // The section is last, so it ends at the feedback line under the list.
-      // Brought to the top, as the list scrolls inside its own view and the section is below a phone's tall viewport.
-      await page.locator(`text=/^Changed by others/ >> visible=true`).first().evaluate((element) => element.scrollIntoView({ block: "start" }));
-      await page.screenshot({ path: `/out/${prefix}-doing-changed.png`, clip: await band("Changed by others", "Enjoying Attention Span") });
+      // Wrap up: finished work whose sessions are still open, first in Doing [ATT-22].
+      await page.screenshot({ path: `/out/${prefix}-doing-wrap.png`, clip: await band("Wrap up", "Waiting for your reply") });
+      // A dirty session asks first; several sessions list themselves. Neither archives until confirmed.
+      await page.getByRole("button", { name: "Archive the session on #186" }).click();
+      await page.getByText("Archive anyway").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("doing-wrap-dirty");
+      // A phone's bottom sheet has no Escape; its × closes it.
+      const closeModal = async () => {
+        const close = page.getByRole("button", { name: /^close/i }).last();
+        if (await close.isVisible().catch(() => false)) await close.click();
+        else await page.keyboard.press("Escape");
+        await page.waitForTimeout(400);
+      };
+      await closeModal();
+      await page.getByRole("button", { name: "Archive the sessions on #172" }).click();
+      await page.getByText("Archive both").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("doing-wrap-multi");
+      await closeModal();
       // Interactions that don't reach GitHub.
       const doing = () => page.getByRole("tab", { name: /Doing/ }).first().click();
       const openSheet = async (title) => {
@@ -193,7 +208,7 @@ for (const layout of layouts) {
       // Without a session, a session action's line in the sheet asks first [SES-02].
       await openSheet("Harden the upload endpoint");
       await page.getByRole("button", { name: "Address comments…" }).last().click();
-      await page.getByText("Agent profile").waitFor({ timeout: 15000 });
+      await page.getByText("Agent profile").last().waitFor({ timeout: 15000 });
       await page.waitForTimeout(500);
       await modalShot("doing-options");
       await page.getByRole("button", { name: "Cancel" }).last().click();
@@ -215,14 +230,20 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: /close/i }).last().click();
       await page.waitForTimeout(400);
       await page.getByRole("tab", { name: /History/ }).first().click();
-      await page.getByRole("button", { name: /^Reviewed, \d+$/ }).first().click();
       await page.waitForTimeout(800);
-      await shot("history-reviewed");
-      // My PRs others closed unmerged, and work taken out of my hands, out of the week's copy [HIS-06].
-      await page.getByRole("button", { name: /^Closed or handed off, \d+$/ }).first().click();
-      await page.waitForTimeout(800);
-      await shot("history-handed");
-      // Copy a week, its reviews, then one card's link, and keep what landed on the clipboard [HIS-03, ATT-15].
+      // History's filter: Finished always, Reviewed and cleared Changed by others when asked [HIS-07].
+      await page.getByRole("button", { name: /^Filter/ }).first().click();
+      await page.getByText("Show in each week").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("history-filter");
+      await page.getByRole("checkbox", { name: "Reviewed", exact: true }).click();
+      await page.getByRole("checkbox", { name: "Changed by others", exact: true }).click();
+      await page.getByRole("button", { name: "Done" }).click();
+      await page.waitForTimeout(600);
+      await shot("history-filtered");
+      // Both of the week's other lists under Finished, Reviewed then Changed by others [HIS-02, HIS-07].
+      await page.screenshot({ path: `/out/${prefix}-history-groups.png`, clip: await band("Reviewed", "Last week") });
+      // Copy a week, then one card's link, and keep what landed on the clipboard [HIS-03, ATT-15].
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:6767" });
       const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
       // The newest week with work in it: on a Monday, "This week" has none yet.
@@ -230,12 +251,14 @@ for (const layout of layouts) {
       await page.getByText(/^Copied \d+ links? from /).waitFor({ timeout: 5000 });
       await shot("history-copied");
       const week = await clipboard();
-      await page.getByRole("button", { name: /^Copy reviewed links from / }).first().click();
-      await page.getByText(/^Copied \d+ reviewed links? from /).waitFor({ timeout: 5000 });
-      const reviewed = await clipboard();
       await page.getByRole("button", { name: /^Copy link to #\d+$/ }).first().click();
       await page.waitForTimeout(400);
-      await writeFile(`/out/${prefix}-history-clipboard.txt`, `${week}\n---\n${reviewed}\n---\n${await clipboard()}\n`);
+      await writeFile(`/out/${prefix}-history-clipboard.txt`, `${week}\n---\n${await clipboard()}\n`);
+      // Clear the filter, so the next layout starts with Finished only.
+      await page.getByRole("button", { name: /^Filter/ }).first().click();
+      await page.getByRole("button", { name: "Clear" }).click();
+      await page.getByRole("button", { name: "Done" }).click();
+      await page.waitForTimeout(400);
       await page.getByRole("tab", { name: /Next up/ }).first().click();
       await openSheet("Orders export times out for big shops");
       await modalShot("next-up-sheet");
@@ -358,18 +381,27 @@ for (const layout of layouts) {
       await writeFile(configPath, originalConfig);
       await page.getByRole("button", { name: "Check again" }).click();
       await page.getByRole("tab", { name: /Doing/ }).first().waitFor({ timeout: 15000 });
+      // First archive every Wrap up row, so the horizon can show later: Archive all clean takes the clean ones, then the
+      // dirty and multi rows ask first [ATT-22].
+      const archiveAll = page.getByRole("button", { name: /^Archive all clean/ });
+      if (await archiveAll.isVisible().catch(() => false)) {
+        await archiveAll.click();
+        await page.waitForTimeout(800);
+      }
+      await page.getByRole("button", { name: "Archive the session on #186" }).click();
+      await page.getByRole("button", { name: "Archive anyway" }).waitFor({ timeout: 10000 });
+      await page.getByRole("button", { name: "Archive anyway" }).click();
+      await page.waitForTimeout(800);
+      await page.getByRole("button", { name: "Archive the sessions on #172" }).click();
+      await page.getByRole("button", { name: "Archive both" }).waitFor({ timeout: 10000 });
+      await page.getByRole("button", { name: "Archive both" }).click();
+      await page.waitForTimeout(1000);
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
       await page.getByRole("button", { name: /^Details for #/ }).first().click();
       await page.getByRole("button", { name: "Dismiss" }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
-      // Clear the notes on what others did; they have Got it, not Dismiss [ATT-21].
-      const gotIt = page.getByRole("button", { name: "Got it", exact: true });
-      for (let left = await gotIt.count(); left > 0; left = await gotIt.count()) {
-        await gotIt.first().click();
-        for (let i = 0; i < 50 && (await gotIt.count()) === left; i++) await page.waitForTimeout(100);
-      }
       // Dismiss the rest: a clear Doing tab shows its horizon, as on a real screen's height [ATT-18].
       const details = page.getByRole("button", { name: /^Details for #/ });
       for (let left = await details.count(); left > 0; left = await details.count()) {
