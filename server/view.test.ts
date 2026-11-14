@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
+import { AttentionConfig } from "../shared/config";
 import { agent, item, viewMeta } from "../shared/test-builders";
 import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
@@ -170,5 +171,15 @@ describe("pending changes", () => {
     const done = pending({ kind: "done", item: doneItem(item("a", "ready"), at) });
     expect(isPending(done, { live: after(SETTLE_MS), history: after(1_000) }, time + SETTLE_MS + 5_000)).toBe(true);
     expect(isPending(done, { live: after(SETTLE_MS), history: after(SETTLE_MS) }, time + SETTLE_MS + 5_000)).toBe(false);
+  });
+});
+
+describe("History's weeks", () => {
+  it("HIS-01: a fetch from before a new week began shows only the weeks it is now, in the device's time zone", () => {
+    const now = new Date("2026-11-15T16:00:00Z"); // Monday 01:00 in Tokyo, a new week; still Sunday in UTC
+    const view = (timeZone: string) =>
+      buildView(null, [item("old", "done", { closedAt: "2026-11-09T02:00:00Z" }), item("new", "done", { closedAt: "2026-11-15T16:00:00Z" })], {}, viewMeta({ config: AttentionConfig.parse({ historyWeeks: 1 }) }), undefined, now, timeZone).history.map((shown) => shown.key);
+    expect(view("Asia/Tokyo")).toEqual(["new"]);
+    expect(view("UTC")).toEqual(["old", "new"]);
   });
 });

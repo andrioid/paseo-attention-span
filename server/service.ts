@@ -8,7 +8,7 @@ import { acknowledge, ownClosed } from "./changes";
 import { classify, classifyHistory } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning } from "./projects";
 import type { Port } from "./port";
-import { type UnclaimedSearch, unclaimedSearches } from "./queries";
+import { isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import type { Details, LiveResult } from "./github-types";
 import { State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
@@ -75,11 +75,23 @@ export class AttentionService {
   }
 
   // ⟳ fetches its tab's feed now; otherwise feeds older than their schedule are fetched first.
-  // `cached` answers from memory, with no GitHub refresh first.
-  async get(refresh?: FeedId, cached?: boolean): Promise<AttentionView> {
+  // `cached` answers from memory, with no GitHub refresh first. `timeZone` is the device's: History's weeks follow the last
+  // one sent, so a new one fetches History again, once [HIS-01].
+  async get(refresh?: FeedId, cached?: boolean, timeZone?: string): Promise<AttentionView> {
+    const rezoned = !!timeZone && timeZone !== this.timeZone && isTimeZone(timeZone);
+    if (rezoned) {
+      this.state.timeZone = timeZone;
+      await this.save();
+    }
+    const history = rezoned && refresh !== "history" ? this.refresh("history", true).catch(() => {}) : null;
     if (refresh) await this.refresh(refresh).catch(() => {});
     else if (!cached) await this.refreshStale();
+    if (!cached) await history;
     return this.view();
+  }
+
+  private get timeZone(): string {
+    return this.state.timeZone ?? "UTC";
   }
 
   async dismiss(key: string): Promise<AttentionView> {
@@ -318,7 +330,7 @@ export class AttentionService {
   }
 
   private async fetchHistory(now: Date): Promise<Item[]> {
-    return classifyHistory(await this.port.github.history(this.config, now));
+    return classifyHistory(await this.port.github.history(this.config, now, this.timeZone));
   }
 
   // Whether the gh login may read projects, asked at most hourly, or now when Settings asks [NXT-12]. On only when GitHub
@@ -432,6 +444,8 @@ export class AttentionService {
       ...(this.port.agents ? { fixtureAgents: this.port.agents } : {}),
       },
       this.state.changes,
+      new Date(now),
+      this.timeZone,
     );
   }
 }

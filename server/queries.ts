@@ -140,20 +140,30 @@ function where(orgs: string[], repos: string[]): string {
 
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
 
-function startOfWeek(now: Date): Date {
-  const monday = new Date(now);
-  monday.setUTCHours(0, 0, 0, 0);
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-  return monday;
+// How far `timeZone`'s clock is ahead of UTC at `at`, in ms.
+function zoneOffset(at: number, timeZone: string): number {
+  const format = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
+  const part = Object.fromEntries(format.formatToParts(at).map(({ type, value }) => [type, Number(value)]));
+  return Date.UTC(part.year, part.month - 1, part.day, part.hour, part.minute, part.second) - Math.floor(at / 1000) * 1000;
 }
 
-// Where History starts: whole weeks, from a Monday, so the oldest week isn't cut short [HIS-01]. The weeks are the
-// device's, which the server doesn't know, so this reaches back to the earliest that Monday can begin in any time zone
-// (UTC−12 to UTC+14); the screen leaves out what's older than its own oldest week.
-export function historySince(now: Date, weeks: number): string {
-  const hour = 3_600_000;
-  const monday = startOfWeek(new Date(now.getTime() - 12 * hour)).getTime() - 14 * hour;
-  return new Date(monday - (weeks - 1) * 7 * 86_400_000).toISOString();
+// Where History starts: midnight on the oldest week's Monday in the device's time zone, so the server's weeks are the
+// screen's and the oldest isn't cut short [HIS-01]. UTC until a device has sent its zone.
+export function historySince(now: Date, weeks: number, timeZone = "UTC"): string {
+  const local = new Date(now.getTime() + zoneOffset(now.getTime(), timeZone));
+  const monday = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - ((local.getUTCDay() + 6) % 7) - 7 * (weeks - 1));
+  // The offset at that midnight, which a daylight saving change since may have moved.
+  return new Date(monday - zoneOffset(monday - zoneOffset(monday, timeZone), timeZone)).toISOString();
+}
+
+// A time zone this server's Intl knows [HIS-01].
+export function isTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Where Next up looks for unclaimed issues [NXT-04, NXT-08]: one search per chosen source, so each issue says which
@@ -198,10 +208,11 @@ export function mergeUnclaimed(results: { source: string | null; nodes: (Pickabl
 }
 
 // The searches about me. Next up's unclaimed issues have their own [NXT-04].
-export function searchVariables(config: AttentionConfig, now: Date): Record<Exclude<SearchName, "unclaimed">, string> {
+export function searchVariables(config: AttentionConfig, now: Date, timeZone?: string): Record<Exclude<SearchName, "unclaimed">, string> {
   const scope = where(config.orgs, config.repos);
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
-  const history = isoDate(new Date(historySince(now, config.historyWeeks)));
+  // To the second: GitHub reads a bare date as UTC midnight.
+  const history = `${historySince(now, config.historyWeeks, timeZone).slice(0, 19)}+00:00`;
   return {
     mine: `is:pr is:open author:@me ${scope}`,
     // By name only, not via a team [REV-01].

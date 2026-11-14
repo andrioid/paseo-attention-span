@@ -782,19 +782,17 @@ describe("history", () => {
     expect(query.match(/labels\(first: 20\) \{ nodes \{ name \} \}/g)).toHaveLength(3);
   });
 
-  it("HIS-01: searches whole weeks back from the oldest week's Monday, wherever the device is", () => {
-    // The oldest Monday's midnight in a time zone `offset` hours from UTC, as an instant.
-    const oldestMonday = (now: Date, offset: number) => {
-      const local = new Date(now.getTime() + offset * 3_600_000);
-      const monday = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - ((local.getUTCDay() + 6) % 7) - 21);
-      return new Date(monday - offset * 3_600_000);
-    };
-    for (const now of [NOW, new Date("2026-11-01T20:00:00Z"), new Date("2026-11-02T06:00:00Z")]) {
-      const since = searchVariables(config, now).merged.match(/merged:>=(\S+)/)![1];
-      const earliest = Math.min(...[-12, -5, 0, 1, 9, 14].map((offset) => oldestMonday(now, offset).getTime()));
-      expect(new Date(since).getTime()).toBeLessThanOrEqual(earliest);
-      expect(earliest - new Date(since).getTime()).toBeLessThan(2 * 86_400_000); // and not much more
-    }
+  it("HIS-01: searches from midnight on the oldest week's Monday in the device's time zone, to the second", () => {
+    const start = (now: string, timeZone?: string) => searchVariables(AttentionConfig.parse({ historyWeeks: 1 }), new Date(now), timeZone).merged.match(/merged:>=(\S+)/)![1];
+    // Monday 01:00 in Tokyo is still Sunday in UTC.
+    expect(start("2026-11-15T16:00:00Z", "Asia/Tokyo")).toBe("2026-11-15T15:00:00+00:00");
+    expect(start("2026-11-15T16:00:00Z")).toBe("2026-11-09T00:00:00+00:00");
+    // Sunday 23:00 in Los Angeles is already Monday in UTC.
+    expect(start("2026-11-16T07:00:00Z", "America/Los_Angeles")).toBe("2026-11-09T08:00:00+00:00");
+    expect(start("2026-11-16T07:00:00Z")).toBe("2026-11-16T00:00:00+00:00");
+    // Weeks back across the end of daylight saving (1 November) start at that week's own midnight.
+    const weeks = searchVariables(AttentionConfig.parse({ historyWeeks: 3 }), new Date("2026-11-11T12:00:00Z"), "America/Los_Angeles");
+    expect(weeks.closed).toContain("closed:>=2026-10-26T07:00:00+00:00");
   });
 });
 

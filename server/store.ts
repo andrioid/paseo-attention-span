@@ -30,6 +30,8 @@ export const State = z.object({
   projectFilter: z.array(z.string()).default([]),
   // Reviewed and Changed by others shown in each of History's weeks; none means finished only [HIS-07].
   historyFilter: z.array(z.enum(["reviewed", "changed"])).default([]).catch([] as HistoryFilter[]),
+  // The device's IANA time zone, which History's weeks follow; the last device to send one wins. UTC until then [HIS-01].
+  timeZone: z.string().nullable().default(null).catch(null),
   // The update notice put off with Not now, by the version it offered [UPD-01].
   skippedUpdate: z.string().nullable().default(null).catch(null),
   // What others did to my work, kept until Got it or an archive and for History [HIS-06, HIS-07, ATT-22].

@@ -184,15 +184,13 @@ describe("tab counts", () => {
     const shared = item("o/r#5", "wait_review");
     const view = {
       count: 2,
-      config: AttentionConfig.parse({ historyWeeks: 2 }),
-      // The oldest week shown starts on Monday 2 November; a week before it, as the server fetches a little more, isn't counted.
-      history: [{ ...item("o/r#1", "done"), closedAt: hoursAgo(1) }, { ...item("o/r#3", "done"), closedAt: daysAgo(14) }, item("o/r#2", "changed")],
+      history: [{ ...item("o/r#1", "done"), closedAt: hoursAgo(1) }, item("o/r#2", "changed")],
       waiting: [{ who: { login: "dave", team: false, since: hoursAgo(1) }, items: [shared] }, { who: { login: "erin", team: false, since: hoursAgo(1) }, items: [shared, item("o/r#6", "wait_review")] }],
       assigned: [],
       unclaimed: [],
     };
     const wrap = [{ ...item("wrap:o/r#1", "wrap"), section: "wrap" as const, wrap: { itemKey: "o/r#1", keys: ["o/r#1"], finish: "", sessions: [] } }];
-    expect(tabCounts(view, wrap, now)).toEqual({ history: 1, doing: 3, waiting: 2, next: 0 });
+    expect(tabCounts(view, wrap)).toEqual({ history: 1, doing: 3, waiting: 2, next: 0 });
   });
 });
 

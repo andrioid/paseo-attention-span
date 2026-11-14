@@ -25,22 +25,15 @@ export function weekOf(iso: string): Date {
   return day;
 }
 
-// The Monday the oldest of History's `weeks` starts on, in the device's time zone. The server fetches a little more,
-// as it can't know the time zone, so what's older is left out here [HIS-01].
-export function oldestWeek(weeks: number, now = new Date()): Date {
-  const monday = weekOf(now.toISOString());
-  monday.setDate(monday.getDate() - 7 * (weeks - 1));
-  return monday;
-}
-
 const newestFirst = (a: Item, b: Item) => b.closedAt!.localeCompare(a.closedAt!);
 
 // The weeks with anything shown, newest first, and whether any week holds anything at all, even only what the filter
-// hides: then the Filter button stays, so it can be turned on. Unread notes aren't in weeks; they sit above them.
-export function historyWeeks(items: Item[], filter: HistoryFilter[], since: Date): { weeks: HistoryWeek[]; anything: boolean } {
+// hides: then the Filter button stays, so it can be turned on. Unread notes aren't in weeks; they sit above them. The server
+// sends only History's weeks, in the device's time zone [HIS-01].
+export function historyWeeks(items: Item[], filter: HistoryFilter[]): { weeks: HistoryWeek[]; anything: boolean } {
   const byWeek = new Map<number, Item[]>();
   for (const item of items) {
-    if (item.section === "changed" || !item.closedAt || new Date(item.closedAt) < since) continue;
+    if (item.section === "changed" || !item.closedAt) continue;
     const week = weekOf(item.closedAt).getTime();
     byWeek.set(week, [...(byWeek.get(week) ?? []), item]);
   }

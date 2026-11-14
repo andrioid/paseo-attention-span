@@ -40,7 +40,7 @@ flowchart LR
     - optional merge method per repo [PRS-04]
     - `codeRepos`: where an issue repo's code lives, for issues kept in their own repo [SES-07]
     - `nextUp`: where unclaimed issues come from (`mine`, `orgs`, `repos`, set in Settings) and the org issue fields for priority, effort and scope [NXT-04]
-  - `state.json`: dismissals [ATT-08], what others did to my work, with which notes I've cleared or an archive acknowledged [HIS-06, HIS-07, ATT-22], Reviewed and Changed by others shown in History's weeks [HIS-07], the scopes, sources and project statuses ticked in Next up's filter [NXT-03, NXT-09], my Paseo projects' GitHub repos [NXT-08], the update put off with Not now [UPD-01] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
+  - `state.json`: dismissals [ATT-08], what others did to my work, with which notes I've cleared or an archive acknowledged [HIS-06, HIS-07, ATT-22], Reviewed and Changed by others shown in History's weeks [HIS-07], the scopes, sources and project statuses ticked in Next up's filter [NXT-03, NXT-09], my Paseo projects' GitHub repos [NXT-08], the device's time zone for History's weeks [HIS-01], the update put off with Not now [UPD-01] and the last fetch of each feed, so the screen shows instantly after a restart [PRIV-01].
 
 ## Tabs
 
@@ -206,7 +206,7 @@ A live refresh is 10 requests and about 87 points, of the 5,000 GitHub allows pe
 
 ### History
 
-One request with three searches, each from the Monday `historyWeeks` back, reaching to where that Monday begins in the earliest time zone, since the server doesn't know the device's; the screen leaves out what's older than its own oldest week: `is:pr is:merged author:@me` (with `mergedBy` [HIS-05]), `is:pr is:merged reviewed-by:@me -author:@me` (with `mergedBy` [HIS-02]), `is:issue is:closed assignee:@me` (with the last close event's actor [HIS-07]), and the viewer's login. Each result brings up to 20 label names, and issues their type [HIS-04]. About 4 points, mostly the label lists.
+One request with three searches, each from midnight on the Monday `historyWeeks` back in the device's time zone, to the second. The screen sends its IANA zone with each request for the list; the server keeps the last one in `state.json`, uses UTC until one comes, uses it for background fetches and for which cleared changes still show, and fetches History again when it changes [HIS-01]: `is:pr is:merged author:@me` (with `mergedBy` [HIS-05]), `is:pr is:merged reviewed-by:@me -author:@me` (with `mergedBy` [HIS-02]), `is:issue is:closed assignee:@me` (with the last close event's actor [HIS-07]), and the viewer's login. Each result brings up to 20 label names, and issues their type [HIS-04]. About 4 points, mostly the label lists.
 
 Every search is scoped to the configured orgs and repos; Next up's unclaimed issues as described under Next up.
 

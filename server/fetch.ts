@@ -54,7 +54,8 @@ export interface GitHub {
   live(config: AttentionConfig, now: Date, unclaimed: UnclaimedSearch[], projects: ProjectsReport): Promise<{ data: LiveResult; details: Details }>;
   // The ledger after what others did to my work since the last refresh [HIS-07]. `gotIt` is read once the lookups are back.
   changes(ledger: ChangeLedger, data: LiveResult, now: Date, config: AttentionConfig, gotIt: () => string[]): Promise<ChangeLedger>;
-  history(config: AttentionConfig, now: Date): Promise<HistoryResult>;
+  // From the oldest week's Monday in the device's `timeZone` [HIS-01].
+  history(config: AttentionConfig, now: Date, timeZone: string): Promise<HistoryResult>;
   // The single-select fields of these orgs, merged by name [NXT-04].
   issueFields(owners: string[]): Promise<IssueField[]>;
 }
@@ -74,7 +75,7 @@ export function gitHub(gh: Gh): GitHub {
     probeProjects: () => gh.graphqlResult<{ viewer: { projectsV2: unknown } | null }>(PROJECTS_PROBE, {}, { timeoutMs: PROBE_TIMEOUT_MS }).catch((error: Error) => error),
     live: (config, now, unclaimed, projects) => searchLive(gh, config, now, unclaimed, projects),
     changes: (ledger, data, now, config, gotIt) => trackChanges(gh, ledger, data, now, config, gotIt),
-    history: (config, now) => gh.graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES, true), variables(config, HISTORY_SEARCHES, now)),
+    history: (config, now, timeZone) => gh.graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES, true), variables(config, HISTORY_SEARCHES, now, timeZone)),
     issueFields: (owners) => issueFields(gh, owners),
   };
 }
@@ -110,8 +111,8 @@ export async function searchLive(gh: Gh, config: AttentionConfig, now: Date, unc
   return { data: merge([...first, ...rest]), details: found };
 }
 
-function variables(config: AttentionConfig, names: readonly Exclude<SearchName, "unclaimed">[], now: Date): Record<string, string> {
-  const all = searchVariables(config, now);
+function variables(config: AttentionConfig, names: readonly Exclude<SearchName, "unclaimed">[], now: Date, timeZone: string): Record<string, string> {
+  const all = searchVariables(config, now, timeZone);
   return Object.fromEntries(names.map((name) => [name, all[name]]));
 }
 

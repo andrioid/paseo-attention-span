@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Text, View } from "react-native";
 import type { HistoryFilter, Item } from "../shared/attention";
 import { allNotesBusy } from "../shared/got-it";
-import { historyWeeks, oldestWeek, weekOf } from "../shared/history-report";
+import { historyWeeks, weekOf } from "../shared/history-report";
 import type { IconName } from "./icons";
 import { FilterSheet } from "./sheet";
 import { Still } from "./still";
@@ -22,7 +22,6 @@ function weekLabel(monday: Date): string {
 }
 
 export function History({
-  weekCount,
   notes,
   calm,
   items,
@@ -34,8 +33,6 @@ export function History({
   onMarkAllRead,
   card,
 }: {
-  // How many weeks History shows, `historyWeeks` in config.json [HIS-01].
-  weekCount: number;
   // Nothing finished and nothing unread, after a refresh that worked [HIS-08].
   calm: boolean;
   notes: Item[];
@@ -51,7 +48,7 @@ export function History({
 }) {
   const styles = useStyles();
   const copy = useCopy();
-  const { weeks, anything } = historyWeeks(items, filter, oldestWeek(weekCount));
+  const { weeks, anything } = historyWeeks(items, filter);
   if (calm) return <Still shore="bench" title="Nothing finished yet." line="Your accomplishments will show up here." />;
   if (notes.length === 0 && !anything) return <Text style={styles.text}>Nothing finished in this period.</Text>;
   return (

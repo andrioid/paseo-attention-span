@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AttentionView } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
-import type { GitHub, ProbeResult } from "./fetch";
+import { historyWeeks } from "../shared/history-report";
+import { type Gh, type GitHub, gitHub, type ProbeResult } from "./fetch";
+import type { HistoryResult } from "./github-types";
 import { fixture, REPO } from "./fixture";
 import type { Port } from "./port";
 import { AttentionService } from "./service";
@@ -25,7 +27,7 @@ const settle = async () => {
 };
 
 // The service on a made-up GitHub (server/fixture.ts), with a clock that moves only when told and saves kept in order.
-function harness(config: Record<string, unknown> = {}) {
+function harness(config: Record<string, unknown> = {}, history?: GitHub["history"]) {
   let now = START;
   let timers: { at: number; run: () => void }[] = [];
   const saved: State[] = [];
@@ -35,7 +37,7 @@ function harness(config: Record<string, unknown> = {}) {
     probeProjects: vi.fn<GitHub["probeProjects"]>(async () => probe()),
     live: vi.fn<GitHub["live"]>(async (_config, at) => fixture(at)),
     changes: vi.fn<GitHub["changes"]>(async (ledger) => ledger),
-    history: vi.fn<GitHub["history"]>(async (_config, at) => fixture(at).data),
+    history: vi.fn<GitHub["history"]>(history ?? (async (_config, at) => fixture(at).data)),
     issueFields: vi.fn<GitHub["issueFields"]>(async () => []),
   } satisfies GitHub;
   const store = {
@@ -155,6 +157,43 @@ describe("refreshes", () => {
     await service.get();
     await service.get("live");
     expect(github.live).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("History's weeks", () => {
+  const repository = { nameWithOwner: REPO };
+  // Closed late on Sunday 8 November in UTC, already Monday in Tokyo; the PR that closed it merged on Monday 9 November.
+  const issue = { number: 60, title: "Refunds", url: "u60", closedAt: "2026-11-08T20:00:00Z", stateReason: "COMPLETED", repository };
+  const pr = { number: 61, title: "Refund button", url: "u61", mergedAt: "2026-11-09T10:00:00Z", repository, closingIssuesReferences: { nodes: [{ number: 60, repository }] } };
+  // gh answering History's request as GitHub's search would: only what ended on or after each search's start.
+  const searching: Gh = {
+    graphql: (async (_query: string, variables: Record<string, string> = {}) => {
+      const since = (name: string) => Date.parse(variables[name].match(/:>=(\S+)/)![1]);
+      return {
+        viewer: { login: "me", id: "U_me" },
+        merged: { nodes: [pr].filter((node) => Date.parse(node.mergedAt) >= since("merged")) },
+        reviewed: { nodes: [] },
+        closed: { nodes: [issue].filter((node) => Date.parse(node.closedAt) >= since("closed")) },
+      } satisfies HistoryResult;
+    }) as Gh["graphql"],
+    graphqlResult: vi.fn() as never,
+  };
+  const shown = (view: AttentionView) => historyWeeks(view.history, []).weeks.map((week) => week.done.map((item) => [item.number, item.children.map((child) => child.number)]));
+
+  it("HIS-01: a PR merged this week shows even when the issue it closed was closed the week before", async () => {
+    // Saturday 14 November, UTC, one week: from Monday 9 November.
+    const { service, start } = harness({ historyWeeks: 1 }, gitHub(searching).history);
+    await start();
+    expect(shown(await service.get(undefined, true))).toEqual([[[61, []]]]);
+  });
+
+  it("HIS-01: weeks follow the time zone the screen sends, fetching History again once when it changes", async () => {
+    const { service, github, start } = harness({ historyWeeks: 1 }, gitHub(searching).history);
+    await start();
+    const view = await service.get(undefined, false, "Asia/Tokyo");
+    expect(shown(view)).toEqual([[[60, [61]]]]);
+    await service.get(undefined, false, "Asia/Tokyo");
+    expect(github.history).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -43,12 +43,13 @@ export default function contribute(server: PluginServerContext) {
   const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, work, change));
   const chip = (text: string, tone: Chip["tone"] = "neutral", icon?: Chip["icon"]): Change => ({ kind: "chip", chip: { text, tone, ...(icon ? { icon } : {}) } });
 
-  // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08].
-  server.handle(rpc.getAttention, ({ refresh, cached }, { paseo }) =>
+  // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08],
+  // and its time zone sets History's weeks [HIS-01].
+  server.handle(rpc.getAttention, ({ refresh, cached, timeZone }, { paseo }) =>
     ready(() => {
       attention.connect(paseo);
       if (archived.waiting) void archived.notice(paseo);
-      return attention.get(refresh, cached);
+      return attention.get(refresh, cached, timeZone);
     }),
   );
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)));

@@ -120,7 +120,10 @@ function waitingGroups(items: Item[]): WaitingGroup[] {
 // Waiting's work: its own sections, and my PRs in Doing while they wait on someone I asked [WAI-01, PRS-15].
 const inWaiting = (item: Item) => SECTIONS[item.section].tab === "waiting" || (SECTIONS[item.section].tab === "doing" && !!item.wait && !!item.waitingOn?.length);
 
-export function buildView(attention: Attention | null, history: Item[], dismissed: State["dismissed"], meta: ViewMeta, ledger: ChangeLedger = EMPTY_LEDGER, now = new Date()): AttentionView {
+export function buildView(attention: Attention | null, fetched: Item[], dismissed: State["dismissed"], meta: ViewMeta, ledger: ChangeLedger = EMPTY_LEDGER, now = new Date(), timeZone = "UTC"): AttentionView {
+  // History's weeks in the device's time zone; what a fetch from before a new week began has that's older is left out [HIS-01].
+  const since = historySince(now, meta.config.historyWeeks, timeZone);
+  const history = fetched.filter((item) => !item.closedAt || Date.parse(item.closedAt) >= Date.parse(since));
   const items = [...(attention?.items ?? []), ...history];
   // A PR that left my hands isn't my finished work, even once its new owner merges it [HIS-06].
   const handed = handedKeys(ledger);
@@ -129,7 +132,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     .map((item) => (item.section === "done" && item.children.some((child) => handed.has(child.key)) ? { ...item, children: item.children.filter((child) => !handed.has(child.key)) } : item));
   // Notes on what others did, what was cleared into a week, and finished work a live refresh saw first; never dismissed,
   // only cleared with Got it or an archive [HIS-06, HIS-07, ATT-22].
-  const changes = changeItems(ledger, now, meta.config.mentionDays, historySince(now, meta.config.historyWeeks));
+  const changes = changeItems(ledger, now, meta.config.mentionDays, since);
   // History's daily fetch has the richer item; one seen live fills in until then, so a merge or close shows in its week now.
   const knownDone = new Set(visible.filter((item) => SECTIONS[item.section].tab === "history" && item.section === "done").flatMap((item) => [item.key, ...item.children.map((child) => child.key)]));
   const liveFinished = changes.finished.filter((item) => !knownDone.has(item.key));
