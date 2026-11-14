@@ -2,7 +2,7 @@ import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Markdown, TextInput, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, checkoutPr, type FailingChecks, type Item, itemSessions, liftActive, looseSessions, type NextUpIssue, ownStack, type PersonRole, type Reviewer, type Section, type SectionId, SECTIONS, type SubRow, TAB_FEED, type TabId, type Target, type WaitingGroup, type WaitingOn, type WrapItem } from "../shared/attention";
 import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared/config";
@@ -23,9 +23,9 @@ import { Still } from "./still";
 import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FadeIn, githubEntry, Modal, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
-import { AGENTS_QUERY_KEY, branchWorkspaces, type FetchProviders, findCheckout, githubProjects, itemAgents, listProfiles, noProjectMessage, resolveAgentConfig, startSession } from "./sessions";
+import { AGENTS_QUERY_KEY, branchWorkspaces, type FetchProviders, findCheckout, githubProjects, listProfiles, noProjectMessage, resolveAgentConfig, startSession, useItemAgents } from "./sessions";
 import { ALL_NOTES, ALL_WRAP, noteBusy } from "../shared/got-it";
-import { acknowledged, cleanSingle, doingCount, EMPTY_WATCH, unreadChanges, watchArchives, wrapItems } from "../shared/wrap-up";
+import { cleanSingle, doingCount, unreadChanges, wrapItems } from "../shared/wrap-up";
 import { type ArchiveOutcome, archiveTarget } from "../shared/archive";
 import { History } from "./history";
 import { stateMark } from "./mark";
@@ -253,14 +253,13 @@ function AttentionList({
   const toast = useToast();
   const queryClient = useQueryClient();
   const attention = useAttention();
-  const agents = useQuery({ queryKey: AGENTS_QUERY_KEY, queryFn: () => itemAgents(paseo), refetchInterval: 15_000 });
+  const agents = useItemAgents();
   const fetchContext = useRpc(rpc.sessionContext);
   const dismiss = useRpc(rpc.dismissItem);
   const undismiss = useRpc(rpc.undismissItem);
   const restore = useRpc(rpc.restoreDismissed);
   const gotIt = useRpc(rpc.gotIt);
   const saveHistoryFilter = useRpc(rpc.setHistoryFilter);
-  const acknowledge = useRpc(rpc.acknowledgeChanges);
   const archiveSessions = useRpc(rpc.archiveSessions);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
@@ -303,27 +302,6 @@ function AttentionList({
   const failing = !!attention.error || !!view?.feeds.live.error;
   const setup = useQuery({ queryKey: ["attention-span", "setup"], queryFn: () => fetchSetup({}), enabled: failing });
   const [checking, setChecking] = useState(false);
-  // A session archived in Paseo itself: when a Wrap up row goes because every one of its sessions is gone, what others did
-  // to its work is acknowledged, so it goes to its week as cleared rather than turning unread. shared/wrap-up.ts decides;
-  // this sends what's pending, and a failed request stays pending for the next session poll [HIS-07, ATT-22].
-  const watch = useRef(EMPTY_WATCH);
-  const acknowledging = useRef(new Set<string>());
-  useEffect(() => {
-    if (!view || !agents.data) return;
-    watch.current = watchArchives(watch.current, wrapItems(view, agents.data), agents.data);
-    for (const [rowKey, keys] of Object.entries(watch.current.pending)) {
-      if (acknowledging.current.has(rowKey)) continue;
-      acknowledging.current.add(rowKey);
-      void acknowledge({ keys })
-        .then((next) => {
-          watch.current = acknowledged(watch.current, rowKey);
-          attention.setView(next);
-        })
-        .catch(() => {})
-        .finally(() => acknowledging.current.delete(rowKey));
-    }
-  }, [view, agents.data, agents.dataUpdatedAt]);
-
   async function run(key: string, label: string, work: () => Promise<unknown>) {
     setBusy((keys) => new Set(keys).add(key));
     try {

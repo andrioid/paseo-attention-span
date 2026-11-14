@@ -104,9 +104,10 @@ export class AttentionService {
   }
 
   // ⟳ fetches its tab's feed now; otherwise feeds older than their schedule are fetched first.
-  async get(refresh?: FeedId): Promise<AttentionView> {
+  // `cached` answers from memory, with no GitHub refresh first.
+  async get(refresh?: FeedId, cached?: boolean): Promise<AttentionView> {
     if (refresh) await this.refresh(refresh).catch(() => {});
-    else await this.refreshStale();
+    else if (!cached) await this.refreshStale();
     return this.view();
   }
 
@@ -147,10 +148,10 @@ export class AttentionService {
     return this.view();
   }
 
-  // Archive acknowledges exactly the events on the work at that moment, including ones a refresh added meanwhile
-  // [HIS-07, ATT-22].
-  async acknowledge(keys: string[]): Promise<AttentionView> {
-    this.state.changes = acknowledge(this.state.changes, keys);
+  // Archive acknowledges exactly the events on the work at that moment, including ones a refresh added meanwhile; `upTo`
+  // leaves out what came after then [HIS-07, ATT-22].
+  async acknowledge(keys: string[], upTo?: string): Promise<AttentionView> {
+    this.state.changes = acknowledge(this.state.changes, keys, upTo);
     await this.save();
     return this.view();
   }

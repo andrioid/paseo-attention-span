@@ -1,13 +1,40 @@
-import type { usePaseo } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type AgentSummary, checkoutPr, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
 import { linkedSessions } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
+import { getAttention } from "../shared/rpc";
+import { VIEW_QUERY_KEY } from "./data";
 
 type Paseo = ReturnType<typeof usePaseo>;
 
 // The app's session list, shared by the screen and the sidebar's count [ATT-09, ATT-22].
 export const AGENTS_QUERY_KEY = ["attention-span", "agents"] as const;
+
+// The sessions on items, polled for the screen and the sidebar alike [ATT-09, ATT-22]. When one has gone since the last
+// poll, perhaps archived in Paseo, the server's view is read first (from memory, not GitHub), so the notes the server
+// acknowledged for it are cleared before its Wrap up row goes, rather than showing as unread in between [HIS-07].
+export function useItemAgents() {
+  const paseo = usePaseo();
+  const queryClient = useQueryClient();
+  const fetchAttention = useRpc(getAttention);
+  return useQuery({
+    queryKey: AGENTS_QUERY_KEY,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const before = queryClient.getQueryData<AgentSummary[]>(AGENTS_QUERY_KEY);
+      const agents = await itemAgents(paseo);
+      const now = new Set(agents.map((agent) => agent.id));
+      if (before?.some((agent) => !now.has(agent.id))) {
+        await fetchAttention({ cached: true })
+          .then((view) => queryClient.setQueryData(VIEW_QUERY_KEY, view))
+          .catch(() => {}); // the view's own poll catches up
+      }
+      return agents;
+    },
+  });
+}
 
 // Labels tie an agent to the item it works on [ATT-07, SES-03].
 export const LABEL = "attention-span";
