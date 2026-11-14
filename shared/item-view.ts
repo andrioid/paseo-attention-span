@@ -1,12 +1,26 @@
 // What an item's card and sheet say and offer, as plain data: client/attention-screen.tsx draws it and wires the presses
 // [ATT-05, ATT-06].
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, type Item, looseSessions, ownStack, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, isWorking, type Item, looseSessions, ownStack, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
 import { summarizeRerun } from "./checks";
 import type { SessionKind } from "./config";
 import { ago } from "./format";
 import { sameName } from "./names";
 import { ACTION_SESSION } from "./prompts";
 import { doingCount, finishText } from "./wrap-up";
+
+// A session's state, as a chip on its card: needing me beats working [ATT-07].
+export function sessionSignal(agent: AgentSummary): Chip {
+  if (agent.requiresAttention) return { text: "agent needs you", tone: "warn" };
+  if (isWorking(agent)) return { text: "agent working", tone: "good" };
+  if (agent.status === "error") return { text: "agent failed", tone: "bad" };
+  return { text: "agent idle", tone: "neutral" };
+}
+
+// The same state as a badge on the session's line in a sheet, where the line already says it's a session [SES-03, ATT-07].
+export function sessionBadge(agent: AgentSummary): Chip {
+  const signal = sessionSignal(agent);
+  return { ...signal, text: signal.text.replace(/^agent /, "") };
+}
 
 export function actionLabel(action: ActionId, item: Item): string {
   // Review takes the whole stack; Rebase, my PRs in it [ATT-04].

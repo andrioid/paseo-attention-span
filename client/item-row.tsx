@@ -9,14 +9,14 @@ import type { SessionKind } from "../shared/config";
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
 import { ago } from "../shared/format";
 import { noteBusy } from "../shared/got-it";
-import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, rerunState, type SheetStep, sheetPlan, soleStep, stackMetaChips, targetUrl, waitChips } from "../shared/item-view";
+import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, rerunState, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, targetUrl, waitChips } from "../shared/item-view";
 import { CardList, CardRow } from "./card";
 import { NumberText, PlaceText } from "./entity";
 import type { IconName } from "./icons";
 import { type Actions, itemDetailsQuery } from "./item-actions";
 import { stateMark } from "./mark";
 import { AcknowledgeSheet, ReviewerSheet } from "./pickers";
-import { agentSignal, sessionEntry, startAnotherEntry } from "./session-menu";
+import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, FadeIn, githubEntry, type SheetEntry, useArrived, usePrefetchOnRest } from "./sheet";
 import { Avatar, Hint, LINE_HEIGHT, Meta, mix, TablerIcon, tint, useCopy, useHover, useStrongText, useStyles } from "./ui";
 
@@ -131,7 +131,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const main = item.actions[0];
   const { rows: children, target: targetRow } = cardStack(item);
   const shown = [...waits, ...stackMetaChips(item, targetRow)];
-  const chips = sessions[0] ? [...shown, agentSignal(sessions[0])] : shown;
+  const chips = sessions[0] ? [...shown, sessionSignal(sessions[0])] : shown;
   // The sheet opens at once; what it fetches fills in [ATT-06].
   const open = () => setSheet("item");
   const prefetch = usePrefetchOnRest(itemDetailsQuery(item, actions.fetchDetails));

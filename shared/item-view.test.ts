@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActionId, FailingChecks, Item, SubRow, WaitingOn } from "./attention";
-import { actionDetail, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
+import { actionDetail, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, sessionBadge, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
 import { ACTION_SESSION } from "./prompts";
 import { agent, change, clock, item } from "./test-builders";
 
@@ -190,5 +190,19 @@ describe("tab counts", () => {
     };
     const wrap = [{ ...item("wrap:o/r#1", "wrap"), section: "wrap" as const, wrap: { itemKey: "o/r#1", keys: ["o/r#1"], finish: "", sessions: [] } }];
     expect(tabCounts(view, wrap)).toEqual({ history: 1, doing: 3, waiting: 2, next: 0 });
+  });
+});
+
+describe("a session's state", () => {
+  it.each([
+    ["needs me, even while working", { status: "running", requiresAttention: true }, "agent needs you", "warn", "needs you"],
+    ["working", { status: "running" }, "agent working", "good", "working"],
+    ["starting up, as working", { status: "initializing" }, "agent working", "good", "working"],
+    ["failed", { status: "error" }, "agent failed", "bad", "failed"],
+    ["idle", { status: "idle" }, "agent idle", "neutral", "idle"],
+  ])("ATT-07, SES-03: a session that's %s says so on its card and its sheet line", (_, fields, chip, tone, badge) => {
+    const session = agent("a", "o/r#1", fields);
+    expect(sessionSignal(session)).toEqual({ text: chip, tone });
+    expect(sessionBadge(session)).toEqual({ text: badge, tone });
   });
 });

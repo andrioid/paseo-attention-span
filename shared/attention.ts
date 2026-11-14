@@ -414,9 +414,12 @@ export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "c
   return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
 }
 
+// A session working on its turn, or starting up [ATT-07].
+export const isWorking = (agent: { status: string }): boolean => agent.status === "running" || agent.status === "initializing";
+
 // A session is idle when it isn't working and doesn't need me; Wrap up and archiving both ask [ATT-22].
 export function isIdle(agent: { status: string; requiresAttention?: boolean }): boolean {
-  return !agent.requiresAttention && agent.status !== "running" && agent.status !== "initializing";
+  return !agent.requiresAttention && !isWorking(agent);
 }
 
 export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSummary[] {
@@ -432,7 +435,7 @@ export function liftActive(items: Item[], agents: AgentSummary[]): Item[] {
   const rank = (item: Item) => {
     const agent = itemSessions(agents, item)[0];
     if (agent?.requiresAttention) return 0;
-    return agent?.status === "running" || agent?.status === "initializing" ? 1 : 2;
+    return agent && isWorking(agent) ? 1 : 2;
   };
   return items.map((item) => ({ item, rank: rank(item) })).sort((a, b) => a.rank - b.rank).map(({ item }) => item);
 }
