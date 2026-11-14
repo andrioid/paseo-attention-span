@@ -11,6 +11,7 @@ export interface ViewMeta {
   sources: string[];
   projectFilter: string[];
   historyFilter: HistoryFilter[];
+  groups?: Record<string, string[]>;
   config: AttentionConfig;
   pending: number;
 }
@@ -157,6 +158,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     waiting: waitingGroups(visible.filter(inWaiting)),
     history: shown.filter((item) => SECTIONS[item.section].tab === "history"),
     // Dismissed or not, these are still open; Wrap up must not call their sessions finished [ATT-22].
+    ownClosed: attention?.ownClosed ?? [],
     activeKeys: (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]),
     assigned: attention?.assigned ?? [],
     unclaimed: attention?.unclaimed ?? [],

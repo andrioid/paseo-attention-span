@@ -418,7 +418,9 @@ function AttentionList({
   // Notes about work Already in Wrap up wait there; archiving acknowledges them [HIS-07, ATT-22].
   const notes = unreadChanges(view.history.filter((item) => item.section === "changed"), wrap);
   // Calm only once a refresh that worked says Doing is empty, Wrap up included [ATT-18, ATT-22].
-  const clear = isClear(view, !!attention.error, wrap.length);
+  // Sessions not known yet, or failing to load, leave Wrap up unknown: no calm on that [ATT-18, ATT-22].
+  const sessionsKnown = !!view.fixtureAgents || (agents.isSuccess && !agents.isError);
+  const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length);
   // ⟳ turns for any refresh of this tab's feed, but only my own press locks it: the cached view can still say a background one runs after it's done.
   const pressed = attention.isRefreshing(TAB_FEED[tab]);
   const refreshing = feed.refreshing || attention.isFetching || pressed;
@@ -521,7 +523,8 @@ function AttentionList({
         const archived = new Set(items.flatMap((item) => item.wrap?.sessions.map((session) => session.id) ?? []));
         setArchivedSessions((known) => new Set([...known, ...archived]));
         const sessions = archived.size;
-        toast.show(sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`, { variant: "success" });
+        if (outcome.warning) toast.error(outcome.warning);
+        else toast.show(sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`, { variant: "success" });
       } else if (outcome.reason === "working") {
         toast.error(`Couldn't archive: ${outcome.message}`);
       }
@@ -626,7 +629,13 @@ function AttentionList({
               ) : null}
               {view.doing.length > 0 ? <Sections sections={view.doing} actions={actions} /> : null}
             </>
-          ) : !feed.fetchedAt && !feed.error ? <Loading text="Checking GitHub…" /> : null}
+          ) : !feed.fetchedAt && !feed.error ? (
+            <Loading text="Checking GitHub…" />
+          ) : agents.isError ? (
+            <Text style={styles.muted}>Couldn't check your sessions, so Wrap up isn't known yet.</Text>
+          ) : !sessionsKnown ? (
+            <Loading text="Checking your sessions…" />
+          ) : null}
           {view.dismissedCount > undoable.filter((row) => row.dismissal).length ? (
             <Pressable
               accessibilityRole="button"
@@ -1374,9 +1383,14 @@ function WrapRow({ item, first, actions, onArchive }: { item: Item; first: boole
       setSheet("dirty");
     }
   };
+  // The multi sheet asks the server first, like a single row; unsaved work it finds gets the confirm that names it [ATT-22].
   const confirm = async (confirm: boolean) => {
     const outcome = await onArchive(item, confirm);
-    if (outcome?.ok) setSheet(null);
+    if (outcome?.ok) return setSheet(null);
+    if (outcome && outcome.reason === "unsaved") {
+      setUnsaved(outcome.sessions);
+      setSheet("dirty");
+    }
   };
   return (
     <CardRow
@@ -1423,23 +1437,25 @@ function WrapRow({ item, first, actions, onArchive }: { item: Item; first: boole
                 </Text>
                 <View style={[styles.row, { justifyContent: "flex-end" }]}>
                   <Button label="Cancel" onPress={() => setSheet(null)} />
-                  <Button label={sessions.length === 2 ? "Archive both" : `Archive ${sessions.length}`} variant="danger" onPress={() => void confirm(true)} />
+                  <Button label={sessions.length === 2 ? "Archive both" : `Archive ${sessions.length}`} variant="danger" onPress={() => void confirm(false)} />
                 </View>
               </KeepStyles>
             </Modal.Content>
           </Modal>
         ) : sheet === "dirty" ? (
-          <Modal title={`Archive the session on #${item.number}?`} open onOpenChange={(open) => (open ? null : setSheet(null))}>
+          <Modal title={sessions.length > 1 ? `Archive the sessions on #${item.number}?` : `Archive the session on #${item.number}?`} open onOpenChange={(open) => (open ? null : setSheet(null))}>
             <Modal.Content>
               <KeepStyles styles={styles}>
-                <Text style={styles.text}>{sessions[0]?.title ?? "Session"}</Text>
-                <Text style={{ color: styles.c.statusWarning, fontSize: 13 }}>
-                  {unsaved[0]?.unknown
-                    ? "Couldn't check for unsaved changes. Archiving may remove the worktree."
-                    : `Its worktree has ${unsavedTextFrom(unsaved[0] ?? dirtyFallback(sessions[0]))}. Archiving may remove them.`}
-                </Text>
+                {(unsaved.length ? unsaved : [dirtyFallback(sessions[0])]).map((info) => (
+                  <View key={info.agentId} style={{ gap: 2 }}>
+                    <Text style={styles.text}>{info.title ?? "Session"}</Text>
+                    <Text style={{ color: styles.c.statusWarning, fontSize: 13 }}>
+                      {info.unknown ? "Couldn't check for unsaved changes. Archiving may remove the worktree." : `Its worktree has ${unsavedTextFrom(info)}. Archiving may remove them.`}
+                    </Text>
+                  </View>
+                ))}
                 <View style={[styles.row, { justifyContent: "flex-end" }]}>
-                  <Button label="Open session" icon="agent" variant="calm" onPress={() => sessions[0] && openSession(sessions[0].id)} />
+                  <Button label="Open session" icon="agent" variant="calm" onPress={() => openSession(unsaved[0]?.agentId ?? sessions[0].id)} />
                   <Button label="Archive anyway" variant="danger" onPress={() => void confirm(true)} />
                 </View>
               </KeepStyles>
@@ -1611,7 +1627,8 @@ function History({
       </View>,
     );
   }
-  if (notes.length === 0 && blocks.length === 0) return <Text style={styles.text}>Nothing finished in this period.</Text>;
+  // Filter shows whenever a week holds anything, even only what the filter hides, so it can be turned on [HIS-07].
+  if (notes.length === 0 && weeks.size === 0) return <Text style={styles.text}>Nothing finished in this period.</Text>;
   return (
     <>
       {notes.length > 0 ? (
@@ -1637,7 +1654,7 @@ function History({
           <Card items={notes} actions={actions} />
         </View>
       ) : null}
-      {blocks.length > 0 ? (
+      {weeks.size > 0 ? (
         <View style={[styles.row, { justifyContent: "flex-end" }]}>
           <Button
             label={filter.length ? `Filter · ${filter.length}` : "Filter"}
@@ -1648,7 +1665,7 @@ function History({
           />
         </View>
       ) : null}
-      {blocks}
+      {blocks.length > 0 ? blocks : weeks.size > 0 ? <Text style={styles.text}>Nothing finished in this period.</Text> : null}
       {filtering ? <HistoryFilterSheet filter={filter} onChange={onFilter} onClose={() => onFiltering(false)} /> : null}
     </>
   );

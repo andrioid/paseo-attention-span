@@ -11,7 +11,8 @@ export interface ArchiveSessionInfo {
 }
 
 export type ArchiveOutcome =
-  | { ok: true; view: AttentionView }
+  // `warning`: archived, but a worktree that should have gone stayed, and why.
+  | { ok: true; view: AttentionView; warning?: string }
   | { ok: false; reason: "working"; message: string; view: AttentionView }
   | { ok: false; reason: "unsaved"; sessions: ArchiveSessionInfo[]; view: AttentionView };
 

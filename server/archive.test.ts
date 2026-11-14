@@ -72,6 +72,38 @@ describe("archive safety", () => {
     expect(dirty.archivedAgents).toEqual(["a1"]);
   });
 
+  it("ATT-22: clean needs both answers: an unknown ahead count, or a git count that failed, asks first", async () => {
+    expect(await unsaved(session({ dirty: false, ahead: null }))).toMatchObject({ unknown: true });
+    expect(await unsaved(session({ dirty: null, ahead: 0 }))).toMatchObject({ unknown: true });
+    // A directory git can't read: unknown, not zero.
+    expect(await gitUnsaved(session(), "/nonexistent/attention-span-test")).toMatchObject({ unknown: true });
+    const unknownAhead = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree", gitRuntime: { isDirty: false, aheadOfOrigin: null as unknown as number, currentBranch: "b" } }]);
+    expect(await archiveSessions(unknownAhead.paseo, [{ itemKey: "k", agentIds: ["a1"], keys: ["k"] }], false)).toMatchObject({ ok: false, reason: "unsaved" });
+    expect(unknownAhead.archivedAgents).toEqual([]);
+  });
+
+  it("ATT-22: a session that started working during the checks isn't archived", async () => {
+    const { paseo, archivedAgents } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree" }]);
+    let calls = 0;
+    const list = paseo.agents.list;
+    paseo.agents.list = (async (...args: Parameters<typeof list>) => {
+      const result = await list(...args);
+      calls += 1;
+      return calls > 1 ? { ...result, entries: result.entries.map(({ agent }) => ({ agent: { ...agent, status: "running" } })) } : result;
+    }) as typeof list;
+    expect(await archiveSessions(paseo, [{ itemKey: "k", agentIds: ["a1"], keys: ["k"] }], false)).toMatchObject({ ok: false, reason: "working" });
+    expect(archivedAgents).toEqual([]);
+  });
+
+  it("ATT-22: a worktree that won't go is said, after the sessions are put away", async () => {
+    const { paseo, archivedAgents } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree" }]);
+    paseo.workspaces.archive = (async () => {
+      throw new Error("busy");
+    }) as typeof paseo.workspaces.archive;
+    expect(await archiveSessions(paseo, [{ itemKey: "k", agentIds: ["a1"], keys: ["k"] }], false)).toEqual({ ok: true, warning: "Archived, but couldn't remove b: busy" });
+    expect(archivedAgents).toEqual(["a1"]);
+  });
+
   it("ATT-22: a session that is still working never archives", async () => {
     const { paseo, archivedAgents } = paseoFor([{ id: "a1", workspaceId: "w1", status: "running" }], [{ id: "w1", workspaceKind: "worktree" }]);
     expect(await archiveSessions(paseo, [{ itemKey: "k", agentIds: ["a1"], keys: ["k"] }], true)).toMatchObject({ ok: false, reason: "working" });

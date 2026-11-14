@@ -232,6 +232,8 @@ export interface Item {
   work?: WorkKind;
   // History only: an issue closed as not planned, kept out of the copied week [HIS-03].
   notPlanned?: true;
+  // A PR of mine I closed without merging, for Wrap up's words [ATT-22].
+  closedUnmerged?: true;
   // History only: who merged my PR, when it wasn't me [HIS-05].
   mergedBy?: string;
   // History only: who closed an issue assigned to me, when it wasn't me [HIS-07].
@@ -341,6 +343,8 @@ export interface Attention {
   projects?: ProjectInfo[];
   // Repo -> who reviewed or was asked on my PRs there, latest first, for the reviewer picker [PRS-12].
   reviewers?: Record<string, Reviewer[]>;
+  // My PRs I closed without merging lately: finished work for Wrap up, never shown in History [ATT-22].
+  ownClosed?: Item[];
 }
 
 export interface Section {
@@ -433,6 +437,10 @@ export interface AttentionView {
   history: Item[];
   // Every item key on Doing, Waiting or Next up before dismissals, so Wrap up knows what still isn't done [ATT-22].
   activeKeys?: string[];
+  // My PRs I closed without merging, for Wrap up only [ATT-22].
+  ownClosed?: Item[];
+  // Key -> the keys of the stack or issue group it was last seen open in, lower case [ATT-22, ATT-04].
+  groups?: Record<string, string[]>;
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom: UnclaimedSource;

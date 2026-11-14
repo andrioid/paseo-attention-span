@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Attention, Item } from "../shared/attention";
 import { changeText, type OthersChange } from "../shared/changes";
 import { AttentionConfig } from "../shared/config";
-import { acknowledge, type ChangeLedger, changeCandidates, changeItems, closedByOther, EMPTY_LEDGER, ended, handover, type Lookups, nextLedger, reopened, reopenCandidates, withGotIt } from "./changes";
+import { acknowledge, type ChangeLedger, changeCandidates, changeItems, closedByOther, EMPTY_LEDGER, ended, handover, type Lookups, nextLedger, ownClosed, reopened, reopenCandidates, withGotIt } from "./changes";
 import type { AssignmentEvent, AssignmentSubject, ClosedIssue, EndedPullRequest, LiveResult, PickableNode, PullRequestNode, ReopenSubject } from "./github-types";
 import { buildView } from "./view";
 
@@ -208,6 +208,9 @@ describe("the ledger between refreshes", () => {
     const cleared = nextLedger({ ...handed, gotIt: ["h"] }, data({ mine: [openPr("P3", "me")] }), "me", lookups(), NOW, 30, 35);
     expect(cleared.events.map((event) => [event.id, event.returned])).toEqual([["h", true]]);
     expect(cleared.gotIt).toEqual(["h"]);
+    // Mine again, then merged by dave: that's a merge note, not hidden behind the old handover [HIS-06, HIS-07].
+    const merged = nextLedger(cleared, data({ ended: [endedPr("P3", { mergedAt: hoursAgo(1), closedAt: hoursAgo(1) })] }), "me", lookups(), NOW, 30, 35);
+    expect(merged.events.map((event) => [event.kind, event.subjectId])).toContainEqual(["merged", "P3"]);
   });
 });
 
@@ -321,8 +324,10 @@ describe("issues closed and PRs reopened by others", () => {
   it("HIS-07: my own reopen is silent, a failed lookup waits, and old events don't replay as a reopen", () => {
     const closed = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null });
     const before = nextLedger(EMPTY_LEDGER, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35);
-    const mine = nextLedger(before, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject({ timelineItems: { nodes: [{ createdAt: hoursAgo(1), actor: { login: "me" } }] } })]]));
-    expect(mine.events.map((event) => event.kind)).toEqual(["closed"]);
+    const mine = nextLedger(before, data({}), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject({ timelineItems: { nodes: [{ createdAt: hoursAgo(1), actor: { login: "me" } }] } })]]));
+    // My own reopen is no note, but the close it undid leaves its week all the same.
+    expect(mine.events).toEqual([]);
+    expect(mine.tracked).toEqual({});
     // Nothing looked up (the batch failed): still tracked for next time.
     expect(nextLedger(before, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35).tracked.P1).toBeDefined();
     // Still closed when looked up: keep watching it.
@@ -330,6 +335,20 @@ describe("issues closed and PRs reopened by others", () => {
     // A ledger with an old close but nothing tracked has no reopen to announce.
     expect(reopenCandidates({ ...before, tracked: {} })).toEqual([]);
     expect(reopened({ key: "acme/shop#9", number: 9, title: "Retry", url: "u", repo: "acme/shop", closedAt: hoursAgo(60) }, reopenSubject({ state: "MERGED" }), "me")).toBeNull();
+  });
+
+  it("HIS-07, GH-01: a merged PR stops being tracked, and nothing past the window is tracked, looked up or not", () => {
+    const closed = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null });
+    const before = nextLedger(EMPTY_LEDGER, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35);
+    expect(nextLedger(before, data({}), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject({ state: "MERGED" })]])).tracked).toEqual({});
+    const later = new Date(NOW.getTime() + 40 * 86_400_000);
+    expect(nextLedger(before, data({}), "me", new Map(), later, 30, 35, new Map([["P1", reopenSubject({ state: "CLOSED" })]])).tracked).toEqual({});
+  });
+
+  it("ATT-22: my own unmerged closes are finished work for Wrap up; others' and merges aren't", () => {
+    const mine = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "me" } }] } });
+    const theirs = endedPr("P2", { number: 10, merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "alice" } }] } });
+    expect(ownClosed(data({ ended: [mine, theirs, endedPr("P3", {})] }), "me").map((item) => [item.key, item.closedUnmerged])).toEqual([["acme/shop#9", true]]);
   });
 
   it("ATT-22: an archive acknowledges exactly the events on its work at that moment", () => {

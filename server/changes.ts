@@ -115,6 +115,30 @@ export function ended(pr: EndedPullRequest, me: string): OthersChange | null {
   return same(closer, me) ? null : change(pr, "pr", "closed", pr.closedAt, closer);
 }
 
+// My PRs I closed without merging, from the closed search: finished work whose sessions Wrap up puts away, though no note
+// and no week lists them [ATT-22].
+export function ownClosed(data: Pick<LiveResult, "ended">, me: string): Item[] {
+  return present(data.ended.nodes)
+    .filter((pr) => !pr.merged && same(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
+    .map((pr) => ({
+      key: prKey(pr),
+      kind: "pr" as const,
+      section: "done" as const,
+      draft: false,
+      repo: pr.repository.nameWithOwner,
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      chips: [],
+      actions: [],
+      children: [],
+      target: { kind: "pr" as const, repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url },
+      othersActivityAt: pr.closedAt,
+      closedAt: pr.closedAt,
+      closedUnmerged: true as const,
+    }));
+}
+
 // An issue assigned to me someone else closed, as completed or not planned [HIS-07]. My own closes are mine.
 export function closedByOther(issue: ClosedIssue, me: string): OthersChange | null {
   const closer = issue.timelineItems.nodes.at(-1)?.actor?.login;
@@ -190,7 +214,8 @@ export function nextLedger(
     .map((subject) => (subject ? handover(subject, me) : null))
     .filter((event): event is OthersChange => !!event && !(endedAt.has(event.subjectId) && event.at > endedAt.get(event.subjectId)!));
   found.push(...handovers);
-  const handedAt = (id: string) => [...ledger.events, ...handovers].filter((event) => isHandover(event) && event.subjectId === id).map((event) => event.at);
+  // A handover whose work came back to me no longer makes a later merge someone else's [HIS-06].
+  const handedAt = (id: string) => [...ledger.events, ...handovers].filter((event) => isHandover(event) && !event.returned && event.subjectId === id).map((event) => event.at);
   for (const pr of present(data.ended.nodes)) {
     // A PR someone else has whose hands aren't looked up yet waits a refresh, so a handover isn't reported as a merge.
     if (handedOver(pr, me) && !lookups.has(pr.id) && ledger.handed[pr.id] !== signature(pr)) continue;
@@ -217,13 +242,17 @@ export function nextLedger(
       delete tracked[id];
       continue;
     }
-    // Still closed: keep watching it. Open: it reopened, whether or not its note survives (mine doesn't).
+    // Merged: it can't reopen any more. Still closed: keep watching it.
+    if (subject.state === "MERGED") {
+      delete tracked[id];
+      continue;
+    }
     if (subject.state !== "OPEN") continue;
-    const event = before ? reopened(before, subject, me) : null;
+    // Open again: the old close leaves its week whoever reopened it; only someone else's reopen is a note.
     delete tracked[id];
-    if (!event) continue;
-    found.push(event);
     reopenedIds.add(id);
+    const event = before ? reopened(before, subject, me) : null;
+    if (event) found.push(event);
   }
 
   // Mine again: my PRs with nobody else on them, and issues assigned to me.
@@ -242,8 +271,8 @@ export function nextLedger(
     .filter((event) => event.at >= since(keepDays))
     .sort((a, b) => b.at.localeCompare(a.at));
   const ids = new Set(events.map((event) => event.id));
-  // Nothing older than the window is worth tracking; a PR whose lookup failed stays, and is asked again.
-  for (const [id, pr] of Object.entries(tracked)) if (pr.closedAt < since(keepDays) && !reopens.has(id)) delete tracked[id];
+  // Nothing older than the window is worth tracking, whether or not its lookup worked [GH-01].
+  for (const [id, pr] of Object.entries(tracked)) if (pr.closedAt < since(keepDays)) delete tracked[id];
 
   // Issues that left my search and couldn't be looked up stay, so they're checked again.
   const assigned = assignedNow(data);

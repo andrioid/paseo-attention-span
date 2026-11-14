@@ -46,17 +46,18 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.gotIt, ({ ids, on }) => ready(() => attention.gotIt(ids, on)));
   server.handle(rpc.acknowledgeChanges, ({ keys }) => ready(() => attention.acknowledge(keys)));
   server.handle(rpc.setHistoryFilter, ({ filter }) => ready(() => attention.setHistoryFilter(filter)));
-  // A session archived in Paseo itself, even with Attention Span closed: once none of its item's sessions is left, what
-  // others did to that work is acknowledged, so it doesn't come back as unread [HIS-07, ATT-22]. Sessions linked only by
-  // their workspace carry no item label; the open screen acknowledges those when their Wrap up row goes.
+  // A session archived in Paseo itself, even with Attention Span closed: once no session on any part of its item's stack or
+  // issue group is left, what others did to that work is acknowledged, so it doesn't come back as unread [HIS-07, ATT-22].
+  // Sessions linked only by their workspace carry no item label; the open screen acknowledges those when their row goes.
   server.on("agent.archived", ({ agent }, { paseo }) => {
     void ready(async () => {
       const labels = (await paseo.agents.ref(agent.id).refresh().catch(() => null))?.agent.labels;
       const itemKey = ITEM_LABELS.map((label) => labels?.[label]).find(Boolean);
       if (!itemKey) return;
-      const lists = await Promise.all(ITEM_LABELS.map((label) => paseo.agents.list({ filter: { labels: { [label]: itemKey } } })));
+      const keys = attention.groupKeysOf(itemKey);
+      const lists = await Promise.all(keys.flatMap((key) => ITEM_LABELS.map((label) => paseo.agents.list({ filter: { labels: { [label]: key } } }))));
       if (lists.some((list) => list.entries.some(({ agent: other }) => other.id !== agent.id && !other.archivedAt))) return;
-      await attention.acknowledgeItem(itemKey);
+      await attention.acknowledge(keys);
     }).catch((error) => console.error("Couldn't acknowledge an archived session's changes:", (error as Error).message));
   });
   server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)));

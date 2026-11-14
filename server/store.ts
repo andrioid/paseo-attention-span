@@ -45,6 +45,9 @@ export const State = z.object({
     })
     .default(EMPTY_LEDGER)
     .catch(EMPTY_LEDGER),
+  // Key -> the keys of the stack or issue group it was last seen in, and when, so Wrap up still knows a merged PR's open
+  // siblings after History lists it on its own [ATT-22, ATT-04].
+  groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
   projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong, like one with an item in a

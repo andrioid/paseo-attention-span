@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSummary, Item, Section } from "./attention";
-import { cleanSingle, doingCount, sessionCleanliness, sessionIdle, unreadChanges, unsavedText, wrapItems } from "./wrap-up";
+import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, sessionIdle, unreadChanges, unsavedText, wrapItems } from "./wrap-up";
 
 const now = new Date("2026-11-13T12:00:00Z");
 const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
@@ -31,6 +31,25 @@ function session(id: string, itemKey: string, overrides: Partial<AgentSummary> =
 const view = (history: Item[], doing: Section[] = [], waiting: { items: Item[] }[] = []) => ({ history, doing, waiting }) as Parameters<typeof wrapItems>[0];
 
 describe("Wrap up membership", () => {
+  it("ATT-22, ATT-04: a merged stack member whose open sibling is still active stays out, as remembered from the open stack", () => {
+    const groups = rememberGroups({}, [{ key: "acme/shop#1", children: [{ key: "acme/shop#2", number: 2, title: "B", url: "u", draft: false, chips: [], attention: false }] }], now, 35);
+    const flat = Object.fromEntries(Object.entries(groups).map(([key, group]) => [key, group.keys]));
+    // History lists the merged A alone; B is still open in Doing.
+    const doing = [{ id: "drafts" as const, title: "My drafts", items: [item("acme/shop#2", "drafts", 1)] }];
+    const stacked = { ...view([item("acme/shop#1", "done", 2)], doing), groups: flat };
+    expect(wrapItems(stacked, [session("a", "acme/shop#1")], now)).toEqual([]);
+    // Once B is done too, A's session is wrapped up.
+    expect(wrapItems({ ...view([item("acme/shop#1", "done", 2)]), groups: flat }, [session("a", "acme/shop#1")], now)).toHaveLength(1);
+    // Forgotten after the window.
+    expect(rememberGroups(groups, [], new Date(now.getTime() + 40 * 86_400_000), 35)).toEqual({});
+  });
+
+  it("ATT-22: my own unmerged close is a row that says so", () => {
+    const closed = { ...item("acme/shop#7", "done", 3), closedUnmerged: true as const };
+    const rows = wrapItems({ ...view([]), ownClosed: [closed] }, [session("a", "acme/shop#7")], now);
+    expect(rows.map((row) => row.wrap?.finish)).toEqual(["closed 3h ago, not merged"]);
+  });
+
   it("ATT-22: a finished item with an idle session is a row, newest finish first", () => {
     const rows = wrapItems(
       view([item("acme/shop#1", "done", 2), item("acme/shop#2", "done", 5)]),

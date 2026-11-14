@@ -4,7 +4,8 @@ import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../s
 import type { IssueField } from "../shared/setup";
 import type { ArchiveOutcome, ArchiveTarget } from "../shared/archive";
 import { archiveSessions } from "./archive";
-import { acknowledge, changeCandidates, nextLedger, type Lookups, type ReopenLookups, reopenCandidates, withGotIt } from "./changes";
+import { rememberGroups } from "../shared/wrap-up";
+import { acknowledge, changeCandidates, ownClosed, nextLedger, type Lookups, type ReopenLookups, reopenCandidates, withGotIt } from "./changes";
 import { classify, classifyHistory, issueBoardIds } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning, searchWithProjects } from "./projects";
 import { FIXTURE, graphql, graphqlResult } from "./gh";
@@ -154,15 +155,18 @@ export class AttentionService {
     return this.view();
   }
 
-  // A session on this item archived in Paseo itself, with none of its sessions left: acknowledge the events on the item's
-  // whole group, as Wrap up's own archive does, so they go to their week as cleared [HIS-07, ATT-22].
-  async acknowledgeItem(itemKey: string): Promise<void> {
+  // The keys of the item's whole stack or issue group, as Wrap up sees it: its own children and change, and what was
+  // remembered while it was open [ATT-22, ATT-04].
+  groupKeysOf(itemKey: string): string[] {
     const wanted = itemKey.toLowerCase();
     const view = this.view();
-    const items = [...view.history, ...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)];
+    const items = [...view.history, ...(view.ownClosed ?? []), ...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)];
     const groupOf = (item: Item) => [item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)];
-    const keys = new Set([itemKey, ...items.filter((item) => groupOf(item).some((key) => key.toLowerCase() === wanted)).flatMap(groupOf)]);
-    await this.acknowledge([...keys]);
+    const found = items.filter((item) => groupOf(item).some((key) => key.toLowerCase() === wanted)).flatMap(groupOf);
+    // Labels match exactly, so each key keeps the case GitHub gave it; remembered ones are lower case.
+    const byLower = new Map<string, string>();
+    for (const key of [itemKey, ...found, ...(this.state.groups[wanted]?.keys ?? [])]) if (!byLower.has(key.toLowerCase())) byLower.set(key.toLowerCase(), key);
+    return [...byLower.values()];
   }
 
   // Archive a Wrap up row's sessions; success acknowledges the events on that work, so they go to their week as cleared, not
@@ -172,7 +176,8 @@ export class AttentionService {
     if (FIXTURE) return { ok: true, view: await this.acknowledge(targets.flatMap((target) => target.keys)) };
     const answer = await archiveSessions(paseo, targets, confirm);
     if (!answer.ok) return { ...answer, view: this.view() };
-    return { ok: true, view: await this.acknowledge(targets.flatMap((target) => target.keys)) };
+    const view = await this.acknowledge(targets.flatMap((target) => target.keys));
+    return answer.warning ? { ok: true, view, warning: answer.warning } : { ok: true, view };
   }
 
   // Remember where an issue repo's code lives [SES-07].
@@ -312,7 +317,10 @@ export class AttentionService {
       await this.reloadConfig();
       const now = new Date();
       const fetchedAt = now.toISOString();
-      if (id === "live") this.state.live = { fetchedAt, attention: await this.fetchLive(now) };
+      if (id === "live") {
+        this.state.live = { fetchedAt, attention: await this.fetchLive(now) };
+        this.state.groups = rememberGroups(this.state.groups, this.state.live.attention.items, now, Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7));
+      }
       else this.state.history = { fetchedAt, items: await this.fetchHistory(now) };
       // Forget dismissals of items that are gone.
       const keys = new Set(this.items().map((item) => item.key));
@@ -334,7 +342,8 @@ export class AttentionService {
     const unclaimed = unclaimedSearches(this.config, projectRepos, login);
     const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now, unclaimed.searches);
     await this.trackChanges(data, now);
-    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from };
+    const own = FIXTURE ? [] : ownClosed(data, data.viewer.login);
+    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from, ...(own.length ? { ownClosed: own } : {}) };
   }
 
   // What others did to my work since the last refresh [HIS-07]. Only PRs whose hands changed and issues that left my assigned
@@ -366,7 +375,9 @@ export class AttentionService {
     const reopens = await this.reopenLookups(reopenCandidates(ledger, data));
     const keepDays = Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7);
     // A Got it tapped, or an archive acknowledging, while this refresh ran still counts.
-    this.state.changes = withGotIt(nextLedger(ledger, data, me, lookups, now, this.config.mentionDays, keepDays, reopens), this.state.changes.gotIt);
+    // Got its tapped while the lookups ran decide too, so a handover cleared meanwhile survives its work coming back.
+    const current = { ...ledger, gotIt: this.state.changes.gotIt };
+    this.state.changes = withGotIt(nextLedger(current, data, me, lookups, now, this.config.mentionDays, keepDays, reopens), this.state.changes.gotIt);
   }
 
   // PRs Attention Span saw closed, asked about a batch per request so a reopen by someone else is noticed [HIS-07, GH-01].
@@ -621,6 +632,7 @@ export class AttentionService {
       sources: this.state.sources,
       projectFilter: this.state.projectFilter,
       historyFilter: this.state.historyFilter,
+      groups: Object.fromEntries(Object.entries(this.state.groups).map(([key, group]) => [key, group.keys])),
       config: this.config,
       pending: Object.keys(pending).length,
       ...(FIXTURE ? { fixtureAgents: FIXTURE_AGENTS } : {}),
