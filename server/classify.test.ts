@@ -1059,12 +1059,6 @@ describe("GitHub requests", () => {
     expect(AttentionConfig.parse({}).refreshMinutes).toBe(15);
   });
 
-  it("GH-01: sends each live search as its own request, and History's three as one", () => {
-    const searches = (query: string) => query.match(/^ {2}\w+: search/gm)?.length;
-    expect(searches(searchQuery(["mine"], true))).toBe(1);
-    expect(searches(searchQuery(HISTORY_SEARCHES))).toBe(3);
-  });
-
   it("ATT-08: records the latest activity by others for dismissals", () => {
     const [item] = run({ mine: [pr(1, { reviewThreads: { nodes: [thread(alice, 0.25)] }, comments: { nodes: [comment(me, "", 0.1)] } })] }).items;
     expect(item.othersActivityAt).toBe(daysAgo(0.25));

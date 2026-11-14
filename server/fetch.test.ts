@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { lookupBatches, mergeIssueFields, projectStatuses, readDetails } from "./fetch";
+import { AttentionConfig } from "../shared/config";
+import { gitHub, lookupBatches, mergeIssueFields, projectStatuses, readDetails } from "./fetch";
 import { builders } from "./fixture";
 import type { GraphqlFailure } from "./gh";
-import { prKey } from "./queries";
+import { prKey, unclaimedSearches } from "./queries";
 
 type Answer = { data: Record<string, unknown> | null; errors?: string[]; failures?: GraphqlFailure[] };
 
@@ -125,5 +126,39 @@ describe("details", () => {
       { name: "Effort", options: ["S"], orgs: ["acme"] },
       { name: "Priority", options: ["P0", "P1"], orgs: ["acme", "globex"] },
     ]);
+  });
+});
+
+describe("requests", () => {
+  const now = new Date("2026-11-14T12:00:00Z");
+  // An issue assigned to me in an org whose Priority field Next up uses, so the details request has something to ask.
+  const config = AttentionConfig.parse({ orgs: ["acme"], nextUp: { priority: { field: "Priority" } } });
+  const assigned = builders(now).pickable(5, {});
+  // gh recording each request by the searches it carries, answering each search with what it found.
+  function recordingGh() {
+    const requests: string[][] = [];
+    const answer = (variables: Record<string, unknown> = {}) => {
+      const searches = Object.keys(variables).sort();
+      requests.push(searches);
+      return { viewer: { login: "me", id: "U_me" }, ...Object.fromEntries(searches.map((name) => [name, { nodes: name === "assigned" ? [assigned] : [] }])) };
+    };
+    const gh = {
+      graphql: async (_query: string, variables?: Record<string, unknown>) => answer(variables),
+      graphqlResult: async (_query: string, variables?: Record<string, unknown>) => ({ data: answer(variables), errors: [], failures: [] }),
+    } as never;
+    return { gh, requests };
+  }
+
+  it("GH-01: a live refresh sends each search as its own request, then one details request", async () => {
+    const { gh, requests } = recordingGh();
+    const { searches } = unclaimedSearches(config, [], null);
+    await gitHub(gh).live(config, now, searches, { on: false, problems: [], failed: () => {} });
+    expect(requests.sort()).toEqual([[], ["asked"], ["assigned"], ["closedIssues"], ["ended"], ["involved"], ["mentions"], ["mine"], ["reviews"], ["unclaimed"]]);
+  });
+
+  it("GH-01, HIS-01: History's three searches go in one request", async () => {
+    const { gh, requests } = recordingGh();
+    await gitHub(gh).history(config, now, "UTC");
+    expect(requests).toEqual([["closed", "merged", "reviewed"]]);
   });
 });
