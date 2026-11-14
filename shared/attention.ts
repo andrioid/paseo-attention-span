@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OthersChange } from "./changes";
 import { keySet, uniqueKeys } from "./names";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
@@ -7,7 +8,8 @@ import type { WorkKind } from "./work";
 export type TabId = "history" | "doing" | "waiting" | "next";
 
 // Each tab's data comes from one feed, fetched from GitHub on its own schedule. History changes only when I finish something.
-export type FeedId = "live" | "history";
+export const FeedId = z.enum(["live", "history"]);
+export type FeedId = z.infer<typeof FeedId>;
 export const TAB_FEED: Record<TabId, FeedId> = { history: "history", doing: "live", waiting: "live", next: "live" };
 
 // Within a tab, top to bottom. The order is also the priority: an item appears once, under the first section whose rule
@@ -63,7 +65,8 @@ export type ActionId =
   | "got_it";
 
 // What History's filter can add to each week, both off at first [HIS-07].
-export type HistoryFilter = "reviewed" | "changed";
+export const HistoryFilter = z.enum(["reviewed", "changed"]);
+export type HistoryFilter = z.infer<typeof HistoryFilter>;
 
 // A short state label on a row [ATT-05]; tone picks its color.
 export interface Chip {
@@ -149,7 +152,8 @@ export interface ReviewerChoices {
 }
 
 // GitHub's reasons for closing an issue that Next up offers [NXT-11].
-export type IssueCloseReason = "completed" | "not_planned";
+export const IssueCloseReason = z.enum(["completed", "not_planned"]);
+export type IssueCloseReason = z.infer<typeof IssueCloseReason>;
 
 // What a session or GitHub action works on.
 export interface Target {

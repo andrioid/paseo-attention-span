@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { FieldRole } from "./config";
 
 // What getting started needs, for the setup checklist [SET-01] and the settings screen [SRC-02].
@@ -32,7 +33,8 @@ export function blocks(status: SetupStatus): boolean {
 
 // An org or repo checked on GitHub before it's saved: its exact name, or why it can't be added.
 export type CoverageCheck = { name: string; error: null } | { name: null; error: string };
-export type CoverageKind = "org" | "repo";
+export const CoverageKind = z.enum(["org", "repo"]);
+export type CoverageKind = z.infer<typeof CoverageKind>;
 
 // A single-select issue field Next up can use, merged by name across the orgs that have it [NXT-04].
 export interface IssueField {

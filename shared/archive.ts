@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { AttentionView, WrapItem } from "./attention";
 
 // Archiving a Wrap up row's sessions [ATT-22]. The screen names the row; the server checks, archives and acknowledges.
@@ -51,11 +52,8 @@ export function unsavedWords(unsaved: UnsavedSession): string {
 }
 
 // What an archive request names: the row's item, its sessions, and the keys whose changes success acknowledges.
-export interface ArchiveTarget {
-  itemKey: string;
-  agentIds: string[];
-  keys: string[];
-}
+export const ArchiveTarget = z.object({ itemKey: z.string(), agentIds: z.array(z.string()), keys: z.array(z.string()) });
+export type ArchiveTarget = z.infer<typeof ArchiveTarget>;
 
 export const archiveTarget = (item: WrapItem): ArchiveTarget => ({
   itemKey: item.wrap.itemKey,
