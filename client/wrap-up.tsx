@@ -6,8 +6,8 @@ import { allWrapBusy, wrapBusy } from "../shared/got-it";
 import { cleanSingle, sessionCleanliness, sessionUnsaved } from "../shared/wrap-up";
 import { CardList, CardRow } from "./card";
 import { stateMark } from "./mark";
-import { Modal } from "./sheet";
-import { Button, KeepStyles, SectionHeader, TablerIcon, useStyles } from "./ui";
+import { Dialog } from "./sheet";
+import { Button, SectionHeader, TablerIcon, useStyles } from "./ui";
 
 // Doing's Wrap up: finished or out-of-my-hands work whose sessions are still open, and archiving them [ATT-22]. The screen
 // assembles the rows and runs the archive; these draw them and ask before archiving anything unsaved.
@@ -110,54 +110,46 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
       secondary={[{ label: `Details for #${item.number}`, icon: "chevronRight", onPress: () => (sessions.length > 1 ? setSheet("multi") : sessions[0] ? openSession(sessions[0].id) : undefined) }]}
       overlay={
         sheet === "multi" ? (
-          <Modal title={`Sessions on #${item.number}`} open onOpenChange={(open) => (open ? null : setSheet(null))}>
-            <Modal.Content>
-              <KeepStyles styles={styles}>
-                <Text style={styles.muted}>
-                  {item.title} · {item.wrap.finish}
-                </Text>
-                <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
-                  {sessions.map((session, index) => (
-                    <View key={session.id} style={[styles.row, { paddingVertical: 10, paddingHorizontal: 12 }, index > 0 ? styles.divider : null]}>
-                      <TablerIcon name="agent" size={16} />
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.text}>{session.title ?? "Session"}</Text>
-                        <Text style={styles.muted}>{sessionStateText(session)}</Text>
-                      </View>
-                      <Button label="Open" variant="ghost" onPress={() => openSession(session.id)} />
-                    </View>
-                  ))}
-                </View>
-                <Text style={styles.muted}>
-                  Archives {sessions.length} sessions. Their worktrees go too when nothing else lives in them
-                  {sessions.some((session) => sessionCleanliness(session) === "unknown") ? "; the one that couldn't be checked may hold unsaved work" : ""}.
-                </Text>
-                <View style={[styles.row, { justifyContent: "flex-end" }]}>
-                  <Button label="Cancel" onPress={() => setSheet(null)} />
-                  <Button label={sessions.length === 2 ? "Archive both" : `Archive ${sessions.length}`} variant="danger" onPress={() => void confirm(false)} />
-                </View>
-              </KeepStyles>
-            </Modal.Content>
-          </Modal>
-        ) : sheet === "dirty" ? (
-          <Modal title={sessions.length > 1 ? `Archive the sessions on #${item.number}?` : `Archive the session on #${item.number}?`} open onOpenChange={(open) => (open ? null : setSheet(null))}>
-            <Modal.Content>
-              <KeepStyles styles={styles}>
-                {(unsaved.length ? unsaved : [readingOf(sessions[0])]).map((info) => (
-                  <View key={info.agentId} style={{ gap: 2 }}>
-                    <Text style={styles.text}>{info.title ?? "Session"}</Text>
-                    <Text style={{ color: styles.c.statusWarning, fontSize: 13 }}>
-                      {info.unknown ? "Couldn't check for unsaved changes. Archiving may remove the worktree." : `Its worktree has ${unsavedWords(info)}. Archiving may remove them.`}
-                    </Text>
+          <Dialog title={`Sessions on #${item.number}`} onClose={() => setSheet(null)}>
+            <Text style={styles.muted}>
+              {item.title} · {item.wrap.finish}
+            </Text>
+            <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
+              {sessions.map((session, index) => (
+                <View key={session.id} style={[styles.row, { paddingVertical: 10, paddingHorizontal: 12 }, index > 0 ? styles.divider : null]}>
+                  <TablerIcon name="agent" size={16} />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.text}>{session.title ?? "Session"}</Text>
+                    <Text style={styles.muted}>{sessionStateText(session)}</Text>
                   </View>
-                ))}
-                <View style={[styles.row, { justifyContent: "flex-end" }]}>
-                  <Button label="Open session" icon="agent" variant="calm" onPress={() => openSession(unsaved[0]?.agentId ?? sessions[0].id)} />
-                  <Button label="Archive anyway" variant="danger" onPress={() => void confirm(true)} />
+                  <Button label="Open" variant="ghost" onPress={() => openSession(session.id)} />
                 </View>
-              </KeepStyles>
-            </Modal.Content>
-          </Modal>
+              ))}
+            </View>
+            <Text style={styles.muted}>
+              Archives {sessions.length} sessions. Their worktrees go too when nothing else lives in them
+              {sessions.some((session) => sessionCleanliness(session) === "unknown") ? "; the one that couldn't be checked may hold unsaved work" : ""}.
+            </Text>
+            <View style={[styles.row, { justifyContent: "flex-end" }]}>
+              <Button label="Cancel" onPress={() => setSheet(null)} />
+              <Button label={sessions.length === 2 ? "Archive both" : `Archive ${sessions.length}`} variant="danger" onPress={() => void confirm(false)} />
+            </View>
+          </Dialog>
+        ) : sheet === "dirty" ? (
+          <Dialog title={sessions.length > 1 ? `Archive the sessions on #${item.number}?` : `Archive the session on #${item.number}?`} onClose={() => setSheet(null)}>
+            {(unsaved.length ? unsaved : [readingOf(sessions[0])]).map((info) => (
+              <View key={info.agentId} style={{ gap: 2 }}>
+                <Text style={styles.text}>{info.title ?? "Session"}</Text>
+                <Text style={{ color: styles.c.statusWarning, fontSize: 13 }}>
+                  {info.unknown ? "Couldn't check for unsaved changes. Archiving may remove the worktree." : `Its worktree has ${unsavedWords(info)}. Archiving may remove them.`}
+                </Text>
+              </View>
+            ))}
+            <View style={[styles.row, { justifyContent: "flex-end" }]}>
+              <Button label="Open session" icon="agent" variant="calm" onPress={() => openSession(unsaved[0]?.agentId ?? sessions[0].id)} />
+              <Button label="Archive anyway" variant="danger" onPress={() => void confirm(true)} />
+            </View>
+          </Dialog>
         ) : null
       }
     />

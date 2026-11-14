@@ -1,5 +1,5 @@
 // Next up's Filter: which ticks still count, which unclaimed issues they leave, and what the sheet offers [NXT-03, NXT-09, NXT-12].
-// Drawn by client/next-up.tsx.
+// Drawn by client/sheet.tsx's FilterSheet.
 import { type GithubColor, type NextUpIssue, type ProjectInfo, projectFilterId, projectFilterIds } from "./attention";
 import type { NextUpSource } from "./config";
 
@@ -17,6 +17,9 @@ export interface FilterOption {
   // A project, ticked as a whole, partly, or not, by its statuses.
   strong?: boolean;
   state?: "on" | "partial" | "off";
+  // Always ticked, with a note why, like History's Finished [HIS-07].
+  disabled?: boolean;
+  note?: string;
 }
 
 export interface FilterGroup {

@@ -1,7 +1,7 @@
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, type RefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type StyleProp, Text, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type PressableProps, type StyleProp, Text, View, type ViewStyle } from "react-native";
 import type { Chip } from "../shared/attention";
 import { HINT_GAP, type HintPlacement, hintPlacement } from "../shared/hint";
 import { ICONS, type IconName } from "./icons";
@@ -337,6 +337,22 @@ export function Button({
     >
       {busy ? <ActivityIndicator size="small" color={color} style={{ width: 15, height: 15 }} /> : icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
       {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
+    </Pressable>
+  );
+}
+
+// Filter, with how many ticks are on [NXT-03, HIS-07].
+export function FilterButton({ count, onPress }: { count: number; onPress: () => void }) {
+  return <Button label={count ? `Filter · ${count}` : "Filter"} accessibilityLabel={count ? `Filter, ${count} on` : "Filter"} icon="filter" variant={count ? "calm" : "ghost"} onPress={onPress} />;
+}
+
+// A tick box, then what it's for: filters and pickers. Mixed is a project with some of its statuses ticked [NXT-12].
+export function CheckRow({ checked, label, children, ...pressable }: { checked: boolean | "mixed"; label: string; children: ReactNode } & Omit<PressableProps, "children">) {
+  const styles = useStyles();
+  return (
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: !!pressable.disabled }} aria-checked={checked} accessibilityLabel={label} {...pressable}>
+      <TablerIcon name={checked === "mixed" ? "squareMinus" : checked ? "squareCheck" : "square"} size={18} color={checked ? styles.action : styles.c.foregroundMuted} />
+      {children}
     </Pressable>
   );
 }

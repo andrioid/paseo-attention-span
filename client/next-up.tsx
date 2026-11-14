@@ -1,7 +1,7 @@
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { ago } from "../shared/format";
 import {
   type AgentSummary,
@@ -13,15 +13,15 @@ import {
   type UnclaimedSource,
 } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
-import { CLEAR_FILTER, type FilterChange, type FilterGroup, type FilterKind, type FilterOption, nextUpFilter } from "../shared/next-up-filter";
+import { CLEAR_FILTER, type FilterChange, nextUpFilter } from "../shared/next-up-filter";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./item-actions";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
-import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, githubEntry, Modal, type SheetEntry, usePrefetchOnRest } from "./sheet";
-import { githubColor, IssuePills, PlaceText } from "./entity";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FilterSheet, githubEntry, type SheetEntry, usePrefetchOnRest } from "./sheet";
+import { IssuePills, PlaceText } from "./entity";
 import { Still } from "./still";
-import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
+import { FilterButton, Meta, SectionHeader, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
@@ -94,16 +94,11 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
           count={shown.length}
           action={
             groups.length > 0 ? (
-              <Button
-                label={picked ? `Filter · ${picked}` : "Filter"}
-                accessibilityLabel={picked ? `Filter, ${picked} on` : "Filter"}
-                icon="filter"
-                variant={picked ? "calm" : "ghost"}
-                onPress={() => setFiltering(true)}
-              />
+              <FilterButton count={picked} onPress={() => setFiltering(true)} />
             ) : null
           }
         />
+        {/* Source, project and scope filters behind one button, so they take no room above the list [NXT-03, NXT-09]. */}
         {filtering ? (
           <FilterSheet
             groups={groups}
@@ -121,71 +116,6 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
         )}
       </View>
     </View>
-  );
-}
-
-// Source, project and scope filters behind one button, so they take no room above the list [NXT-03, NXT-09].
-// Ticks apply right away; a bottom sheet on phones, a dialog on desktop.
-function FilterSheet({ groups, onToggle, onClear, onClose }: { groups: FilterGroup[]; onToggle: (kind: FilterKind, id: string) => void; onClear: () => void; onClose: () => void }) {
-  const styles = useStyles();
-  const any = groups.some((group) => group.active.length > 0);
-  return (
-    <Modal title="Filter" open onOpenChange={(open) => (open ? null : onClose())}>
-      <Modal.Content>
-        <KeepStyles styles={styles}>
-          {groups.map((group) => (
-            <View key={group.title} style={{ gap: 6 }}>
-              <Text style={styles.muted}>{group.title}</Text>
-              <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
-                {group.options.map((option, index) => (
-                  <FilterRow
-                    key={`${option.id}:${option.strong ? "project" : "leaf"}`}
-                    option={option}
-                    state={option.state ?? (group.active.includes(option.id) ? "on" : "off")}
-                    first={index === 0}
-                    onPress={() => onToggle(group.kind, option.id)}
-                  />
-                ))}
-              </View>
-            </View>
-          ))}
-          <View style={[styles.row, { justifyContent: "flex-end" }]}>
-            <Button label="Clear" variant="ghost" disabled={!any} onPress={onClear} />
-            <Button label="Done" variant="solid" onPress={onClose} />
-          </View>
-        </KeepStyles>
-      </Modal.Content>
-    </Modal>
-  );
-}
-
-function FilterRow({ option, state, first, onPress }: { option: FilterOption; state: "on" | "partial" | "off"; first: boolean; onPress: () => void }) {
-  const styles = useStyles();
-  const { hovered, hover } = useHover();
-  const checked = state === "on";
-  const color = githubColor(styles, option.color);
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: state === "partial" ? "mixed" : checked }}
-      aria-checked={state === "partial" ? "mixed" : checked}
-      accessibilityLabel={option.label}
-      onPress={onPress}
-      {...hover}
-      style={({ pressed }) => [
-        styles.row,
-        { paddingVertical: 10, paddingRight: 12, paddingLeft: option.indent ? 40 : 12, backgroundColor: pressed || hovered ? styles.c.border : "transparent" },
-        first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 },
-      ]}
-    >
-      <TablerIcon name={state === "on" ? "squareCheck" : state === "partial" ? "squareMinus" : "square"} size={18} color={state === "off" ? styles.c.foregroundMuted : styles.action} />
-      {option.indent ? (
-        <View
-          style={{ width: 8, height: 8, borderRadius: 4, ...(option.color ? { backgroundColor: color ?? styles.c.foregroundMuted } : { borderWidth: 1.5, borderColor: styles.c.foregroundMuted }) }}
-        />
-      ) : null}
-      <Text style={[styles.text, option.strong ? { fontWeight: "600" } : null, option.dim ? { opacity: 0.45 } : null]}>{option.label}</Text>
-    </Pressable>
   );
 }
 

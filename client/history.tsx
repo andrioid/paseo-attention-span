@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import type { HistoryFilter, Item } from "../shared/attention";
 import { allNotesBusy } from "../shared/got-it";
 import { historyWeeks, oldestWeek, weekOf } from "../shared/history-report";
 import type { IconName } from "./icons";
-import { Modal } from "./sheet";
+import { FilterSheet } from "./sheet";
 import { Still } from "./still";
-import { Button, KeepStyles, SectionHeader, TablerIcon, useCopy, useStyles } from "./ui";
+import { Button, FilterButton, SectionHeader, TablerIcon, useCopy, useStyles } from "./ui";
 
 // History: what others did to my work, unread, on top until Got it or an archive; then what I finished, by week, with
 // Reviewed and cleared changes when the filter shows them [HIS-01, HIS-02, HIS-06, HIS-07]. A week copies what's shown as
@@ -82,13 +82,7 @@ export function History({
       {/* Filter shows whenever a week holds anything, even only what the filter hides, so it can be turned on [HIS-07]. */}
       {anything ? (
         <View style={[styles.row, { justifyContent: "flex-end" }]}>
-          <Button
-            label={filter.length ? `Filter · ${filter.length}` : "Filter"}
-            accessibilityLabel={filter.length ? `Filter, ${filter.length} on` : "Filter"}
-            icon="filter"
-            variant={filter.length ? "calm" : "ghost"}
-            onPress={() => onFiltering(true)}
-          />
+          <FilterButton count={filter.length} onPress={() => onFiltering(true)} />
         </View>
       ) : null}
       {anything && weeks.length === 0 ? <Text style={styles.text}>Nothing finished in this period.</Text> : null}
@@ -148,45 +142,13 @@ function Subgroup({ icon, label, count }: { icon: IconName; label: string; count
   );
 }
 
-// History's filter: Finished always, plus Reviewed and cleared Changed by others per week [HIS-07]. Ticks apply right away.
+// History's filter: Finished always, plus Reviewed and cleared Changed by others per week [HIS-07].
 function HistoryFilterSheet({ filter, onChange, onClose }: { filter: HistoryFilter[]; onChange: (filter: HistoryFilter[]) => void; onClose: () => void }) {
-  const styles = useStyles();
-  const flip = (id: HistoryFilter) => onChange(filter.includes(id) ? filter.filter((other) => other !== id) : [...filter, id]);
-  const row = (id: HistoryFilter | null, label: string, note?: string) => {
-    const on = id === null || filter.includes(id);
-    return (
-      <Pressable
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: on, disabled: id === null }}
-        disabled={id === null}
-        accessibilityLabel={label}
-        onPress={() => id && flip(id)}
-        style={[styles.row, { paddingVertical: 11, paddingHorizontal: 14, opacity: id === null ? 0.65 : 1 }]}
-      >
-        <TablerIcon name={on ? "squareCheck" : "square"} size={18} color={on ? styles.action : styles.c.foregroundMuted} />
-        <Text style={[styles.text, { flex: 1 }]}>{label}</Text>
-        {note ? <Text style={styles.muted}>{note}</Text> : null}
-      </Pressable>
-    );
-  };
-  return (
-    <Modal title="Filter" open onOpenChange={(open) => (open ? null : onClose())}>
-      <Modal.Content>
-        <KeepStyles styles={styles}>
-          <Text style={styles.muted}>Show in each week</Text>
-          <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
-            {row(null, "Finished", "always")}
-            <View style={{ height: 1, backgroundColor: styles.c.surface1 }} />
-            {row("reviewed", "Reviewed")}
-            <View style={{ height: 1, backgroundColor: styles.c.surface1 }} />
-            {row("changed", "Changed by others")}
-          </View>
-          <View style={[styles.row, { justifyContent: "flex-end" }]}>
-            <Button label="Clear" variant="ghost" disabled={filter.length === 0} onPress={() => onChange([])} />
-            <Button label="Done" variant="solid" onPress={onClose} />
-          </View>
-        </KeepStyles>
-      </Modal.Content>
-    </Modal>
-  );
+  const flip = (id: string) => onChange(filter.includes(id as HistoryFilter) ? filter.filter((other) => other !== id) : [...filter, id as HistoryFilter]);
+  const options = [
+    { id: "finished", label: "Finished", state: "on" as const, disabled: true, note: "always" },
+    { id: "reviewed", label: "Reviewed" },
+    { id: "changed", label: "Changed by others" },
+  ];
+  return <FilterSheet groups={[{ kind: "history", title: "Show in each week", options, active: filter }]} onToggle={(_, id) => flip(id)} onClear={() => onChange([])} onClose={onClose} />;
 }
