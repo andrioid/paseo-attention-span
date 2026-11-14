@@ -18,6 +18,10 @@ When there's nothing in it, you get a quiet horizon that follows the time of day
 
 ![Doing, with nothing in it](docs/screenshots/desktop-dark-doing-clear.png)
 
+The other tabs get their own version when they're empty: a bench in History, an empty jetty in Waiting, a blank signpost in Next up. An empty Next up also points you to Settings, since it usually means it doesn't know where to look yet.
+
+![Next up, with nowhere to look](docs/screenshots/desktop-dark-next-up-setup.png)
+
 Mentions only count while the person is still waiting for you. Reply or react and it's gone. On your own issues and PRs, a new comment from the last 30 days shows up under **Answered** even if it doesn't tag you. On other people's threads only tags count. The point is to pick out the signal, and most of what happens in threads you once commented on isn't. If you do want those replies, turn on **Follow threads I've commented on** in Settings. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
 
 Sometimes other people move your work without asking: they merge your PR, close it, close an issue assigned to you, reopen a PR you'd seen closed, take work over, or unassign you. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one waits at the top of **History**, like "merged by dave 2h ago" or "phil took over", and the tab gets a little green dot until you tap its check, or **Mark all as read** to clear them all. If the work is already in Wrap up, archiving the session acknowledges it instead.

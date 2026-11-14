@@ -1,6 +1,6 @@
 // Screenshots of the plugin in the real Paseo web app, connected to the container's own daemon.
 // Usage: shoot.mjs [only-matching-name-part]; writes PNGs to /out.
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
 
 const filter = process.argv[2] ?? "";
@@ -16,6 +16,8 @@ const tabs = ["Doing", "History", "Waiting", "Next up"];
 // Each layout starts without the code-repo mapping that an earlier layout saved.
 const configPath = `${process.env.HOME}/.config/paseo-attention-span/config.json`;
 const originalConfig = await readFile(configPath, "utf8");
+// While this exists, the fixture has nothing in it: a quiet day, for the empty tabs' scenes.
+const quietPath = `${process.env.HOME}/.config/paseo-attention-span/fixture-quiet`;
 
 const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", args: ["--no-sandbox"] });
 let failed = false;
@@ -57,6 +59,7 @@ for (const layout of layouts) {
     };
     try {
       await writeFile(configPath, originalConfig);
+      await rm(quietPath, { force: true });
       // The container's daemon serves the web app and is the only host it knows.
       await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
       await page.waitForTimeout(3000);
@@ -416,6 +419,35 @@ for (const layout of layouts) {
       await page.getByText("Nothing's on you.").waitFor({ timeout: 10000 });
       await page.waitForTimeout(1200); // it settles in
       await page.screenshot({ path: `/out/${prefix}-doing-clear.png`, clip: { x: 0, y: 0, ...page.viewportSize() } });
+      // A quiet day: every other tab empty shows its own scene [HIS-08, WAI-04, NXT-13]. Each tab refreshes its own feed.
+      const calm = async (tab, text, name) => {
+        await page.getByRole("tab", { name: new RegExp(tab) }).first().click();
+        await page.getByRole("button", { name: "Refresh now" }).click();
+        await page.getByText(text).waitFor({ timeout: 15000 });
+        await page.waitForTimeout(1200); // it settles in
+        await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip: { x: 0, y: 0, ...page.viewportSize() } });
+      };
+      // Always back to the full fixture and config, so later steps and layouts see them even if a shot fails.
+      try {
+        await writeFile(quietPath, "");
+        // Waiting first: its refresh is the live feed's, which also brings History's notes.
+        await calm("Waiting", "Nobody's holding you up.", "waiting-clear");
+        await calm("History", "Nothing finished yet.", "history-clear");
+        await calm("Next up", "Nothing ready for work.", "next-up-clear");
+        // Nowhere to look: no sources in config.json at all.
+        await writeFile(configPath, "{}");
+        await calm("Next up", "Nowhere to look yet.", "next-up-setup");
+      } finally {
+        await writeFile(configPath, originalConfig);
+        await rm(quietPath, { force: true });
+      }
+      // Both feeds back to the full fixture: History's too, as Wrap up in later layouts is made from its finished work.
+      await page.getByRole("tab", { name: /History/ }).first().click();
+      await page.getByRole("button", { name: "Refresh now" }).click();
+      await page.getByText("Order list takes 8 seconds").first().waitFor({ timeout: 15000 });
+      await page.getByRole("tab", { name: /Next up/ }).first().click();
+      await page.getByRole("button", { name: "Refresh now" }).click();
+      await page.getByRole("button", { name: /^Start / }).first().waitFor({ timeout: 15000 });
       await page.setViewportSize(tall);
       // Last, because it may open a session: an issue kept apart from its code [SES-07].
       // Start asks where the code lives, saves it to config.json, and the next start goes straight on.

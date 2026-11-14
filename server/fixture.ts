@@ -1,8 +1,11 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentSummary, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { OthersChange } from "../shared/changes";
 import type { SessionKind } from "../shared/config";
 import type { IssueField } from "../shared/setup";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
+import { DIR } from "./store";
 
 // Made-up GitHub data for tests and for previews without GitHub (PASEO_ATTENTION_SPAN_FIXTURE=1).
 
@@ -322,6 +325,18 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       mergeState: {},
     },
   };
+}
+
+// A quiet day: GitHub has nothing for me, so the preview can show the empty tabs' scenes [ATT-18, HIS-08, WAI-04, NXT-13].
+// On while this file exists in the plugin's folder; the shooter creates it last.
+export const quiet = () => existsSync(join(DIR, "fixture-quiet"));
+
+// The fixture, or nothing in it on a quiet day.
+export function fixtureNow(now: Date): ReturnType<typeof fixture> {
+  const { data, details } = fixture(now);
+  if (!quiet()) return { data, details };
+  const empty = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, key === "viewer" ? value : { nodes: [] }]));
+  return { data: empty as unknown as SearchResult, details };
 }
 
 // What others did to my work, one of each kind, as the ledger keeps them [HIS-07, HIS-06]. #179 was handed over, then merged
