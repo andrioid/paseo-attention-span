@@ -1,7 +1,7 @@
 import { type PluginScreenProps, useRpc } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { liftActive, type Section, type SectionId, TAB_FEED, type TabId, type WaitingGroup } from "../shared/attention";
 import { nextUpSources } from "../shared/config";
@@ -20,6 +20,7 @@ import { NextUpList } from "./next-up";
 import { CodeRepoPicker, SessionOptions } from "./pickers";
 import { Still } from "./still";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
+import { NewIssueSheet, type NewIssueRequest, takeNewIssueRequest } from "./new-issue";
 import { useItemAgents } from "./sessions";
 import { History } from "./history";
 import { WrapUp } from "./wrap-up";
@@ -56,19 +57,20 @@ const TABS: { id: TabId; label: string; icon: IconName }[] = [
 ];
 
 // `openSettings` opens the orgs and repos settings [SRC-02].
-export function AttentionScreen({ theme, layout, navigation, openSettings }: PluginScreenProps & { openSettings?: () => void }) {
+export function AttentionScreen({ theme, layout, navigation, params, openSettings }: PluginScreenProps & { openSettings?: () => void }) {
   return (
     <StylesProvider theme={theme} compact={layout.compact}>
-      <AttentionList navigation={navigation} openSettings={openSettings} device={{ device: layout.compact ? "phone" : "desktop", platform: layout.platform, theme: themeName(theme.colors.surface0) }} />
+      <AttentionList navigation={navigation} params={params} openSettings={openSettings} device={{ device: layout.compact ? "phone" : "desktop", platform: layout.platform, theme: themeName(theme.colors.surface0) }} />
     </StylesProvider>
   );
 }
 
 function AttentionList({
   navigation,
+  params,
   openSettings,
   device,
-}: Pick<PluginScreenProps, "navigation"> & { openSettings?: () => void; device: Omit<FeedbackScreen, "tab" | "refreshError"> }) {
+}: Pick<PluginScreenProps, "navigation" | "params"> & { openSettings?: () => void; device: Omit<FeedbackScreen, "tab" | "refreshError"> }) {
   const styles = useStyles();
   const toast = useToast();
   const attention = useAttention();
@@ -79,6 +81,13 @@ function AttentionList({
   const [filtering, setFiltering] = useState(false);
   // The feedback sheet, then the first words for the kind picked in it [FB-01].
   const [feedback, setFeedback] = useState<"sheet" | FeedbackKind | null>(null);
+  // The New issue sheet, from ⌘K by the screen's params or from Next up [ISS-01].
+  const [newIssue, setNewIssue] = useState<Omit<NewIssueRequest, "at"> | null>(null);
+  const newIssueAt = params?.newIssue;
+  useEffect(() => {
+    const request = takeNewIssueRequest(params);
+    if (request) setNewIssue(request);
+  }, [newIssueAt]);
   const view = attention.data;
   // Only when something fails: is it setup, and what's missing [SET-01]?
   const fetchSetup = useRpc(rpc.setupStatus);
@@ -246,6 +255,8 @@ function AttentionList({
           projects={view.projects}
           selectedProjects={view.projectFilter}
           onFilter={(change) => act.filterNextUp(view, change)}
+          // Narrowed to one repository, a new issue starts there [ISS-01].
+          onNewIssue={() => setNewIssue({ nextUp: view.sources.length === 1 && view.sources[0].startsWith("repo:") ? view.sources[0].slice(5) : undefined })}
           agents={actions.agents}
           login={view.login}
           busy={act.busy}
@@ -266,6 +277,7 @@ function AttentionList({
           onClose={() => setFeedback(null)}
         />
       ) : null}
+      {newIssue ? <NewIssueSheet request={newIssue} view={view} onView={attention.setView} onStarted={act.started} onClose={() => setNewIssue(null)} /> : null}
       {act.options ? <SessionOptions spec={act.options} config={view.config} started={act.started} onClose={act.closeOptions} /> : null}
       {act.placing ? <CodeRepoPicker issueRepo={act.placing.target.repo} missing={act.placing.missing} onPick={act.place} onClose={act.cancelPlacing} /> : null}
     </ScrollView>

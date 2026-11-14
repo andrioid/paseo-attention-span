@@ -75,6 +75,8 @@ Unclaimed issues come from wherever you point it: your own repos, your orgs, or 
 
 **Claim & start** (or just **Start**, if it's already yours) starts an agent that reads the issue and proposes a plan. You can also claim or give back an issue without starting anything, or close one as done or not planned, so the stuff that's never going to happen stops getting suggested to you.
 
+Thought of something that needs doing? **New issue** in Next up, or **New issue…** in Paseo's Command Center (⌘K) from anywhere, takes a line or two. An agent in your checkout then asks what it still needs, looks for duplicates, follows the repo's issue templates and labels, and shows you the whole issue before anything goes to GitHub. From inside a session, **New issue from this session…** brings along what that session was just talking about, so "file what we just found" works. Once it's posted, the agent puts itself away.
+
 Some orgs keep issues in a separate repo from the code. When that happens, the first Start asks where the code lives and remembers the answer.
 
 ![Where the code lives](docs/screenshots/desktop-dark-next-up-code-repo.png)

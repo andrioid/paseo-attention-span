@@ -49,6 +49,8 @@ export const State = z.object({
   // Key -> the keys of the stack or issue group it was last seen in, and when, so Wrap up still knows a merged PR's open
   // siblings after History lists it on its own [ATT-22, ATT-04].
   groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}) satisfies z.ZodType<RememberedGroups>,
+  // The repository and agent profile the New issue sheet last started with [ISS-01].
+  newIssue: z.object({ repo: z.string().nullable().default(null), profileId: z.string().nullable().default(null) }).default({ repo: null, profileId: null }).catch({ repo: null, profileId: null }),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
   projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong, like one with an item in a

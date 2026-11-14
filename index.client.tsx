@@ -6,6 +6,7 @@ import { CoverageSettings } from "./client/coverage-settings";
 import { useAttention } from "./client/data";
 import { returnFromFeedback } from "./client/feedback";
 import { ICONS } from "./client/icons";
+import { newIssueParams } from "./client/new-issue";
 import { useItemAgents } from "./client/sessions";
 import { doingCount, wrapItems } from "./shared/wrap-up";
 
@@ -38,5 +39,23 @@ export default function contribute(client: PluginClientContext) {
   const Screen = (props: PluginScreenProps) => <AttentionScreen {...props} openSettings={() => client.openSettings("coverage")} />;
   client.addScreen({ id: "attention", title: "Attention Span", Component: Screen });
   client.addSidebarHeaderItem({ id: "attention", title: "Attention Span", Component: SidebarItem });
+  // A new issue from ⌘K anywhere [ISS-01]. ⌘K can't show a sheet, so it opens the screen with the sheet on it. Paseo lists
+  // global items everywhere and agent items beside them, so "from this session" is the one that knows where I am.
+  client.addCommandCenterItem({
+    id: "new-issue",
+    title: "New issue…",
+    icon: ICONS.issue,
+    context: "global",
+    keywords: ["issue", "github", "file", "report", "bug", "idea"],
+    onSelect: ({ openScreen }) => openScreen({ screenId: "attention", params: newIssueParams({}) }),
+  });
+  client.addCommandCenterItem({
+    id: "new-issue-from-session",
+    title: "New issue from this session…",
+    icon: ICONS.issue,
+    context: "agent",
+    keywords: ["issue", "github", "file", "follow-up", "later"],
+    onSelect: ({ openScreen, workspace, agent }) => openScreen({ screenId: "attention", params: newIssueParams({ workspaceId: workspace.id, agentId: agent.id }) }),
+  });
   return returnFromFeedback(client);
 }

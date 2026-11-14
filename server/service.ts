@@ -1,6 +1,7 @@
 import { type Attention, type AttentionView, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole } from "../shared/config";
+import { newIssueRepos } from "../shared/new-issue";
 import type { IssueField } from "../shared/setup";
 import type { ArchiveOutcome, ArchiveTarget } from "../shared/archive";
 import { rememberGroups } from "../shared/wrap-up";
@@ -207,6 +208,12 @@ export class AttentionService {
 
   async setSources(sources: string[]): Promise<void> {
     this.state.sources = sources;
+    await this.save();
+  }
+
+  // What the New issue sheet starts with next time [ISS-01].
+  async setNewIssueChoice(repo: string, profileId: string | null): Promise<void> {
+    this.state.newIssue = { repo, profileId };
     await this.save();
   }
 
@@ -419,6 +426,13 @@ export class AttentionService {
     return { live: this.state.live?.fetchedAt ?? null, history: this.state.history?.fetchedAt ?? null };
   }
 
+  // The repositories the New issue sheet offers: the ones covered, from my projects and what's on screen [ISS-01].
+  private newIssueRepos(attention: Attention | null): string[] {
+    const shown = [...(attention?.items ?? []), ...(this.state.history?.items ?? [])].map((item) => item.repo);
+    const issues = [...(attention?.unclaimed ?? []), ...(attention?.assigned ?? [])].map((issue) => issue.repo);
+    return newIssueRepos(this.config, this.state.projectRepos, [...shown, ...issues], attention?.login ?? null);
+  }
+
   private view(): AttentionView {
     const status = (id: FeedId): FeedStatus => ({
       fetchedAt: this.state[id]?.fetchedAt ?? null,
@@ -441,6 +455,7 @@ export class AttentionService {
       groups: Object.fromEntries(Object.entries(this.state.groups).map(([key, group]) => [key, group.keys])),
       config: this.config,
       pending: Object.keys(pending).length,
+      newIssue: { repos: this.newIssueRepos(shown.attention), ...this.state.newIssue },
       },
       this.state.changes,
       new Date(now),

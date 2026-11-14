@@ -118,6 +118,10 @@ functional:
       HIS-06: see each week's work that left my hands under Changed by others when that is shown, out of the week's copy, even once its new owner merges it, and keep it there when the work comes back to me after I've cleared it; so that my report doesn't claim work that wasn't mine.
       HIS-07: see at the top of History, unread, when someone else merged or closed my pull request, closed an issue assigned to me, reopened a pull request I had seen closed, took over or handed on my work, or unassigned me, with a dot on the tab while any is unread and Got it or Mark all as read to clear them; so that I learn when others move my work without it changing what I have to do.
       HIS-08: see a calm scene in History when I've finished nothing in its weeks and nothing is unread, only once a refresh has confirmed it; so that an empty History reads as a start rather than a blank page.
+  new_issues:
+    As a developer, I can:
+      ISS-01: file an issue in a repository I cover from ⌘K anywhere in Paseo or from Next up, starting from a line or two in a sheet that already has the repository, my context and the agent profile filled in, with an agent in my checkout that asks until it's clear, follows the repository's templates, picks labels and type, and posts only once I approve the draft; so that a thought becomes a well-formed issue without leaving what I'm doing.
+      ISS-02: see a likely duplicate before filing, and choose to file anyway, comment there or cancel; so that I don't add noise to a repository.
   feedback:
     As a developer, I can:
       FB-01: tell the Attention Span project what to improve from the bottom of any tab, picking a problem, an idea or that I like it, with an agent that asks until it's clear, checks it against what's planned and already reported, and files it as an issue or a discussion, saying which and why, only once I approve the draft; so that feedback costs a minute and lands where it can be acted on or talked through.

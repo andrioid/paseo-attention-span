@@ -1,5 +1,6 @@
 import { type Attention, type AttentionView, baseItem, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
+import type { NewIssueInfo } from "../shared/new-issue";
 import { workChip, workKind } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
 import { historySince } from "./queries";
@@ -14,6 +15,7 @@ export interface ViewMeta {
   groups?: Record<string, string[]>;
   config: AttentionConfig;
   pending: number;
+  newIssue: NewIssueInfo;
 }
 
 // What a tap on GitHub changed, shown until a fetch can show it for itself [FRESH-02].

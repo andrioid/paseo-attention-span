@@ -114,3 +114,6 @@ export const checkUpdate = defineRpc({ name: "update.check", input: z.object({})
 // Starts `paseo plugin update` for the version on offer; it restarts the plugin when it's done.
 export const applyUpdate = defineRpc({ name: "update.apply", input: z.object({ latest: z.string() }), output: done });
 export const skipUpdate = defineRpc({ name: "update.skip", input: z.object({ latest: z.string() }), output: done });
+
+// What the New issue sheet starts with next time: the repository and agent profile it just started with [ISS-01].
+export const setNewIssueChoice = defineRpc({ name: "new-issue.choice", input: z.object({ repo: z.string(), profileId: z.string().nullable() }), output: done });
