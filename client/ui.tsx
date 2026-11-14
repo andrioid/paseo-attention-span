@@ -357,19 +357,12 @@ export function SectionHeader({ icon, title, count, action }: { icon: IconName |
   );
 }
 
-// A group that opens in place, like a week's reviews in History: a chevron, its name and count. Each opens on its own, so
-// they don't read as a choice between them [HIS-02, HIS-06].
-export function Disclosure({ label, count, open, onPress }: { label: string; count: number; open: boolean; onPress: () => void }) {
-  const styles = useStyles();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}, ${count}`} accessibilityState={{ expanded: open }} onPress={onPress} hitSlop={6} style={[styles.row, { gap: 6, paddingVertical: 4 }]}>
-      <TablerIcon name={open ? "chevronDown" : "chevronRight"} size={14} />
-      <Text style={{ color: styles.c.foreground, fontSize: 13, fontWeight: "600" }}>
-        {label}
-        <Text style={{ color: styles.c.foregroundMuted, fontWeight: "400" }}> · {count}</Text>
-      </Text>
-    </Pressable>
-  );
+// A theme colour, see-through, so a badge reads on any surface; colours that aren't #rrggbb fall back to none.
+export function tint(color: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{6})/i.exec(color)?.[1];
+  if (!hex) return "transparent";
+  const [r, g, b] = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // Copy text and say so, since an icon-only button gives no other sign it worked.

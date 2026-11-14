@@ -15,7 +15,7 @@ import {
 import type { NextUpSource } from "../shared/config";
 import { CLEAR_FILTER, type FilterChange, type FilterGroup, type FilterKind, type FilterOption, nextUpFilter } from "../shared/next-up-filter";
 import type { IconName } from "./icons";
-import type { FetchDetails } from "./attention-screen";
+import type { FetchDetails } from "./item-actions";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, githubEntry, Modal, type SheetEntry, usePrefetchOnRest } from "./sheet";

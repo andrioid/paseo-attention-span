@@ -4,7 +4,7 @@ import { type AgentSummary, checkoutPr, type SessionWorkspace, sessionTitle, typ
 import { linkedSessions } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
-import { getAttention } from "../shared/rpc";
+import * as rpc from "../shared/rpc";
 import { VIEW_QUERY_KEY } from "./data";
 import { sameName } from "../shared/names";
 
@@ -19,7 +19,7 @@ export const AGENTS_QUERY_KEY = ["attention-span", "agents"] as const;
 export function useItemAgents() {
   const paseo = usePaseo();
   const queryClient = useQueryClient();
-  const fetchAttention = useRpc(getAttention);
+  const fetchAttention = useRpc(rpc.getAttention);
   return useQuery({
     queryKey: AGENTS_QUERY_KEY,
     refetchInterval: 15_000,
@@ -166,6 +166,15 @@ export async function listProfiles(paseo: Paseo): Promise<ProfileChoice[]> {
 type AgentConfig = Parameters<Paseo["agents"]["create"]>[0]["config"];
 // Asks the plugin's server, whose snapshot always has the entries [SES-06].
 export type FetchProviders = () => Promise<ReadyProvider[]>;
+
+// What a start asks the plugin's server: the prompt's context, a repo's default branch, and the ready providers [SES-01, SES-02].
+export function useStartRpcs() {
+  const fetchContext = useRpc(rpc.sessionContext);
+  const fetchDefaultBranch = useRpc(rpc.defaultBranch);
+  const fetchReadyProviders = useRpc(rpc.readyProviders);
+  const fetchProviders: FetchProviders = () => fetchReadyProviders({}).then((result) => result.providers);
+  return { fetchContext, fetchProviders, defaultBranch: async (repo: string) => (await fetchDefaultBranch({ repo })).name };
+}
 
 // The profile configured for the session type, then "default", then Paseo's defaults [SES-01, SES-06].
 export async function resolveAgentConfig(
