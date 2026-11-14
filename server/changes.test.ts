@@ -361,4 +361,11 @@ describe("issues closed and PRs reopened by others", () => {
     expect(after.gotIt).toHaveLength(ledger.events.filter((event) => event.key === target.key).length);
     expect(acknowledge(after, ["acme/shop#999"]).gotIt).toEqual(after.gotIt);
   });
+
+  it("HIS-07, ATT-22: an archive in Paseo leaves what others did after it unread", () => {
+    const ledger = nextLedger(EMPTY_LEDGER, data({ ended: [endedPr("P1", {})] }), "me", new Map(), NOW, 30, 35);
+    const [event] = ledger.events;
+    expect(acknowledge(ledger, [event.key], new Date(Date.parse(event.at) - 1000).toISOString()).gotIt).toEqual([]);
+    expect(acknowledge(ledger, [event.key], event.at).gotIt).toEqual([event.id]);
+  });
 });

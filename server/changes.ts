@@ -287,9 +287,11 @@ export function nextLedger(
 }
 
 // An archive acknowledges exactly the events on its work at that moment, keyed by "owner/name#number" [ATT-22].
-export function acknowledge(ledger: ChangeLedger, keys: string[]): ChangeLedger {
+// `upTo` keeps what others did after then unread: a session archived in Paseo acknowledges only what came before it.
+export function acknowledge(ledger: ChangeLedger, keys: string[], upTo?: string): ChangeLedger {
   const wanted = new Set(keys.map((key) => key.toLowerCase()));
-  const ids = ledger.events.filter((event) => wanted.has(event.key.toLowerCase())).map((event) => event.id);
+  const before = (at: string) => !upTo || Date.parse(at) <= Date.parse(upTo);
+  const ids = ledger.events.filter((event) => wanted.has(event.key.toLowerCase()) && before(event.at)).map((event) => event.id);
   return { ...ledger, gotIt: [...new Set([...ledger.gotIt, ...ids])] };
 }
 

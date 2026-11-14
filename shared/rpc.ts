@@ -13,15 +13,20 @@ const view = z.custom<AttentionView>();
 const target = z.custom<Target>();
 const done = z.object({ ok: z.literal(true) });
 
-// The cached view. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳).
-export const getAttention = defineRpc({ name: "attention.get", input: z.object({ refresh: z.enum(["live", "history"]).optional() }), output: view });
+// The cached view. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳);
+// `cached` skips GitHub altogether, for a view that only needs what the server already knows.
+export const getAttention = defineRpc({
+  name: "attention.get",
+  input: z
+    .object({ refresh: z.enum(["live", "history"]).optional(), cached: z.boolean().optional() })
+    .refine((input) => !(input.refresh && input.cached), "refresh and cached don't go together"),
+  output: view,
+});
 export const dismissItem = defineRpc({ name: "attention.dismiss", input: z.object({ key: z.string() }), output: view });
 // Undo one dismissal [ATT-08].
 export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.object({ key: z.string() }), output: view });
 // Clears Changed by others notes, one or all of them; `on: false` brings them back for Undo. Nothing changes on GitHub [HIS-07].
 export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ ids: z.array(z.string()), on: z.boolean() }), output: view });
-// A session archived in Paseo itself: acknowledge the changes on its work, so they don't return as unread [HIS-07, ATT-22].
-export const acknowledgeChanges = defineRpc({ name: "attention.acknowledge", input: z.object({ keys: z.array(z.string()) }), output: view });
 // Reviewed and Changed by others in History's weeks; remembered in state.json [HIS-07].
 export const setHistoryFilter = defineRpc({ name: "history.filter", input: z.object({ filter: z.array(z.enum(["reviewed", "changed"])) }), output: view });
 // Archives a Wrap up row's sessions, acknowledging what others did to the work [ATT-22]. `confirm` is the unsaved-work sheet.

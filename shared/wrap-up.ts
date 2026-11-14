@@ -124,32 +124,3 @@ export function unreadChanges(notes: Item[], wrap: WrapItem[]): Item[] {
 export function doingCount(view: Pick<AttentionView, "count">, wrap: WrapItem[]): number {
   return view.count + wrap.length;
 }
-
-// Sessions archived in Paseo itself, noticed by the open screen: a Wrap up row that goes because every one of its sessions
-// is gone has its changes acknowledged. Pending ones stay until the server says done, so a failed request is sent again
-// [HIS-07, ATT-22]. The server's agent.archived hook covers labelled sessions even with the screen closed; this covers
-// sessions linked only by their workspace, which carry no label.
-export interface ArchiveWatch {
-  // Row key -> its sessions and keys, as last seen.
-  rows: Record<string, { sessionIds: string[]; keys: string[] }>;
-  // Row key -> keys to acknowledge.
-  pending: Record<string, string[]>;
-}
-
-export const EMPTY_WATCH: ArchiveWatch = { rows: {}, pending: {} };
-
-export function watchArchives(watch: ArchiveWatch, rows: WrapItem[], agents: Pick<AgentSummary, "id">[]): ArchiveWatch {
-  const live = new Set(agents.map((agent) => agent.id));
-  const current = Object.fromEntries(rows.map((row) => [row.key, { sessionIds: row.wrap.sessions.map((session) => session.id), keys: row.wrap.keys }]));
-  const pending = { ...watch.pending };
-  for (const [key, row] of Object.entries(watch.rows)) {
-    if (current[key] || row.sessionIds.length === 0 || row.sessionIds.some((id) => live.has(id))) continue;
-    pending[key] = row.keys;
-  }
-  return { rows: current, pending };
-}
-
-export function acknowledged(watch: ArchiveWatch, rowKey: string): ArchiveWatch {
-  const { [rowKey]: _done, ...pending } = watch.pending;
-  return { ...watch, pending };
-}

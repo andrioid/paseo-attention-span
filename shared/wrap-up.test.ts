@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type AgentSummary, isIdle, type Item, type Section, type WrapItem } from "./attention";
-import { acknowledged, cleanSingle, doingCount, EMPTY_WATCH, rememberGroups, sessionCleanliness, unreadChanges, unsavedText, watchArchives, wrapItems } from "./wrap-up";
+import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, unreadChanges, unsavedText, wrapItems } from "./wrap-up";
 
 const now = new Date("2026-11-13T12:00:00Z");
 const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
@@ -129,26 +129,5 @@ describe("unread changes", () => {
     const wrap = [wrapRow("acme/shop#183", [session("a", "acme/shop#183")])];
     const notes = [note("acme/shop#183"), note("acme/shop#188")];
     expect(unreadChanges(notes, wrap).map((item) => item.key)).toEqual(["acme/shop#188"]);
-  });
-});
-
-describe("sessions archived in Paseo itself", () => {
-  const row = wrapRow("acme/shop#1", [session("a", "acme/shop#1"), session("b", "acme/shop#1")]);
-
-  it("HIS-07, ATT-22: a row that goes because all its sessions are gone is pending until acknowledged", () => {
-    const seen = watchArchives(EMPTY_WATCH, [row], [{ id: "a" }, { id: "b" }]);
-    expect(seen.pending).toEqual({});
-    // One session left: the row went for another reason, so nothing to acknowledge.
-    expect(watchArchives(seen, [], [{ id: "b" }]).pending).toEqual({});
-    const gone = watchArchives(seen, [], []);
-    expect(gone.pending).toEqual({ [row.key]: ["acme/shop#1"] });
-    // A failed request leaves it pending through later polls, until the server says done.
-    const later = watchArchives(gone, [], []);
-    expect(later.pending).toEqual({ [row.key]: ["acme/shop#1"] });
-    expect(acknowledged(later, row.key).pending).toEqual({});
-  });
-
-  it("HIS-07, ATT-22: a row still shown is never pending", () => {
-    expect(watchArchives(watchArchives(EMPTY_WATCH, [row], [{ id: "a" }]), [row], []).pending).toEqual({});
   });
 });

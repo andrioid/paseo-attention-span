@@ -14,6 +14,7 @@ import {
   unclaimIssue,
   updateBranch,
 } from "./server/actions";
+import { ArchivedInPaseo } from "./server/archived";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { feedbackInfo } from "./server/feedback";
@@ -26,12 +27,10 @@ import type { Chip } from "./shared/attention";
 import { readyProviders } from "./shared/providers";
 import * as rpc from "./shared/rpc";
 
-// The labels that tie a session to its item, under the plugin's current and earlier names [ATT-07, SES-03].
-const ITEM_LABELS = ["attention-span-item", "github-attention-item", "github-inbox-item"];
-
 export default function contribute(server: PluginServerContext) {
   const attention = new AttentionService();
   const updates = new UpdateCheck();
+  const archived = new ArchivedInPaseo({ groupKeysOf: (itemKey) => attention.groupKeysOf(itemKey), acknowledge: (keys, upTo) => attention.acknowledge(keys, upTo) });
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
 
@@ -40,25 +39,25 @@ export default function contribute(server: PluginServerContext) {
   const chip = (text: string, tone: Chip["tone"] = "neutral", icon?: Chip["icon"]): Change => ({ kind: "chip", chip: { text, tone, ...(icon ? { icon } : {}) } });
 
   // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08].
-  server.handle(rpc.getAttention, ({ refresh }, { paseo }) => ready(() => (attention.connect(paseo), attention.get(refresh))));
+  server.handle(rpc.getAttention, ({ refresh, cached }, { paseo }) =>
+    ready(() => {
+      attention.connect(paseo);
+      if (archived.waiting) void archived.notice(paseo);
+      return attention.get(refresh, cached);
+    }),
+  );
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)));
   server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)));
   server.handle(rpc.gotIt, ({ ids, on }) => ready(() => attention.gotIt(ids, on)));
-  server.handle(rpc.acknowledgeChanges, ({ keys }) => ready(() => attention.acknowledge(keys)));
   server.handle(rpc.setHistoryFilter, ({ filter }) => ready(() => attention.setHistoryFilter(filter)));
-  // A session archived in Paseo itself, even with Attention Span closed: once no session on any part of its item's stack or
-  // issue group is left, what others did to that work is acknowledged, so it doesn't come back as unread [HIS-07, ATT-22].
-  // Sessions linked only by their workspace carry no item label; the open screen acknowledges those when their row goes.
-  server.on("agent.archived", ({ agent }, { paseo }) => {
-    void ready(async () => {
-      const labels = (await paseo.agents.ref(agent.id).refresh().catch(() => null))?.agent.labels;
-      const itemKey = ITEM_LABELS.map((label) => labels?.[label]).find(Boolean);
-      if (!itemKey) return;
-      const keys = attention.groupKeysOf(itemKey);
-      const lists = await Promise.all(keys.flatMap((key) => ITEM_LABELS.map((label) => paseo.agents.list({ filter: { labels: { [label]: key } } }))));
-      if (lists.some((list) => list.entries.some(({ agent: other }) => other.id !== agent.id && !other.archivedAt))) return;
-      await attention.acknowledge(keys);
-    }).catch((error) => console.error("Couldn't acknowledge an archived session's changes:", (error as Error).message));
+  // A session Attention Span started, archived in Paseo itself, even with Attention Span closed [HIS-07, ATT-22]. Each
+  // event, and each request for the list, also tries again the ones that failed, as both bring a Paseo connection.
+  server.on("agent.archived", ({ agent, archivedAt }, { paseo }) => {
+    const event = { agentId: agent.id, parentAgentId: agent.parentAgentId, archivedAt };
+    void ready(() => archived.notice(paseo, event));
+  });
+  server.on("agent.turn_ended", (_event, { paseo }) => {
+    if (archived.waiting) void ready(() => archived.notice(paseo));
   });
   server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()));
