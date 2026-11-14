@@ -96,7 +96,7 @@ export interface IssueNode {
 }
 
 export interface PickableNode {
-  // The issue's node id, which a transfer keeps [ATT-21].
+  // The issue's node id, which a transfer keeps [HIS-07].
   id?: string;
   number: number;
   title: string;
@@ -130,8 +130,32 @@ export interface LiveResult {
   asked: Nodes<IssueNode>;
   assigned: Nodes<PickableNode>;
   unclaimed: Nodes<PickableNode>;
-  // My PRs closed lately [ATT-21].
+  // My PRs closed lately [HIS-07].
   ended: Nodes<EndedPullRequest>;
+  // Issues assigned to me closed lately, for a change by others [HIS-07].
+  closedIssues: Nodes<ClosedIssue>;
+}
+
+export interface ClosedIssue {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  closedAt: string;
+  stateReason: string | null;
+  repository: Repo;
+  timelineItems: Nodes<{ createdAt?: string; actor?: { login: string } | null }>;
+}
+
+// A PR of mine known to have been closed, as it is now [HIS-07].
+export interface ReopenSubject {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  repository: Repo;
+  timelineItems: Nodes<{ createdAt?: string; actor?: { login: string } | null }>;
 }
 
 export interface EndedPullRequest {
@@ -148,7 +172,7 @@ export interface EndedPullRequest {
   timelineItems: Nodes<{ createdAt?: string; actor?: { login: string } | null }>;
 }
 
-// Who assigned or unassigned whom; actor and assignee are null for a deleted account [ATT-21].
+// Who assigned or unassigned whom; actor and assignee are null for a deleted account [HIS-07].
 export interface AssignmentEvent {
   __typename: "AssignedEvent" | "UnassignedEvent";
   createdAt: string;
@@ -176,8 +200,8 @@ export interface HistoryResult {
   // Who I am, to tell a merge by someone else [HIS-05]; missing in older fixtures.
   viewer?: { login: string; id: string };
   merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
-  reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; repository: Repo; author: Actor | null } & Labels>;
-  closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo; issueType?: { name: string } | null } & Labels>;
+  reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; author: Actor | null } & Labels>;
+  closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo; issueType?: { name: string } | null; timelineItems?: Nodes<{ actor?: { login: string } | null }> } & Labels>;
 }
 
 export type SearchResult = LiveResult & HistoryResult;

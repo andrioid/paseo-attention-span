@@ -8,10 +8,10 @@ It's a [Paseo](https://paseo.sh) plugin that boils GitHub down to a short list o
 
 ![Doing](docs/screenshots/desktop-dark-doing.png)
 
-- **Doing:** what needs you right now. Someone's waiting for a reply, a review, CI's red, something's ready to merge.
+- **Doing:** what needs you right now. Someone's waiting for a reply, a review, CI's red, something's ready to merge, and at the top, finished work whose sessions you should put away.
 - **Waiting:** the ball's in someone else's court. You can stop thinking about it, at least until it's waited too long.
 - **Next up:** for when your plate is actually clear. It happens. Occasionally.
-- **History:** what you got done, for when someone asks and your mind goes blank.
+- **History:** what you got done, for when someone asks and your mind goes blank, with what others did to your work at the top until you've seen it.
 
 I've tried not to assume much about how you use GitHub. Solo, a team that reviews everything, stacked PRs, issues first, open source: so far it copes with all of them. Tell me where it doesn't.
 

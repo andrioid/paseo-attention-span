@@ -6,7 +6,7 @@ import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS, 
 
 const config = AttentionConfig.parse({});
 const feed = { fetchedAt: null, refreshing: false, error: null };
-const meta = { feeds: { live: feed, history: feed }, scopes: [], sources: [], projectFilter: [], config, pending: 0 };
+const meta = { feeds: { live: feed, history: feed }, scopes: [], sources: [], projectFilter: [], historyFilter: [], config, pending: 0 };
 
 function item(key: string, section: Item["section"], othersActivityAt: string): Item {
   return {

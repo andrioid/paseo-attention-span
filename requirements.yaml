@@ -18,7 +18,7 @@ functional:
       SET-01: see what's missing and how to fix it when Attention Span can't load, along with what it covers and which projects and agent it will use; so that getting started doesn't end at an error.
   attention:
     As a developer, I can:
-      ATT-01: see in one place the open issues and pull requests that need me; so that I don't depend on noisy GitHub notifications.
+      ATT-01: see in one place the open issues and pull requests that need me, and the finished work whose Paseo sessions should be put away; so that I don't depend on noisy GitHub notifications and leftover sessions don't pile up.
       ATT-02: see why each item needs me, with items grouped by that reason; so that I know what to do about an item at a glance.
       ATT-03: see an issue and the pull requests that resolve it as one item, led by the issue; so that related work isn't scattered across the list.
       ATT-04: see any stack of dependent pull requests as one item, whoever opened them, with a session on any of its pull requests shown on it and, where my review is requested, one review for the whole stack; so that a stack is handled as the single change it is.
@@ -26,7 +26,7 @@ functional:
       ATT-06: open an item for more detail and every action, each saying what it will do; so that the list stays minimal by default and pressing a button makes sense.
       ATT-07: see whether an item already has a Paseo session and what its agent is doing; so that I don't start duplicate work.
       ATT-08: dismiss an item until something new happens on it; so that FYIs stop taking up space.
-      ATT-09: notice how many items need me from anywhere in Paseo; so that I don't have to open Attention Span to check.
+      ATT-09: notice from anywhere in Paseo how many items need me, including finished work waiting to be wrapped up; so that I don't have to open Attention Span to check.
       ATT-11: see in Waiting which work has waited on others for too long, marked on its age and explained when I point at it, only where a nudge is fair (not while the next step is mine or CI is still running), and on my own issues however long ago that was; so that stalled work gets nudged, while Doing keeps only what I can act on.
       ATT-12: open any item on GitHub; so that I can do what Attention Span doesn't cover.
       ATT-13: tell at a glance which actions start an agent session and which change GitHub right away; so that I know what a tap will do.
@@ -34,10 +34,10 @@ functional:
       ATT-15: copy any item's GitHub link; so that I can share it without opening GitHub.
       ATT-16: see recent comments without a mention on issues and pull requests I opened, until I reply, react or dismiss them; so that answers to my questions don't get lost, while other people's threads stay out unless someone tags me.
       ATT-17: choose to follow threads I've commented on, so recent replies after mine there show without a tag, off by default; so that surfacing other people's threads is my choice, and the list stays signal, not noise.
-      ATT-18: see a calm, restful scene in Doing when nothing needs me, only once a refresh has confirmed it; so that a clear list feels like rest rather than a blank page, and calm never stands in for a check that failed or hasn't run.
+      ATT-18: see a calm, restful scene in Doing when nothing needs me and no finished work waits to be wrapped up, only once a refresh has confirmed it; so that a clear list feels like rest rather than a blank page, and calm never stands in for a check that failed or hasn't run.
       ATT-19: tell at a glance what each person shown on an item is to it: someone I'm waiting on, who opened it, or whose comments are left to address, with an icon by their picture and the meaning in words when I point at it; so that a face and a time never leave me guessing.
       ATT-20: tell which item a card is on every tab by its number first, then its repository with the repository's name standing out from its owner, which my own repositories leave out; so that cards from several repositories scan without reading each one in full.
-      ATT-21: see in Doing, below the work and not in its count, when someone else merged my PR, closed it without merging, took over or handed on my PR or an issue assigned to me, or unassigned me from one, each in a line like "merged by dave 2h ago" or "phil took over", until I tap Got it; so that I learn when others move my work without it changing what I have to do.
+      ATT-22: wrap up finished or out-of-my-hands work whose Paseo sessions are still open, archiving them safely: checking for unsaved changes first, keeping worktrees shared with anything else, and acknowledging what others did once it succeeds; so that leftover sessions get cleaned up without losing work or resurfacing old changes.
   mentions:
     As a developer, I can:
       MEN-01: see open threads where a person mentioned me and is still waiting for my response; so that I only hear about mentions when someone is waiting for me.
@@ -80,12 +80,12 @@ functional:
     As a developer, I can:
       SES-01: start a Paseo session for an item in one step, with defaults suited to why it needs me; so that acting on an item takes no setup.
       SES-02: choose the workspace, agent profile, and prompt before a session starts; so that I can adjust when the defaults don't fit.
-      SES-03: open an item's existing session from the item whatever state it is in, including one started on any of its pull requests, and start another only on purpose; so that work on an item stays in one place.
+      SES-03: open an item's existing session from the item whatever state it is in, including one started on any of its pull requests and on finished work until I archive it, and start another only on purpose; so that work on an item stays in one place.
       SES-04: start a session that already has the item's context, such as failing checks or unresolved comments; so that the agent starts informed.
       SES-05: start sessions in my local checkout of the item's repository without configuring paths; so that new repositories work without setup.
       SES-06: start sessions even when no agent profiles are configured; so that Attention Span works before I've set anything up.
       SES-07: start a session on an issue in the repository its code lives in, chosen right there the first time; so that issues kept in a separate repository work without editing files.
-      SES-08: see sessions started outside Attention Span on the item of the pull request their workspace is linked to, or of the session whose worktree they share, as "Continue session"; so that I don't start duplicate work.
+      SES-08: see sessions started outside Attention Span on the item of the pull request their workspace is linked to, or of the session whose worktree they share, as "Continue session", including finished work in Wrap up; so that I don't start duplicate work and can clean up what I left open.
       SES-09: tell sessions reviewing someone else's pull request from work on my own in Paseo's sidebar, by a name like "Review PR 123: title"; so that I know which kind of work a workspace holds.
   next_up:
     As a developer, I can:
@@ -109,11 +109,12 @@ functional:
   history:
     As a developer, I can:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.
-      HIS-02: see pull requests I reviewed that merged, apart from my own work; so that I can tell others what I got done.
-      HIS-03: copy a week's finished work as a Markdown list of links, and the pull requests I reviewed that week as a list of their own; so that reporting progress is one paste.
+      HIS-02: see pull requests I reviewed that merged, under Reviewed in each week when I turn that on; so that I can tell others what I got done.
+      HIS-03: copy a week's shown work as Markdown lists, its finished work and, when shown, the pull requests I reviewed, never changes by others; so that reporting progress is one paste.
       HIS-04: see what kind of work each finished item was, bug, feature or task, from its issue type, else its labels, else a Conventional Commit title like "fix: …", on its card and leading its copied line like "- 🐞 [title](link)", with PRs of no kind led by 🔀 and issues closed as not planned left out of the copy; so that a busy week's report skims at a glance in any repo.
       HIS-05: see who merged a PR of mine when it wasn't me, as "merged 2h ago by dave", with its copied line unchanged; so that I know when someone else shipped my work.
-      HIS-06: see each week's PRs of mine that someone else closed without merging, and work taken out of my hands, apart under "Closed or handed off" and out of the week's copy, even once its new owner merges it; so that my report doesn't claim work that left my hands, and I can still see where it went.
+      HIS-06: see each week's work that left my hands under Changed by others when that is shown, out of the week's copy, even once its new owner merges it, and keep it there when the work comes back to me after I've cleared it; so that my report doesn't claim work that wasn't mine.
+      HIS-07: see at the top of History, unread, when someone else merged or closed my pull request, closed an issue assigned to me, reopened a pull request I had seen closed, took over or handed on my work, or unassigned me, with a dot on the tab while any is unread and Got it or Mark all as read to clear them; so that I learn when others move my work without it changing what I have to do.
   feedback:
     As a developer, I can:
       FB-01: tell the Attention Span project what to improve from the bottom of any tab, picking a problem, an idea or that I like it, with an agent that asks until it's clear, checks it against what's planned and already reported, and files it as an issue or a discussion, saying which and why, only once I approve the draft; so that feedback costs a minute and lands where it can be acted on or talked through.

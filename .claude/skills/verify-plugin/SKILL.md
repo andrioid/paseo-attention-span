@@ -1,6 +1,6 @@
 ---
 name: verify-plugin
-description: Verify this Paseo plugin end to end in an isolated Docker preview. Typecheck and test, run the plugin in a throwaway Paseo daemon on fixture data, and read screenshots of every tab at desktop and phone width in dark and light themes. Use after changing UI, the classifier, fixture data or anything the screen shows, and before asking the user to look. Never use the user's own Paseo daemon for this.
+description: Verify this Paseo plugin end to end in an isolated Docker preview. Typecheck and test, run the plugin in a throwaway Paseo daemon on fixture data, and read screenshots. While iterating on one screen, run one layout and read only that screen's shot; run every tab at desktop and phone width in dark and light themes once, when the work is done. Use after changing UI, the classifier, fixture data or anything the screen shows, and before asking the user to look. Never use the user's own Paseo daemon for this.
 ---
 
 # Verify the plugin
@@ -25,6 +25,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    - `preview/run.sh` builds the image (cached after the first time), clears `preview/out/`, and runs the container.
    - It prints `ok <layout>` or `failed <layout>: <reason>` for each layout.
    - On failure it saves `<layout>-failure.png` and prints the container daemon's log tail.
+   - **Match the run to the change.** Checking one screen doesn't need four layouts: run one (`npm run preview -- desktop-dark`, or `phone-dark` for a phone-only fix) and read only the shots of the screen you changed. Run all four layouts once, when the work is done and before asking the user to look.
 
 3. **Read the screenshots** in `preview/out/` with the Read tool. Each layout is `{desktop,phone}-{dark,light}`, and each gives you:
 
@@ -44,8 +45,14 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-doing-options.png` | The Options modal from "Address comments…" in the sheet of "Harden the upload endpoint": workspace, profile, prompt |
    | `<layout>-doing-merge-confirm.png` | The Merge confirmation on the first Ready card, the a11y stack's |
    | `<layout>-doing-dismissed.png` | After dismissing the first row: the "Dismissed … · Undo" row |
-   | `<layout>-history.png` | History by week, with Reviewed toggles |
-   | `<layout>-history-reviewed.png` | History with the newest Reviewed list open; each week's and each Reviewed row's Markdown copy sit at the right edge, one above the other. `<layout>-history-clipboard.txt` holds the week's copy, the reviewed copy and one card's link, split by `---` |
+   | `<layout>-history.png` | History: unread **Changed by others** at the top with Got it and Mark all as read, then Filter, then the weeks [HIS-07]. The History tab has a green dot while a note is unread, and its count is still finished items only |
+   | `<layout>-history-filter.png` | The History Filter sheet: Show in each week, Finished always ticked and disabled, Reviewed and Changed by others off [HIS-07] |
+   | `<layout>-history-filtered.png` | History with Reviewed and Changed by others on: Filter · 2 in green, and the week's Reviewed list under its finished cards |
+   | `<layout>-history-groups.png` | Both of a week's other lists: Reviewed, then Changed by others, the latter holding cleared changes that aren't finished work [HIS-02, HIS-06, HIS-07] |
+   | `<layout>-history-clipboard.txt` | The week's copy as `## Finished` and `## Reviewed` Markdown lists, then one card's link, split by `---` [HIS-03] |
+   | `<layout>-doing-wrap.png` | Wrap up first in Doing: finished work with idle sessions, newest finish first, Archive session, Archive all clean · n, and unsaved changes in amber [ATT-22] |
+   | `<layout>-doing-wrap-dirty.png` | Archive session on the dirty row: the confirm sheet naming its uncommitted files and unpushed commit, with Open session and Archive anyway |
+   | `<layout>-doing-wrap-multi.png` | Archive sessions on the row with two: each session's state with Open, then Archive both |
    | `<layout>-waiting.png` | Waiting by who it waits on, whoever blocks the most first: bob (five), alice (four), acme/frontend, then "Not on a person" last (the bottom groups are below the clip). My PRs in Doing that wait on whom I asked are here too, with their Doing actions: "Cache exchange rates daily" under bob ("review · 3 behind main ⌛ 9d" in amber, approved, Update branch), "Faster product search" under bob (Reply), "Show delivery dates on the order page" under alice (CI failing, so its 1d stays grey either way) [PRS-15]. In each group "Upgrade the payment SDK" (agent working) leads. Each heading has an icon-only Markdown copy button at its right edge, like History's week and Reviewed copies. Cards say why and how long ("re-review · 1d"); an age past 3 days turns amber with ⌛ where a nudge is fair: also "Store uploads locally in development" (6d, acme/frontend) and "Rotate the analytics token" (40d, Not on a person) [ATT-11]. Work on several people is under each with "also waiting on …". Waiting's own cards show the GitHub button instead of ›, their sheet's only action besides the muted start line, except "Upgrade the payment SDK" (its agent is working, so Open session and ›) |
    | `<layout>-doing-hint.png` | Desktop only: pointing at "⌛ bob · 7h" on "Faster product search" in Doing floats "Waiting on bob since your last push or reply, 7h ago" beside it; nothing below moves [ATT-19] |
    | `<layout>-waiting-too-long.png` | Desktop only: pointing at the amber "⌛ 9d" on "Cache exchange rates daily" in Waiting floats "Waited too long: 9d since your last push or reply, more than 3 days" over the line, wrapped to the room left beside the actions [ATT-11] |

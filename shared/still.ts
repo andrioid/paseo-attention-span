@@ -13,8 +13,9 @@ export function sceneAt(date: Date): Scene {
 }
 
 // Calm only when it's true: Doing is empty after a refresh that worked. Dismissed items don't count;
-// they're not on me until something new happens [ATT-08]. Loading, a failed refresh or none yet show plainly.
-export function isClear(view: Pick<AttentionView, "doing" | "feeds">, failed = false): boolean {
+// they're not on me until something new happens [ATT-08]. Wrap up's rows do: the horizon waits for them [ATT-18, ATT-22].
+// Loading, a failed refresh or none yet show plainly.
+export function isClear(view: Pick<AttentionView, "doing" | "feeds">, failed = false, wrap = 0): boolean {
   const live = view.feeds.live;
-  return view.doing.length === 0 && !!live.fetchedAt && !live.error && !failed;
+  return view.doing.length === 0 && wrap === 0 && !!live.fetchedAt && !live.error && !failed;
 }

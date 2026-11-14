@@ -48,4 +48,9 @@ describe("isClear", () => {
   it("ATT-18: is not clear while anything needs me", () => {
     expect(isClear(view([{ id: "reply", title: "Waiting for your reply", items: [] } as unknown as Section]))).toBe(false);
   });
+
+  it("ATT-18, ATT-22: Wrap up's rows keep the horizon away until they're archived", () => {
+    expect(isClear(view([]), false, 1)).toBe(false);
+    expect(isClear(view([]), false, 0)).toBe(true);
+  });
 });

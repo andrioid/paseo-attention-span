@@ -1,6 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import type { AttentionView, ItemDetails, ProjectsAccess, ReviewerChoices, Target } from "./attention";
+import type { ArchiveOutcome } from "./archive";
 import { SessionKind } from "./config";
 import type { ConfigStatus, CoverageCheck, IssueField, SetupStatus } from "./setup";
 import type { FeedbackInfo } from "./feedback";
@@ -17,8 +18,21 @@ export const getAttention = defineRpc({ name: "attention.get", input: z.object({
 export const dismissItem = defineRpc({ name: "attention.dismiss", input: z.object({ key: z.string() }), output: view });
 // Undo one dismissal [ATT-08].
 export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.object({ key: z.string() }), output: view });
-// Clears Changed by others notes, one or all of them; `on: false` brings them back for Undo. Nothing changes on GitHub [ATT-21].
+// Clears Changed by others notes, one or all of them; `on: false` brings them back for Undo. Nothing changes on GitHub [HIS-07].
 export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ ids: z.array(z.string()), on: z.boolean() }), output: view });
+// A session archived in Paseo itself: acknowledge the changes on its work, so they don't return as unread [HIS-07, ATT-22].
+export const acknowledgeChanges = defineRpc({ name: "attention.acknowledge", input: z.object({ keys: z.array(z.string()) }), output: view });
+// Reviewed and Changed by others in History's weeks; remembered in state.json [HIS-07].
+export const setHistoryFilter = defineRpc({ name: "history.filter", input: z.object({ filter: z.array(z.enum(["reviewed", "changed"])) }), output: view });
+// Archives a Wrap up row's sessions, acknowledging what others did to the work [ATT-22]. `confirm` is the unsaved-work sheet.
+export const archiveSessions = defineRpc({
+  name: "attention.archive",
+  input: z.object({
+    targets: z.array(z.object({ itemKey: z.string(), agentIds: z.array(z.string()), keys: z.array(z.string()) })),
+    confirm: z.boolean(),
+  }),
+  output: z.custom<ArchiveOutcome>(),
+});
 export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({}), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });

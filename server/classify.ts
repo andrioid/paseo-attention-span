@@ -435,7 +435,10 @@ export function classifyHistory(data: HistoryResult): Item[] {
   };
   for (const issue of compact(data.closed.nodes)) {
     const notPlanned = issue.stateReason === "NOT_PLANNED";
-    const item = kinded({ ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: notPlanned ? [chip("not planned")] : [], ...(notPlanned ? { notPlanned: true as const } : {}) }, issue);
+    // Who closed it, when it wasn't me [HIS-07].
+    const closer = issue.timelineItems?.nodes.at(-1)?.actor?.login;
+    const closedBy = closer && me && closer.toLowerCase() !== me ? { closedBy: closer } : {};
+    const item = kinded({ ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: notPlanned ? [chip("not planned")] : [], ...closedBy, ...(notPlanned ? { notPlanned: true as const } : {}) }, issue);
     // Not planned issues get no PRs under them: the PRs were still done, so they're listed on their own [HIS-03].
     if (!notPlanned) closed.set(prKey(issue), item);
     items.push(item);
@@ -450,7 +453,11 @@ export function classifyHistory(data: HistoryResult): Item[] {
     if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy });
     else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt, ...mergedBy }, pr));
   }
-  for (const pr of compact(data.reviewed.nodes)) items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt) }, pr));
+  for (const pr of compact(data.reviewed.nodes)) {
+    const by = pr.mergedBy?.login;
+    const mergedBy = by && me && by.toLowerCase() !== me ? { mergedBy: by } : {};
+    items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt), ...mergedBy }, pr));
+  }
   return items.sort(order);
 }
 

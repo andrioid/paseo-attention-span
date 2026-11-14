@@ -4,7 +4,7 @@ import { linkedSessions } from "../shared/linked-sessions";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { changeItems, EMPTY_LEDGER } from "./changes";
 import { classify, classifyHistory } from "./classify";
-import { alice, bob, bot, builders, fixture, fixtureChanges, me, REPO } from "./fixture";
+import { alice, bob, bot, builders, fixture, fixtureChanges, fixtureGotIt, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
 import {
   detailsQuery,
@@ -1093,9 +1093,9 @@ describe("GitHub requests", () => {
   it("covers every section with the preview fixture", () => {
     const { data, details } = fixture(NOW);
     const attention = classify({ data, details, config, now: NOW });
-    // Changed by others and Closed or handed off come from the ledger, not the searches [ATT-21, HIS-06].
-    const changes = changeItems({ ...EMPTY_LEDGER, events: fixtureChanges(NOW) }, NOW, 30, "2000-01-01T00:00:00Z");
-    expect(new Set([...attention.items, ...classifyHistory(data), ...changes.doing, ...changes.history].map((item) => item.section)).size).toBe(17);
+    // Changed by others comes from the ledger, not the searches [HIS-06, HIS-07].
+    const changes = changeItems({ ...EMPTY_LEDGER, events: fixtureChanges(NOW), gotIt: fixtureGotIt(NOW) }, NOW, 30, "2000-01-01T00:00:00Z");
+    expect(new Set([...attention.items, ...classifyHistory(data), ...changes.notes, ...changes.history].map((item) => item.section)).size).toBe(17);
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 7]);
   });

@@ -136,6 +136,7 @@ export function builders(now: Date) {
       reviewed: nodes("reviewed") as SearchResult["reviewed"],
       closed: nodes("closed") as SearchResult["closed"],
       ended: nodes("ended") as SearchResult["ended"],
+      closedIssues: nodes("closedIssues") as SearchResult["closedIssues"],
     };
   }
 
@@ -155,7 +156,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     url: `https://github.com/${REPO}/pull/${number}`,
     mergedAt: daysAgo(days),
     // Someone else merged one of them [HIS-05].
-    mergedBy: { login: number === 177 ? "dave" : number === 179 ? "carol" : "me" },
+    mergedBy: { login: number === 177 || number === 183 ? "dave" : number === 179 ? "carol" : "me" },
     repository,
     labels: labels(...names),
     closingIssuesReferences: { nodes: closesIssue ? [{ number: closesIssue, repository }] : [] },
@@ -169,6 +170,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     repository,
     issueType: type ? { name: type } : null,
     labels: labels(...names),
+    // #188 was closed by someone else [HIS-07].
+    timelineItems: { nodes: [{ actor: { login: number === 188 ? "alice" : "me" } }] },
   });
 
   const data = search({
@@ -282,24 +285,29 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       { ...pickable(165, {}, 3, "Task", "Devcontainers for pull requests", "me/tool"), projectItems: { nodes: [] }, sources: ["mine"] },
     ],
     merged: [
-      merged(170, "Nightly backup check", 1, 171),
+      merged(183, "Retry failed webhooks", 2 / 24, undefined, "feature"),
       merged(172, "Fix VAT on credit notes", 3, undefined, "bug"),
       merged(177, "chore: bump the build image", 4),
-      merged(178, "Tidy the settings screen", 5),
+      merged(170, "Nightly backup check", 1, 171),
       // Handed over to carol before she merged it, so it isn't listed as mine [HIS-06].
       merged(179, "Move invoices to the new queue", 1),
       merged(173, "Speed up the order list", 9, 174),
       merged(175, "Remove the old importer", 16),
     ],
     reviewed: [
-      { number: 180, title: "New onboarding checklist", url: `https://github.com/${REPO}/pull/180`, mergedAt: daysAgo(2), repository, author: alice, labels: labels("feature") },
-      { number: 181, title: "Bump dependencies", url: `https://github.com/${REPO}/pull/181`, mergedAt: daysAgo(4), repository, author: bob },
-      { number: 182, title: "Sentry release tracking", url: `https://github.com/${REPO}/pull/182`, mergedAt: daysAgo(11), repository, author: alice },
+      { number: 190, title: "Add the VAT export", url: `https://github.com/${REPO}/pull/190`, mergedAt: daysAgo(1), mergedBy: { login: "alice" }, repository, author: alice, labels: labels("feature") },
+      { number: 191, title: "Speed up the search index", url: `https://github.com/${REPO}/pull/191`, mergedAt: daysAgo(3), mergedBy: { login: "bob" }, repository, author: bob },
+      { number: 182, title: "Sentry release tracking", url: `https://github.com/${REPO}/pull/182`, mergedAt: daysAgo(11), mergedBy: { login: "alice" }, repository, author: alice },
     ],
     closed: [
+      closed(188, "Export fails on empty months", 6 / 24, "COMPLETED", "Bug"),
       closed(171, "Backups are never verified", 1, "COMPLETED", "Feature"),
       closed(174, "Order list takes 8 seconds", 9, "COMPLETED", undefined, "type: bug"),
       closed(176, "Dark mode for the admin", 10, "NOT_PLANNED", undefined, "enhancement"),
+    ],
+    // The live close search sees the same issue, so its close is a note too [HIS-07].
+    closedIssues: [
+      { id: "I_188", number: 188, title: "Export fails on empty months", url: `https://github.com/${REPO}/issues/188`, closedAt: daysAgo(6 / 24), stateReason: "COMPLETED", repository, timelineItems: { nodes: [{ actor: { login: "alice" } }] } },
     ],
   });
   return {
@@ -316,7 +324,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
   };
 }
 
-// What others did to my work, one of each kind, as the ledger keeps them [ATT-21, HIS-06]. #179 was handed over, then merged
+// What others did to my work, one of each kind, as the ledger keeps them [HIS-07, HIS-06]. #179 was handed over, then merged
 // by its new owner, so History doesn't count it as mine.
 export function fixtureChanges(now: Date): OthersChange[] {
   const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
@@ -335,12 +343,22 @@ export function fixtureChanges(now: Date): OthersChange[] {
     at: hoursAgo(hours),
   });
   return [
+    { ...event("reopened", "pr", 181, "Paginate the order export", 1, "bob") },
     event("merged", "pr", 183, "Retry failed webhooks", 2, "dave"),
     event("took_over", "pr", 186, "Split the invoice PDF job", 5, "phil", "phil"),
+    { ...event("issue_closed", "issue", 188, "Export fails on empty months", 6, "alice"), reason: "completed" as const },
     event("closed", "pr", 169, "Cache exchange rates", 26, "alice"),
-    event("handed", "pr", 179, "Move invoices to the new queue", 50, "dave", "carol"),
-    event("unassigned", "issue", 160, "Refunds skip the ledger", 74, "bob"),
+    event("handed", "pr", 179, "Move invoices to the new queue", 96, "dave", "carol"),
+    event("unassigned", "issue", 160, "Refunds skip the ledger", 192, "bob"),
+    event("closed", "pr", 170, "Drop the legacy CSV import", 216, "bob"),
   ];
+}
+
+// The notes History already shows as cleared in the preview: their week's Changed by others has them [HIS-07].
+export function fixtureGotIt(now: Date): string[] {
+  return fixtureChanges(now)
+    .filter((change) => (change.number === 179 || change.number === 170) && change.kind !== "merged")
+    .map((change) => change.id);
 }
 
 // Sessions the preview shows as started from items: working, needs me, failed, idle.
@@ -348,15 +366,35 @@ export function fixtureChanges(now: Date): OthersChange[] {
 // #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
 // #120's was started outside Attention Span, in a workspace Paseo linked to the PR, so it has no kind [SES-08].
 // #197's too, so it shows on its stack, led by #196 [ATT-04].
-const agent = (id: string, itemKey: string, kind: SessionKind | undefined, status: string, minutesAgo: number, requiresAttention = false): AgentSummary => ({
+const agent = (
+  id: string,
+  itemKey: string,
+  kind: SessionKind | undefined,
+  status: string,
+  minutesAgo: number,
+  requiresAttention = false,
+  workspace?: AgentSummary["workspace"],
+  title = `Fixture session ${id}`,
+): AgentSummary => ({
   id,
   itemKey,
   kind,
   status,
   requiresAttention,
-  title: `Fixture session ${id}`,
-  workspaceId: null,
+  title,
+  workspaceId: workspace ? `WS_${id}` : null,
   lastActivityAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+  ...(workspace ? { workspace } : {}),
+});
+// A worktree Paseo made, clean or with uncommitted or unpushed work [ATT-22].
+const sessionWorkspace = (branch: string, dirty: boolean | undefined, ahead: number | undefined, worktree = true, dirtyFiles?: number): AgentSummary["workspace"] => ({
+  kind: worktree ? "worktree" : "local_checkout",
+  name: `Workspace for ${branch}`,
+  directory: `/tmp/attention-span/${branch}`,
+  branch,
+  ...(dirty === undefined ? {} : { dirty }),
+  ...(ahead === undefined ? {} : { ahead }),
+  ...(dirtyFiles === undefined ? {} : { dirtyFiles }),
 });
 export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-101", `${REPO}#101`, "fix", "running", 4),
@@ -368,6 +406,12 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-113", `${REPO}#113`, "fix", "running", 2),
   agent("agent-120", `${REPO}#120`, undefined, "running", 3),
   agent("agent-197", `${REPO}#197`, undefined, "idle", 15),
+  // Wrap up: finished work whose sessions are all idle [ATT-22].
+  agent("agent-183", `${REPO}#183`, "fix", "idle", 20, false, sessionWorkspace("retry-webhooks", false, 0), "Retry webhooks"),
+  agent("agent-186", `${REPO}#186`, "fix", "idle", 40, false, sessionWorkspace("split-invoice-pdf", true, 1, true, 2), "Split invoice PDF"),
+  agent("agent-190", `${REPO}#190`, "review", "idle", 60, false, sessionWorkspace("add-vat-export", false, 0), "Review PR 190: Add the VAT export"),
+  agent("agent-172", `${REPO}#172`, "fix", "idle", 240, false, sessionWorkspace("fix-vat-credit-notes", false, 0), "Fix VAT on credit notes"),
+  agent("agent-172b", `${REPO}#172`, "address", "idle", 250, false, sessionWorkspace("credit-note-tests", undefined, undefined), "Credit note tests"),
 ];
 
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
