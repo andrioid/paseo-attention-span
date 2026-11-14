@@ -9,7 +9,7 @@ import { type AttentionConfig, nextUpSources, type SessionKind } from "../shared
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
 import { changeText } from "../shared/changes";
 import { ago, linkList } from "../shared/format";
-import { isClear } from "../shared/still";
+import { historyClear, isClear, nextUpClear, waitingClear } from "../shared/still";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import { type FeedbackKind, themeName } from "../shared/feedback";
@@ -394,6 +394,12 @@ function AttentionList({
   // Sessions not known yet, or failing to load, leave Wrap up unknown: no calm on that [ATT-18, ATT-22].
   const sessionsKnown = !!view.fixtureAgents || (agents.isSuccess && !agents.isError);
   const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length);
+  // The other tabs' scenes, on the same terms [HIS-08, WAI-04, NXT-13].
+  const calm = {
+    history: historyClear(view, notes.length, !!attention.error),
+    waiting: waitingClear(view, !!attention.error),
+    next: nextUpClear(view, !!attention.error),
+  };
   // ⟳ turns for any refresh of this tab's feed, but only my own press locks it: the cached view can still say a background one runs after it's done.
   const pressed = attention.isRefreshing(TAB_FEED[tab]);
   const refreshing = feed.refreshing || attention.isFetching || pressed;
@@ -558,6 +564,7 @@ function AttentionList({
       ))}
       {tab === "history" ? (
         <History
+          calm={calm.history}
           notes={notes}
           items={view.history}
           filter={view.historyFilter ?? []}
@@ -615,9 +622,13 @@ function AttentionList({
           ) : null}
         </>
       ) : null}
-      {tab === "waiting" ? <Waiting groups={view.waiting} actions={actions} /> : null}
+      {tab === "waiting" ? (
+        calm.waiting ? <Still shore="jetty" title="Nobody's holding you up." line="Nothing to chase." /> : <Waiting groups={view.waiting} actions={actions} />
+      ) : null}
       {tab === "next" ? (
         <NextUpList
+          calm={calm.next}
+          openSettings={openSettings}
           assigned={view.assigned}
           unclaimed={view.unclaimed}
           unclaimedFrom={view.unclaimedFrom}

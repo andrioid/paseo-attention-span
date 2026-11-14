@@ -22,11 +22,15 @@ import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, githubEntry, Modal, type SheetEntry, usePrefetchOnRest } from "./sheet";
 import { githubColor, IssuePills, PlaceText } from "./entity";
+import { Still } from "./still";
 import { Button, KeepStyles, Meta, SectionHeader, TablerIcon, useHover, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
 interface Props {
+  // Nothing at all to show: nowhere to look yet, or nothing to pick up after a refresh that worked [NXT-13].
+  calm: "setup" | "clear" | null;
+  openSettings?: () => void;
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom: UnclaimedSource;
@@ -57,10 +61,10 @@ interface Props {
 
 type FilterChange = { scopes?: string[]; sources?: string[]; projectFilter?: string[] };
 
-type RowProps = Omit<Props, "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter">;
+type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
-export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, ...rowProps }: Props) {
+export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, ...rowProps }: Props) {
   const styles = useStyles();
   const scopes = useMemo(() => [...new Set(unclaimed.map((issue) => issue.scope).filter((scope): scope is string => !!scope))].sort(), [unclaimed]);
   // Filter by the scopes I picked last time [NXT-03]; a picked scope with no issues left is ignored.
@@ -108,6 +112,16 @@ export function NextUpList({ assigned, unclaimed, unclaimedFrom, selected, sourc
     ...(projectOptions.length > 0 ? [{ title: "Project", options: projectOptions, active: activeProjects, onToggle: toggleProject }] : []),
     ...(scopes.length > 0 ? [{ title: "Scope", options: scopes.map((scope) => ({ id: scope, label: scope })), active, onToggle: toggle }] : []),
   ];
+
+  // Both point at where Next up looks: plainly when it has nowhere to look, quietly when it found nothing [NXT-13].
+  if (calm === "setup") {
+    const way = openSettings ? { label: "Open settings", onPress: openSettings } : undefined;
+    return <Still shore="signpost" title="Nowhere to look yet." line="Choose where Next up finds issues." way={way} />;
+  }
+  if (calm === "clear") {
+    const way = openSettings ? { label: "Look in more places", onPress: openSettings, link: true } : undefined;
+    return <Still shore="signpost" title="Nothing ready for work." line="Want more to choose from?" way={way} />;
+  }
 
   return (
     <View style={{ gap: 24 }}>

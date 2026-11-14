@@ -5,6 +5,7 @@ import { allNotesBusy } from "../shared/got-it";
 import { historyWeeks, weekOf } from "../shared/history-report";
 import type { IconName } from "./icons";
 import { Modal } from "./sheet";
+import { Still } from "./still";
 import { Button, KeepStyles, SectionHeader, TablerIcon, useCopy, useStyles } from "./ui";
 
 // History: what others did to my work, unread, on top until Got it or an archive; then what I finished, by week, with
@@ -22,6 +23,7 @@ function weekLabel(monday: Date): string {
 
 export function History({
   notes,
+  calm,
   items,
   filter,
   filtering,
@@ -31,6 +33,8 @@ export function History({
   onMarkAllRead,
   card,
 }: {
+  // Nothing finished and nothing unread, after a refresh that worked [HIS-08].
+  calm: boolean;
   notes: Item[];
   items: Item[];
   filter: HistoryFilter[];
@@ -45,6 +49,7 @@ export function History({
   const styles = useStyles();
   const copy = useCopy();
   const { weeks, anything } = historyWeeks(items, filter);
+  if (calm) return <Still shore="bench" title="Nothing finished yet." line="Your accomplishments will show up here." />;
   if (notes.length === 0 && !anything) return <Text style={styles.text}>Nothing finished in this period.</Text>;
   return (
     <>

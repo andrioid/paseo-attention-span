@@ -101,11 +101,13 @@ functional:
       NXT-10: see on each issue its repository, its projects with their status, and its priority, effort and scope at a glance, each a pill whose icon says what it is, named in words when I point at it and in the sheet, with status and priority softly in the color GitHub has for them (none for gray, and the top two priorities warm and accent where the org colored none), and whether an open pull request already closes it and by whom; so that I can judge whether to pick it up without opening it.
       NXT-11: close an issue from Next up as completed or not planned, with an optional comment, and undo it; so that work that's done or won't be done stops being suggested.
       NXT-12: see which open GitHub projects my Next up issues are on, and where on each board, once my gh login may read projects, with Settings saying the one command that allows it until then; so that I know whether work is planned or just an idea, without Next up breaking for anyone who hasn't allowed it.
+      NXT-13: see a calm scene in Next up when it has nothing at all to show, pointing me to Settings, plainly when it has nowhere to look and quietly when it found nothing to pick up, the latter only once a refresh has confirmed it; so that an empty Next up says how to fill it rather than looking broken.
   waiting:
     As a developer, I can:
       WAI-01: see my work that is waiting on others, grouped by who it waits on with whoever blocks the most first, bots after people, and work no person holds up last, each group with work that has an active session first, and each card saying why it waits and for how long, including my pull requests in Doing that wait on whom I asked, where a pull request waits for review only once someone has been asked, and a thread only once my last words ask a question; so that I know that work is tracked and who is blocking me most.
       WAI-02: see who my waiting work waits on: reviewers I asked, reviewers who asked for changes and people I tagged in my unanswered question, and nobody where none of those apply; so that I know whom to nudge without guessing.
       WAI-03: copy the list of my work waiting on one person or team, oldest first, each line a Markdown link led by why and for how long, like "Review 2h: [title](link)"; so that nudging them is one paste they can skim.
+      WAI-04: see a calm scene in Waiting when nothing waits on anyone, only once a refresh has confirmed it; so that being blocked by nobody feels like rest rather than a blank page.
   history:
     As a developer, I can:
       HIS-01: see the issues and pull requests I finished, grouped by week; so that I can tell others what I got done.
@@ -115,6 +117,7 @@ functional:
       HIS-05: see who merged a PR of mine when it wasn't me, as "merged 2h ago by dave", with its copied line unchanged; so that I know when someone else shipped my work.
       HIS-06: see each week's work that left my hands under Changed by others when that is shown, out of the week's copy, even once its new owner merges it, and keep it there when the work comes back to me after I've cleared it; so that my report doesn't claim work that wasn't mine.
       HIS-07: see at the top of History, unread, when someone else merged or closed my pull request, closed an issue assigned to me, reopened a pull request I had seen closed, took over or handed on my work, or unassigned me, with a dot on the tab while any is unread and Got it or Mark all as read to clear them; so that I learn when others move my work without it changing what I have to do.
+      HIS-08: see a calm scene in History when I've finished nothing in its weeks and nothing is unread, only once a refresh has confirmed it; so that an empty History reads as a start rather than a blank page.
   feedback:
     As a developer, I can:
       FB-01: tell the Attention Span project what to improve from the bottom of any tab, picking a problem, an idea or that I like it, with an agent that asks until it's clear, checks it against what's planned and already reported, and files it as an issue or a discussion, saying which and why, only once I approve the draft; so that feedback costs a minute and lands where it can be acted on or talked through.

@@ -9,7 +9,7 @@ import { acknowledge, changeCandidates, ownClosed, nextLedger, type Lookups, typ
 import { classify, classifyHistory, issueBoardIds } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning, searchWithProjects } from "./projects";
 import { FIXTURE, graphql, graphqlResult } from "./gh";
-import { fixture, FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS, fixtureChanges, fixtureGotIt } from "./fixture";
+import { FIXTURE_AGENTS, FIXTURE_ISSUE_FIELDS, fixtureChanges, fixtureGotIt, fixtureNow, quiet } from "./fixture";
 import type { AssignmentSubject, Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode, ReopenSubject } from "./github-types";
 import {
   ASSIGNMENT_BATCH,
@@ -337,7 +337,7 @@ export class AttentionService {
     const projectRepos = FIXTURE ? [] : await this.projectRepos();
     const login = FIXTURE ? "me" : this.config.nextUp.mine ? await this.login() : null;
     const unclaimed = unclaimedSearches(this.config, projectRepos, login);
-    const { data, details } = FIXTURE ? fixture(now) : await this.searchLive(now, unclaimed.searches);
+    const { data, details } = FIXTURE ? fixtureNow(now) : await this.searchLive(now, unclaimed.searches);
     await this.trackChanges(data, now);
     const own = FIXTURE ? [] : ownClosed(data, data.viewer.login);
     return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from, ...(own.length ? { ownClosed: own } : {}) };
@@ -349,7 +349,7 @@ export class AttentionService {
     const ledger = this.state.changes;
     if (FIXTURE) {
       // Previews start each layout with a refresh, which brings the notes back: Got it would otherwise outlive a layout.
-      this.state.changes = { ...ledger, events: fixtureChanges(now), gotIt: fixtureGotIt(now) };
+      this.state.changes = { ...ledger, events: quiet() ? [] : fixtureChanges(now), gotIt: fixtureGotIt(now) };
       return;
     }
     const me = data.viewer.login;
@@ -417,7 +417,7 @@ export class AttentionService {
   }
 
   private async fetchHistory(now: Date): Promise<Item[]> {
-    if (FIXTURE) return classifyHistory(fixture(now).data);
+    if (FIXTURE) return classifyHistory(fixtureNow(now).data);
     return classifyHistory(await graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES, true), this.variables(HISTORY_SEARCHES, now)));
   }
 
