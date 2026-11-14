@@ -1,10 +1,10 @@
 import type { GithubColor } from "../shared/attention";
 import { type AttentionConfig, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
-import { type ChangeLedger, changeCandidates, type Lookups, nextLedger, type ReopenLookups, reopenCandidates, withGotIt } from "./changes";
+import { type ChangeLedger, changeCandidates, nextLedger, reopenCandidates, withGotIt } from "./changes";
 import { issueBoardIds } from "./classify";
 import type { graphql, graphqlResult } from "./gh";
-import type { Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode } from "./github-types";
+import type { AssignmentSubject, Details, HistoryResult, LinkedIssue, LiveResult, MergeStateStatus, PullRequestNode, ReopenSubject } from "./github-types";
 import { searchWithProjects } from "./projects";
 import {
   ASSIGNMENT_BATCH,
@@ -221,15 +221,18 @@ export async function lookupBatches<T, N>(
 // search are looked up, a batch per request; a failed batch is asked again next time [GH-01]. Kept long enough for History.
 export async function trackChanges(gh: Gh, ledger: ChangeLedger, data: LiveResult, now: Date, config: AttentionConfig, gotIt: () => string[]): Promise<ChangeLedger> {
   const me = data.viewer.login;
-  const lookups: Lookups = await lookupBatches(gh, changeCandidates(ledger, data, me), "a", assignmentsQuery, {
-    size: ASSIGNMENT_BATCH,
-    problem: (message) => console.error("Couldn't look up who changed my work:", message),
-  });
-  // PRs Attention Span saw closed, so a reopen by someone else is noticed.
-  const reopens: ReopenLookups = await lookupBatches(gh, reopenCandidates(ledger, data), "a", reopenQuery, {
-    size: ASSIGNMENT_BATCH,
-    problem: (message) => console.error("Couldn't check whether a closed PR reopened:", message),
-  });
+  // The two don't depend on each other, so they run together, each with its own batches.
+  const [lookups, reopens] = await Promise.all([
+    lookupBatches<string, AssignmentSubject>(gh, changeCandidates(ledger, data, me), "a", assignmentsQuery, {
+      size: ASSIGNMENT_BATCH,
+      problem: (message) => console.error("Couldn't look up who changed my work:", message),
+    }),
+    // PRs Attention Span saw closed, so a reopen by someone else is noticed.
+    lookupBatches<string, ReopenSubject>(gh, reopenCandidates(ledger, data), "a", reopenQuery, {
+      size: ASSIGNMENT_BATCH,
+      problem: (message) => console.error("Couldn't check whether a closed PR reopened:", message),
+    }),
+  ]);
   const keepDays = Math.max(config.mentionDays, config.historyWeeks * 7 + 7);
   // A Got it tapped, or an archive acknowledging, while this refresh ran still counts.
   // Got its tapped while the lookups ran decide too, so a handover cleared meanwhile survives its work coming back.

@@ -200,7 +200,7 @@ One GraphQL request per search, sent in parallel (`server/fetch.ts`; the service
 
 Once my PRs and both issue searches are back, one batched **details** request asks for `Ref.compare` behind counts for my PRs, the open issues their descriptions refer to (at most 100), and the option order and colors of org issue fields when Next up needs them [NXT-02, NXT-10]. The other searches carry on meanwhile.
 
-Then, only for PRs whose assignees changed to someone else and issues that left my assigned search, one request per 20 asks for their last 30 assign and unassign events (`assignmentsQuery`) [HIS-07]; and one per 20 for tracked closed PRs that left the closed search asks their state and last reopen event (`reopenQuery`) [HIS-07]; usually none.
+Then, only for PRs whose assignees changed to someone else and issues that left my assigned search, one request per 20 asks for their last 30 assign and unassign events (`assignmentsQuery`) [HIS-07]; and, at the same time, one per 20 for tracked closed PRs that left the closed search asks their state and last reopen event (`reopenQuery`) [HIS-07]; usually none.
 
 A live refresh is 10 requests and about 87 points, of the 5,000 GitHub allows per hour. Points depend on how much a query asks for, not how many requests carry it; my PRs (34) and review requests (20) cost the most.
 
