@@ -6,7 +6,9 @@ import { APPROVE, askUntilClear, fill, quote, SKIMMABLE } from "./drafting";
 
 // The item label of a new issue session, by repository.
 export const newIssueItemKey = (repo: string) => `new-issue:${repo.toLowerCase()}`;
-export const newIssueTitle = (repo: string) => `New issue: ${repo}`;
+// Tagged, so a session can tell itself apart from another draft for the same repository when it archives itself.
+export const newIssueTitle = (repo: string, tag: string) => `New issue: ${repo} (${tag})`;
+export const newIssueTag = () => Math.random().toString(36).slice(2, 7);
 
 // What the sheet starts from: the choices remembered from last time, and the repositories it offers [ISS-01].
 export interface NewIssueInfo {
@@ -80,6 +82,8 @@ export interface NewIssueInput {
   dir: string;
   codeRepo: string;
   source: SourceSession | null;
+  // The session's own title, which it finds itself by.
+  title: string;
 }
 
 const PROMPT = `You're helping me file an issue in {{repo}} on GitHub.
@@ -92,14 +96,14 @@ How to work:
 - Reply in the language I write in. Write the issue in the language {{repo}}'s issues are written in, in my voice ("I …").
 - ${askUntilClear("a maintainer acting on the issue")}
 - Before drafting, search open issues for the same thing with a few phrasings (\`gh issue list --repo {{repo}} --state open --search "…"\`). If one looks like a duplicate, give its link and ask with your question tool: File anyway / Comment there instead / Cancel. A comment is a post too: draft it and get my approval the same way.
-- Follow the repository's issue templates if it has any (\`.github/ISSUE_TEMPLATE/\`; if they're not in the checkout, \`gh api repos/{{repo}}/contents/.github/ISSUE_TEMPLATE\`): pick the one that fits and keep its headings, turning a form (.yml) into markdown with its fields as headings. Without a template: ${SKIMMABLE}
+- Follow {{repo}}'s issue templates if it has any ({{templates}}): pick the one that fits and keep its headings, turning a form (.yml) into markdown with its fields as headings. Without a template: ${SKIMMABLE}
 - Pick labels only from the ones {{repo}} has (\`gh label list --repo {{repo}}\`), and an issue type only if it has types (\`gh api graphql\` with \`repository(owner, name) { issueTypes(first: 25) { nodes { id name } } }\`). Leave out whatever doesn't clearly fit. Don't assign anyone or add it to a project.
 
 ${APPROVE}
 - Issue: \`gh issue create --repo {{repo}} --title … --body-file … --label …\`, then set the type you chose with the \`updateIssueIssueType\` mutation (\`gh api graphql\`).
 - Comment: \`gh issue comment <number> --repo {{repo}} --body-file …\`.
 
-Reply with the link, then close this session: archive this agent with Paseo's archive_agent tool (find its ID with list_agents, titled "{{title}}"). Archive only the agent, never the workspace: it's my checkout. Without that tool, say it's done and stop.`;
+Reply with the link, then close this session: archive this agent with Paseo's archive_agent tool. Find its ID with list_agents: the one agent titled exactly "{{title}}". If no agent or more than one has that title, archive nothing. Archive only the agent, never the workspace: it's my checkout. Without that tool, or when you can't tell which agent you are, say it's done and stop.`;
 
 function sourceText(source: SourceSession | null): string {
   if (!source) return "";
@@ -116,5 +120,10 @@ export function newIssuePrompt(input: NewIssueInput): string {
     input.codeRepo.toLowerCase() === input.repo.toLowerCase()
       ? `You are in my checkout of ${input.repo} at ${input.dir}.`
       : `You are in my checkout of ${input.codeRepo} at ${input.dir}, where ${input.repo}'s code lives; the issue goes to ${input.repo}.`;
-  return fill(PROMPT, { repo: input.repo, message: quote(input.message), source: sourceText(input.source), where, title: newIssueTitle(input.repo) });
+  // The checkout holds the code repository's templates, which aren't the issues' when the two are apart [SES-07].
+  const templates =
+    input.codeRepo.toLowerCase() === input.repo.toLowerCase()
+      ? `\`.github/ISSUE_TEMPLATE/\` in the checkout; if it's not there, \`gh api repos/${input.repo}/contents/.github/ISSUE_TEMPLATE\``
+      : `\`gh api repos/${input.repo}/contents/.github/ISSUE_TEMPLATE\`; not the checkout's, which are ${input.codeRepo}'s`;
+  return fill(PROMPT, { repo: input.repo, message: quote(input.message), source: sourceText(input.source), where, templates, title: input.title });
 }

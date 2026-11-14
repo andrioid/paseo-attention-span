@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { AttentionView } from "../shared/attention";
 import { codeRepoFor } from "../shared/config";
-import { lastMessages, newIssueItemKey, newIssuePrompt, newIssueTitle, prefillRepo, type SourceSession } from "../shared/new-issue";
+import { lastMessages, newIssueItemKey, newIssuePrompt, newIssueTag, newIssueTitle, prefillRepo, type SourceSession } from "../shared/new-issue";
 import * as rpc from "../shared/rpc";
 import { Dialog } from "./sheet";
 import { githubProjects, ITEM_LABEL, LABEL, listProfiles, resolveAgentConfig } from "./sessions";
@@ -111,6 +111,9 @@ export function NewIssueSheet({
   const codeRepo = repo ? codeRepoFor(view.config, repo) : null;
   const checkout = codeRepo ? (projects.data?.find((project) => project.repo.toLowerCase() === codeRepo.toLowerCase()) ?? null) : null;
   const loading = projects.isLoading || from.isLoading;
+  // Start waits for where I came from and my profiles, so a quick tap doesn't fall back to the project's checkout or the
+  // default profile.
+  const ready = !loading && !profiles.isLoading;
   const noCheckout = !!repo && !loading && !checkout;
   const fromSession = !!request.agentId;
 
@@ -134,12 +137,13 @@ export function NewIssueSheet({
       const here = request.workspaceId && from.data?.projectId === checkout.projectId ? from.data : null;
       const dir = here?.directory ?? checkout.rootPath;
       const source = fromSession && withContext && request.agentId ? await sourceSession(paseo, request.agentId, from.data ?? null) : null;
-      const prompt = newIssuePrompt({ message, repo, codeRepo, dir, source });
+      const title = newIssueTitle(repo, newIssueTag());
+      const prompt = newIssuePrompt({ message, repo, codeRepo, dir, source, title });
       const { agent } = await resolveAgentConfig(paseo, () => fetchProviders({}).then((result) => result.providers), "start", view.config, profile ?? undefined);
       const workspace = here && request.workspaceId ? paseo.workspaces.ref(request.workspaceId) : await paseo.workspaces.open({ cwd: checkout.rootPath });
       const created = await workspace.agents.create({
         config: agent,
-        title: newIssueTitle(repo),
+        title,
         prompt,
         labels: { [LABEL]: "1", [ITEM_LABEL]: newIssueItemKey(repo) },
       });
@@ -229,7 +233,7 @@ export function NewIssueSheet({
             label={starting ? "Starting…" : "Start"}
             icon="agent"
             variant="solid"
-            disabled={starting || !message.trim() || !checkout}
+            disabled={starting || !ready || !message.trim() || !checkout}
             onPress={() => void start()}
           />
           <Button label="Cancel" onPress={onClose} />

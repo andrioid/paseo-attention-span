@@ -56,7 +56,7 @@ describe("lastMessages", () => {
 });
 
 describe("newIssuePrompt", () => {
-  const input = { message: "Export fails\non empty months", repo: "acme/web", codeRepo: "acme/web", dir: "/src/web", source: null };
+  const input = { message: "Export fails\non empty months", repo: "acme/web", codeRepo: "acme/web", dir: "/src/web", source: null, title: "New issue: acme/web (k3x9q)" };
 
   it("ISS-01: starts from my words, quoted, in my checkout, changing nothing there", () => {
     const prompt = newIssuePrompt(input);
@@ -80,12 +80,16 @@ describe("newIssuePrompt", () => {
 
   it("ISS-01: archives only its own agent, never my checkout's workspace", () => {
     const prompt = newIssuePrompt(input);
-    expect(prompt).toContain('archive_agent tool (find its ID with list_agents, titled "New issue: acme/web")');
+    expect(prompt).toContain('the one agent titled exactly "New issue: acme/web (k3x9q)"');
+    expect(prompt).toContain("more than one has that title, archive nothing");
     expect(prompt).toContain("never the workspace");
   });
 
-  it("ISS-01: says where the code lives when it's kept apart from the issues", () => {
-    expect(newIssuePrompt({ ...input, repo: "acme/issues" })).toContain("checkout of acme/web at /src/web, where acme/issues's code lives");
+  it("ISS-01: says where the code lives when it's kept apart from the issues, and takes the issues' templates, not the checkout's", () => {
+    const prompt = newIssuePrompt({ ...input, repo: "acme/issues" });
+    expect(prompt).toContain("checkout of acme/web at /src/web, where acme/issues's code lives");
+    expect(prompt).toContain("`gh api repos/acme/issues/contents/.github/ISSUE_TEMPLATE`; not the checkout's, which are acme/web's");
+    expect(newIssuePrompt(input)).toContain("`.github/ISSUE_TEMPLATE/` in the checkout");
   });
 
   it("ISS-01: brings what the session I came from was doing, when I let it", () => {
