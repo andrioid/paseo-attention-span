@@ -61,8 +61,7 @@ const SEARCHES = {
 };
 export type SearchName = keyof typeof SEARCHES;
 
-// Doing, Waiting and Next up. History has its own, slower schedule.
-export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed", "ended", "closedIssues"] as const;
+// History's searches, on their own, slower schedule; the live ones are sent by the service, one request each.
 export const HISTORY_SEARCHES = ["merged", "reviewed", "closed"] as const;
 
 const FRAGMENTS: Record<string, string> = {
