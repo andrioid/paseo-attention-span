@@ -27,7 +27,6 @@ function sessionWorkspace(workspace: (Awaited<ReturnType<Paseo["workspaces"]["li
     ...(git?.currentBranch ? { branch: git.currentBranch } : {}),
     ...(typeof git?.isDirty === "boolean" ? { dirty: git.isDirty } : {}),
     ...(typeof git?.aheadOfOrigin === "number" ? { ahead: git.aheadOfOrigin } : {}),
-    ownedWorktree: workspace.workspaceKind === "worktree",
   };
 }
 

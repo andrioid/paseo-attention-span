@@ -1,4 +1,4 @@
-import type { Attention, AttentionView, FeedId, FeedStatus, GithubColor, HistoryFilter, Item, ProjectsAccess, Reviewer } from "../shared/attention";
+import { type Attention, type AttentionView, type FeedId, type FeedStatus, type GithubColor, type HistoryFilter, type Item, keySet, memberKeys, type ProjectsAccess, type Reviewer, uniqueKeys } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole, githubRepoOf, nextUpField } from "../shared/config";
 import type { IssueField } from "../shared/setup";
@@ -155,18 +155,14 @@ export class AttentionService {
     return this.view();
   }
 
-  // The keys of the item's whole stack or issue group, as Wrap up sees it: its own children and change, and what was
-  // remembered while it was open [ATT-22, ATT-04].
+  // The keys of the item's whole stack or issue group: its own members, as GitHub spells them, since Paseo's labels match
+  // exactly, plus what was remembered while it was open [ATT-22, ATT-04].
   groupKeysOf(itemKey: string): string[] {
     const wanted = itemKey.toLowerCase();
     const view = this.view();
     const items = [...view.history, ...(view.ownClosed ?? []), ...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)];
-    const groupOf = (item: Item) => [item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)];
-    const found = items.filter((item) => groupOf(item).some((key) => key.toLowerCase() === wanted)).flatMap(groupOf);
-    // Labels match exactly, so each key keeps the case GitHub gave it; remembered ones are lower case.
-    const byLower = new Map<string, string>();
-    for (const key of [itemKey, ...found, ...(this.state.groups[wanted]?.keys ?? [])]) if (!byLower.has(key.toLowerCase())) byLower.set(key.toLowerCase(), key);
-    return [...byLower.values()];
+    const found = items.map(memberKeys).filter((keys) => keySet(keys).has(wanted)).flat();
+    return uniqueKeys([itemKey, ...found, ...(this.state.groups[wanted]?.keys ?? [])]);
   }
 
   // Archive a Wrap up row's sessions; success acknowledges the events on that work, so they go to their week as cleared, not
@@ -174,7 +170,7 @@ export class AttentionService {
   async archive(paseo: PluginHandlerContext["paseo"], targets: ArchiveTarget[], confirm: boolean): Promise<ArchiveOutcome> {
     // Previews have no Paseo agents, but still acknowledge, so their screenshots can show the cleanup.
     if (FIXTURE) return { ok: true, view: await this.acknowledge(targets.flatMap((target) => target.keys)) };
-    const answer = await archiveSessions(paseo, targets, confirm);
+    const answer = await archiveSessions(paseo, targets.flatMap((target) => target.agentIds), confirm);
     if (!answer.ok) return { ...answer, view: this.view() };
     const view = await this.acknowledge(targets.flatMap((target) => target.keys));
     return answer.warning ? { ok: true, view, warning: answer.warning } : { ok: true, view };

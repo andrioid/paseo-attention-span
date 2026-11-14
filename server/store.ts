@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { type Attention, type HistoryFilter, type Item, type SectionId, SECTIONS } from "../shared/attention";
+import { type Attention, type HistoryFilter, type Item, type RememberedGroups, type SectionId, SECTIONS } from "../shared/attention";
 import { AttentionConfig, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
 import type { OthersChange } from "../shared/changes";
 import { type ChangeLedger, EMPTY_LEDGER } from "./changes";
@@ -47,7 +47,7 @@ export const State = z.object({
     .catch(EMPTY_LEDGER),
   // Key -> the keys of the stack or issue group it was last seen in, and when, so Wrap up still knows a merged PR's open
   // siblings after History lists it on its own [ATT-22, ATT-04].
-  groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}),
+  groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}) satisfies z.ZodType<RememberedGroups>,
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
   projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong, like one with an item in a

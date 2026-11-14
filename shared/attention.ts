@@ -247,13 +247,38 @@ export interface Item {
 // A Wrap up row's sessions: all idle, or it wouldn't be there [ATT-22].
 export interface WrapInfo {
   sessions: AgentSummary[];
-  // The item and its children's keys, before the row's own key was prefixed, for sessions and change notes [ATT-22].
+  // The finished item's own key; the row's is prefixed with "wrap:" so it never collides with it.
+  itemKey: string;
+  // memberKeys of the finished item: what its sessions are on and what archiving acknowledges [ATT-22].
   keys: string[];
   // "merged by dave 2h ago" or "closed 6h ago by alice", made when the row is.
   finish: string;
   // A session on someone else's PR that merged: its card says "review session" in words.
   review?: true;
 }
+
+// A Wrap up row: always with its sessions and keys [ATT-22].
+export type WrapItem = Item & { section: "wrap"; wrap: WrapInfo };
+
+// The GitHub work an item stands for: itself, the PRs under it, and the work a change note is about, spelled as GitHub
+// spells them, since Paseo's labels match exactly. Compare them with keySet [ATT-03, ATT-04, HIS-07].
+export function memberKeys(item: Pick<Item, "key" | "children"> & { change?: Pick<OthersChange, "key"> }): string[] {
+  return uniqueKeys([item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)]);
+}
+
+// Each key once, ignoring case, in the first spelling seen.
+export function uniqueKeys(keys: string[]): string[] {
+  const unique = new Map<string, string>();
+  for (const key of keys) if (!unique.has(key.toLowerCase())) unique.set(key.toLowerCase(), key);
+  return [...unique.values()];
+}
+
+// Keys for comparing: GitHub's owner and repo names ignore case.
+export const keySet = (keys: Iterable<string>): Set<string> => new Set([...keys].map((key) => key.toLowerCase()));
+
+// Each open stack's and issue group's member keys, lower case, under every member, and when it was last seen open; so a
+// member that merges still knows its open siblings [ATT-04, ATT-22].
+export type RememberedGroups = Record<string, { keys: string[]; at: string }>;
 
 // The colors GitHub lets an org give issue field options and a project its Status options. GRAY is what nothing chosen looks
 // like, so it's shown untinted [NXT-10].
@@ -380,8 +405,6 @@ export interface SessionWorkspace {
   ahead?: number;
   // Previews only, where Paseo has no worktree: how many files are uncommitted, for the confirm sheet's words.
   dirtyFiles?: number;
-  // Paseo made the worktree and may archive it; a local checkout never is [ATT-22].
-  ownedWorktree?: boolean;
 }
 
 // An item's open sessions: started on it or on any PR under it, until it's merged or closed.
@@ -391,13 +414,13 @@ export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "c
   return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
 }
 
-// Wrap up's sessions: a finished item's open sessions, which itemSessions leaves out once it's closed [ATT-22].
-export function wrapSessions(agents: AgentSummary[], item: Pick<Item, "key" | "children">): AgentSummary[] {
-  return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
+// A session is idle when it isn't working and doesn't need me; Wrap up and archiving both ask [ATT-22].
+export function isIdle(agent: { status: string; requiresAttention?: boolean }): boolean {
+  return !agent.requiresAttention && agent.status !== "running" && agent.status !== "initializing";
 }
 
 export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSummary[] {
-  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  const wanted = keySet(keys);
   return agents
     .filter((agent) => wanted.has(agent.itemKey.toLowerCase()))
     .sort((a, b) => Number(b.requiresAttention) - Number(a.requiresAttention) || (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""));

@@ -395,7 +395,6 @@ const sessionWorkspace = (branch: string, dirty: boolean | undefined, ahead: num
   ...(dirty === undefined ? {} : { dirty }),
   ...(ahead === undefined ? {} : { ahead }),
   ...(dirtyFiles === undefined ? {} : { dirtyFiles }),
-  ownedWorktree: worktree,
 });
 export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-101", `${REPO}#101`, "fix", "running", 4),

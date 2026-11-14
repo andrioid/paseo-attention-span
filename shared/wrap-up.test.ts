@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentSummary, Item, Section } from "./attention";
-import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, sessionIdle, unreadChanges, unsavedText, wrapItems } from "./wrap-up";
+import { type AgentSummary, isIdle, type Item, type Section, type WrapItem } from "./attention";
+import { acknowledged, cleanSingle, doingCount, EMPTY_WATCH, rememberGroups, sessionCleanliness, unreadChanges, unsavedText, watchArchives, wrapItems } from "./wrap-up";
 
 const now = new Date("2026-11-13T12:00:00Z");
 const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
@@ -24,9 +24,12 @@ function item(key: string, section: Item["section"], hours: number, children: It
   };
 }
 
-function session(id: string, itemKey: string, overrides: Partial<AgentSummary> = {}, workspace: AgentSummary["workspace"] = { kind: "worktree", name: "wt", dirty: false, ahead: 0, ownedWorktree: true }): AgentSummary {
+function session(id: string, itemKey: string, overrides: Partial<AgentSummary> = {}, workspace: AgentSummary["workspace"] = { kind: "worktree", name: "wt", dirty: false, ahead: 0 }): AgentSummary {
   return { id, itemKey, status: "idle", requiresAttention: false, title: id, workspaceId: `ws-${id}`, lastActivityAt: hoursAgo(1), workspace, ...overrides };
 }
+
+// A Wrap up row on one item, with these sessions.
+const wrapRow = (key: string, sessions: AgentSummary[]): WrapItem => ({ ...item(key, "wrap", 2), section: "wrap", wrap: { itemKey: key, keys: [key], finish: "merged 2h ago", sessions } });
 
 const view = (history: Item[], doing: Section[] = [], waiting: { items: Item[] }[] = []) => ({ history, doing, waiting }) as Parameters<typeof wrapItems>[0];
 
@@ -64,7 +67,7 @@ describe("Wrap up membership", () => {
     const done = [item("acme/shop#1", "done", 2)];
     expect(wrapItems(view(done), [session("a", "acme/shop#1", { status: "running" })], now)).toEqual([]);
     expect(wrapItems(view(done), [session("a", "acme/shop#1", { requiresAttention: true })], now)).toEqual([]);
-    expect(sessionIdle(session("a", "acme/shop#1"))).toBe(true);
+    expect(isIdle(session("a", "acme/shop#1"))).toBe(true);
   });
 
   it("ATT-22: a stack or issue group enters once, and only when every session it serves is done", () => {
@@ -75,7 +78,7 @@ describe("Wrap up membership", () => {
     // One of its PRs is still active: no row, even though the other session is idle.
     const active = [{ id: "drafts" as const, title: "My drafts", items: [item("acme/shop#41", "drafts", 1)] }];
     expect(wrapItems(view([issue], active), [session("a", "acme/shop#40"), session("b", "acme/shop#41")], now)).toEqual([]);
-    expect(doingCount({ count: 4 }, [{ ...issue, section: "wrap" }])).toBe(5);
+    expect(doingCount({ count: 4 }, rows)).toBe(5);
   });
 
   it("ATT-22: one session never yields two rows", () => {
@@ -112,17 +115,40 @@ describe("unsaved work", () => {
   });
 
   it("ATT-22: only one clean session makes a row ready for Archive all clean", () => {
-    expect(cleanSingle({ ...item("acme/shop#1", "wrap", 2), wrap: { keys: ["acme/shop#1"], finish: "merged 2h ago", sessions: [session("a", "acme/shop#1")] } })).toBe(true);
-    expect(cleanSingle({ ...item("acme/shop#1", "wrap", 2), wrap: { keys: ["acme/shop#1"], finish: "merged 2h ago", sessions: [session("a", "acme/shop#1"), session("b", "acme/shop#1")] } })).toBe(false);
-    expect(cleanSingle({ ...item("acme/shop#1", "wrap", 2), wrap: { keys: ["acme/shop#1"], finish: "merged 2h ago", sessions: [session("a", "acme/shop#1", {}, { kind: "worktree", name: "wt", dirty: true, ahead: 0 })] } })).toBe(false);
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1")]))).toBe(true);
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1"), session("b", "acme/shop#1")]))).toBe(false);
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", {}, { kind: "worktree", name: "wt", dirty: true, ahead: 0 })]))).toBe(false);
+    // Paseo saying nothing about commits ahead isn't clean.
+    expect(sessionCleanliness(session("a", "x", {}, { kind: "worktree", name: "wt", dirty: false }))).toBe("unknown");
   });
 });
 
 describe("unread changes", () => {
   it("HIS-07: a note about work in Wrap up waits there; busy work and reopened PRs stay unread", () => {
     const note = (key: string) => ({ ...item(key, "changed", 1), change: { id: key, kind: "merged" as const, subjectId: key, subject: "pr" as const, key, repo: "acme/shop", number: 1, title: key, url: "u", at: hoursAgo(1) } });
-    const wrap: Item[] = [{ ...item("acme/shop#183", "wrap", 2), wrap: { keys: ["acme/shop#183"], finish: "merged 2h ago", sessions: [session("a", "acme/shop#183")] } }];
+    const wrap = [wrapRow("acme/shop#183", [session("a", "acme/shop#183")])];
     const notes = [note("acme/shop#183"), note("acme/shop#188")];
     expect(unreadChanges(notes, wrap).map((item) => item.key)).toEqual(["acme/shop#188"]);
+  });
+});
+
+describe("sessions archived in Paseo itself", () => {
+  const row = wrapRow("acme/shop#1", [session("a", "acme/shop#1"), session("b", "acme/shop#1")]);
+
+  it("HIS-07, ATT-22: a row that goes because all its sessions are gone is pending until acknowledged", () => {
+    const seen = watchArchives(EMPTY_WATCH, [row], [{ id: "a" }, { id: "b" }]);
+    expect(seen.pending).toEqual({});
+    // One session left: the row went for another reason, so nothing to acknowledge.
+    expect(watchArchives(seen, [], [{ id: "b" }]).pending).toEqual({});
+    const gone = watchArchives(seen, [], []);
+    expect(gone.pending).toEqual({ [row.key]: ["acme/shop#1"] });
+    // A failed request leaves it pending through later polls, until the server says done.
+    const later = watchArchives(gone, [], []);
+    expect(later.pending).toEqual({ [row.key]: ["acme/shop#1"] });
+    expect(acknowledged(later, row.key).pending).toEqual({});
+  });
+
+  it("HIS-07, ATT-22: a row still shown is never pending", () => {
+    expect(watchArchives(watchArchives(EMPTY_WATCH, [row], [{ id: "a" }]), [row], []).pending).toEqual({});
   });
 });

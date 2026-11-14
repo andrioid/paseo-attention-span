@@ -1,29 +1,25 @@
-import { type AgentSummary, type AttentionView, type Item, matchSessions, type SessionWorkspace } from "./attention";
+import { type AgentSummary, type AttentionView, isIdle, type Item, keySet, matchSessions, memberKeys, type RememberedGroups, type SessionWorkspace, type WrapItem } from "./attention";
 import { ago } from "./format";
 import { changeText } from "./changes";
 
 // Wrap up: finished or out-of-my-hands work whose unarchived Paseo sessions are all idle [ATT-22]. Pure, so the rules are
-// testable; the screen fetches the sessions and archives them.
-
-// A session is idle when it isn't working and doesn't need me. Anything else keeps its row out of Wrap up.
-export function sessionIdle(agent: AgentSummary): boolean {
-  return !agent.requiresAttention && agent.status !== "running" && agent.status !== "initializing";
-}
+// testable. It's assembled on the client, which already polls Paseo's sessions for the screen and the sidebar's count; the
+// server archives and acknowledges.
 
 export type SessionCleanliness = "clean" | "dirty" | "unknown";
 
-// What archiving would lose in a session's worktree. Paseo says whether it's dirty and how far it is ahead of upstream;
-// when it couldn't say, the row treats it as dirty and the sheet says so [ATT-22].
+// What archiving would lose in a session's worktree, from Paseo's snapshot: clean only when it says both that nothing is
+// uncommitted and that nothing is ahead. The server asks git again before archiving [ATT-22].
 export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
   const workspace = agent.workspace;
   if (!workspace) return "unknown";
   if (workspace.dirty === true || (workspace.ahead ?? 0) > 0) return "dirty";
-  if (workspace.dirty === false && workspace.ahead !== undefined) return "clean";
+  if (workspace.dirty === false && workspace.ahead === 0) return "clean";
   return "unknown";
 }
 
-// "2 uncommitted files and 1 unpushed commit on branch": what the confirm sheet names. Paseo doesn't count files, so the
-// commit count is its own and the files are named without a number.
+// "uncommitted changes and 1 unpushed commit on branch": what the multi-session sheet says about a session, from Paseo's
+// snapshot, which doesn't count files.
 export function unsavedText(agent: AgentSummary): string {
   const workspace: SessionWorkspace | undefined = agent.workspace;
   if (sessionCleanliness(agent) === "unknown") return "Couldn't check for unsaved changes";
@@ -36,8 +32,8 @@ export function unsavedText(agent: AgentSummary): string {
 }
 
 // A row with one session, clean: Archive session archives it at once, whatever happened on GitHub [ATT-22].
-export function cleanSingle(item: Item): boolean {
-  return !!item.wrap && item.wrap.sessions.length === 1 && sessionCleanliness(item.wrap.sessions[0]) === "clean";
+export function cleanSingle(item: WrapItem): boolean {
+  return item.wrap.sessions.length === 1 && sessionCleanliness(item.wrap.sessions[0]) === "clean";
 }
 
 // What finishing looked like, in the same words the cards use [HIS-05, HIS-07].
@@ -51,35 +47,25 @@ function finishText(item: Item, now: Date): string {
   return `closed ${age}${item.closedBy ? ` by ${item.closedBy}` : ""}${item.notPlanned ? " as not planned" : ""}`;
 }
 
-// Remembers each open stack's and issue group's keys under every member, so a member that merges or closes still knows
-// its open siblings: History lists a merged PR alone, as its branches are gone [ATT-22, ATT-04]. Forgotten after keepDays.
-export function rememberGroups(
-  groups: Record<string, { keys: string[]; at: string }>,
-  items: Pick<Item, "key" | "children">[],
-  now: Date,
-  keepDays: number,
-): Record<string, { keys: string[]; at: string }> {
+// Remembers each open stack's and issue group's member keys under every member, so a member that merges or closes still
+// knows its open siblings: History lists a merged PR alone, as its branches are gone [ATT-22, ATT-04]. Forgotten after
+// keepDays.
+export function rememberGroups(groups: RememberedGroups, items: Pick<Item, "key" | "children">[], now: Date, keepDays: number): RememberedGroups {
   const at = now.toISOString();
   const since = new Date(now.getTime() - keepDays * 86_400_000).toISOString();
   const next = Object.fromEntries(Object.entries(groups).filter(([, group]) => group.at >= since));
   for (const item of items) {
     if (item.children.length === 0) continue;
-    const keys = [item.key, ...item.children.map((child) => child.key)].map((key) => key.toLowerCase());
+    const keys = [...keySet(memberKeys(item))];
     for (const key of keys) next[key] = { keys, at };
   }
   return next;
 }
 
-// The item, its children and the work a change note is about, lower case; a session on any of them serves the group
-// [ATT-03, ATT-04, HIS-07].
-const groupKeys = (item: Item) => [item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)].map((key) => key.toLowerCase());
-
-// Every session the item's group matches, including one on a child PR.
-const groupSessions = (agents: AgentSummary[], item: Item) => matchSessions(agents, [item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)]);
-
-// The finished work and changes that could appear in Wrap up: my done and reviewed items, work that left my hands, and a
-// change on finished work that History hasn't fetched yet [ATT-22, HIS-01, HIS-07]. A done item beats the note about it.
-function candidates(view: Pick<AttentionView, "history"> & Pick<Partial<AttentionView>, "ownClosed">): Item[] {
+// The finished work and changes that could appear in Wrap up: my done and reviewed items, my own unmerged closes, work that
+// left my hands, and a change on finished work that History hasn't fetched yet [ATT-22, HIS-01, HIS-07]. A done item beats
+// the note about it.
+function candidates(view: WrapView): Item[] {
   const seen = new Set<string>();
   const ordered = [...view.history, ...(view.ownClosed ?? [])].sort((a, b) => Number(a.section === "changed") - Number(b.section === "changed"));
   return ordered.filter((item) => {
@@ -92,28 +78,26 @@ function candidates(view: Pick<AttentionView, "history"> & Pick<Partial<Attentio
   });
 }
 
+// What Wrap up reads from the view.
+export type WrapView = Pick<AttentionView, "history" | "doing" | "waiting"> & Partial<Pick<AttentionView, "activeKeys" | "groups" | "ownClosed">>;
+
 // What Doing's Wrap up shows, newest finish first. A row needs at least one open session, all idle. A stack or issue group
-// enters once, and only when every session it has serves work that's done: a session Paseo still links to an active item
-// keeps the group out [ATT-22].
-export function wrapItems(view: Pick<AttentionView, "history" | "doing" | "waiting"> & Pick<Partial<AttentionView>, "activeKeys" | "groups" | "ownClosed">, agents: AgentSummary[], now = new Date()): Item[] {
+// enters once, and only when everything its sessions serve is done: a key still open in Doing or Waiting, or a remembered
+// sibling of one, keeps the group out [ATT-22].
+export function wrapItems(view: WrapView, agents: AgentSummary[], now = new Date()): WrapItem[] {
   if (agents.length === 0) return [];
-  const active = new Map<string, true>((view.activeKeys ?? []).map((key) => [key.toLowerCase(), true]));
-  for (const item of [...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)]) {
-    for (const key of groupKeys(item)) active.set(key, true);
-  }
-  // A key whose remembered stack or issue group still has an open member serves unfinished work [ATT-04].
+  const active = keySet([...(view.activeKeys ?? []), ...[...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)].flatMap(memberKeys)]);
   const groups = view.groups ?? {};
   const serving = (key: string) => [key.toLowerCase(), ...(groups[key.toLowerCase()] ?? [])].some((other) => active.has(other));
-  const rows: { item: Item; at: string }[] = [];
+  const rows: { item: WrapItem; at: string }[] = [];
   const used = new Set<string>();
   for (const item of candidates(view)) {
-    const sessions = groupSessions(agents, item);
+    const keys = memberKeys(item);
+    const sessions = matchSessions(agents, keys);
     if (sessions.length === 0) continue;
     // The group's sessions must all be idle, none may serve work that's still active, and a session belongs to one row only.
-    if (sessions.some((agent) => !sessionIdle(agent) || serving(agent.itemKey) || used.has(agent.id))) continue;
-    if (groupKeys(item).some(serving)) continue;
+    if (sessions.some((agent) => !isIdle(agent) || serving(agent.itemKey) || used.has(agent.id)) || keys.some(serving)) continue;
     for (const agent of sessions) used.add(agent.id);
-    const keys = [item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)];
     rows.push({
       item: {
         ...item,
@@ -121,7 +105,7 @@ export function wrapItems(view: Pick<AttentionView, "history" | "doing" | "waiti
         section: "wrap",
         actions: [],
         chips: [],
-        wrap: { sessions, keys, finish: finishText(item, now), ...(item.section === "reviewed" ? { review: true as const } : {}) },
+        wrap: { sessions, itemKey: item.key, keys, finish: finishText(item, now), ...(item.section === "reviewed" ? { review: true as const } : {}) },
       },
       at: item.closedAt ?? item.change?.at ?? item.othersActivityAt,
     });
@@ -129,14 +113,43 @@ export function wrapItems(view: Pick<AttentionView, "history" | "doing" | "waiti
   return rows.sort((a, b) => b.at.localeCompare(a.at)).map(({ item }) => item);
 }
 
-// The unread changes History shows: every note except the ones Already in Wrap up, where archiving is the acknowledgement
+// The unread changes History shows: every note except the ones already in Wrap up, where archiving is the acknowledgement
 // [HIS-07, ATT-22]. A note whose work has no session left, or whose sessions are busy, stays unread.
-export function unreadChanges(notes: Item[], wrap: Item[]): Item[] {
-  const inWrap = new Set(wrap.flatMap((item) => item.wrap?.keys ?? groupKeys(item)).map((key) => key.toLowerCase()));
-  return notes.filter((note) => !groupKeys(note).some((key) => inWrap.has(key)));
+export function unreadChanges(notes: Item[], wrap: WrapItem[]): Item[] {
+  const inWrap = keySet(wrap.flatMap((item) => item.wrap.keys));
+  return notes.filter((note) => !memberKeys(note).some((key) => inWrap.has(key.toLowerCase())));
 }
 
 // Doing's and the sidebar's count: what needs me, plus the rows Wrap up asks me to clean up [ATT-09, ATT-22].
-export function doingCount(view: Pick<AttentionView, "count">, wrap: Item[]): number {
+export function doingCount(view: Pick<AttentionView, "count">, wrap: WrapItem[]): number {
   return view.count + wrap.length;
+}
+
+// Sessions archived in Paseo itself, noticed by the open screen: a Wrap up row that goes because every one of its sessions
+// is gone has its changes acknowledged. Pending ones stay until the server says done, so a failed request is sent again
+// [HIS-07, ATT-22]. The server's agent.archived hook covers labelled sessions even with the screen closed; this covers
+// sessions linked only by their workspace, which carry no label.
+export interface ArchiveWatch {
+  // Row key -> its sessions and keys, as last seen.
+  rows: Record<string, { sessionIds: string[]; keys: string[] }>;
+  // Row key -> keys to acknowledge.
+  pending: Record<string, string[]>;
+}
+
+export const EMPTY_WATCH: ArchiveWatch = { rows: {}, pending: {} };
+
+export function watchArchives(watch: ArchiveWatch, rows: WrapItem[], agents: Pick<AgentSummary, "id">[]): ArchiveWatch {
+  const live = new Set(agents.map((agent) => agent.id));
+  const current = Object.fromEntries(rows.map((row) => [row.key, { sessionIds: row.wrap.sessions.map((session) => session.id), keys: row.wrap.keys }]));
+  const pending = { ...watch.pending };
+  for (const [key, row] of Object.entries(watch.rows)) {
+    if (current[key] || row.sessionIds.length === 0 || row.sessionIds.some((id) => live.has(id))) continue;
+    pending[key] = row.keys;
+  }
+  return { rows: current, pending };
+}
+
+export function acknowledged(watch: ArchiveWatch, rowKey: string): ArchiveWatch {
+  const { [rowKey]: _done, ...pending } = watch.pending;
+  return { ...watch, pending };
 }
