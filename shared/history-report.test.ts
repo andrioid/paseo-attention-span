@@ -1,30 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "./attention";
+import { item as base } from "./test-builders";
 import { historyWeeks, oldestWeek, weekOf } from "./history-report";
 
 const now = new Date();
 const daysAgo = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
 const since = oldestWeek(4, now);
 
-function item(number: number, section: Item["section"], closedDays: number, fields: Partial<Item> = {}): Item {
-  return {
-    key: `acme/shop#${number}`,
-    section,
-    kind: "pr",
-    draft: false,
-    repo: "acme/shop",
-    number,
-    title: `Item ${number}`,
-    url: `https://github.com/acme/shop/pull/${number}`,
-    chips: [],
-    actions: [],
-    children: [],
-    target: { kind: "pr", repo: "acme/shop", number, title: `Item ${number}`, url: "u" },
-    othersActivityAt: daysAgo(closedDays),
-    closedAt: daysAgo(closedDays),
-    ...fields,
-  };
-}
+const item = (number: number, section: Item["section"], closedDays: number, fields: Partial<Item> = {}) =>
+  base(`acme/shop#${number}`, section, { title: `Item ${number}`, othersActivityAt: daysAgo(closedDays), closedAt: daysAgo(closedDays), ...fields });
 
 // All in one week, whatever day today is: the same instant.
 const sameWeek = (fields: Partial<Item> = {}) => ({ ...fields, closedAt: daysAgo(0), othersActivityAt: daysAgo(0) });

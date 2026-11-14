@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Attention, Item } from "../shared/attention";
 import { changeText, type OthersChange } from "../shared/changes";
-import { AttentionConfig } from "../shared/config";
-import { acknowledge, type ChangeLedger, changeCandidates, changeItems, closedByOther, EMPTY_LEDGER, ended, handover, type Lookups, nextLedger, ownClosed, reopened, reopenCandidates, withGotIt } from "./changes";
+import { change, feed, item, viewMeta } from "../shared/test-builders";
+import { acknowledge, type ChangeLedger, changeCandidates, changeItems, EMPTY_LEDGER, type Lookups, nextLedger, ownClosed, reopenCandidates, type ReopenLookups, withGotIt } from "./changes";
 import type { AssignmentEvent, AssignmentSubject, ClosedIssue, EndedPullRequest, LiveResult, PickableNode, PullRequestNode, ReopenSubject } from "./github-types";
 import { buildView } from "./view";
 
@@ -73,62 +73,72 @@ function reopenSubject(fields: Partial<ReopenSubject> = {}): ReopenSubject {
   };
 }
 
+// One refresh of the ledger, as the service runs it: what the searches found and what the lookups said.
+function refresh(ledger: ChangeLedger, parts: Parameters<typeof data>[0] = {}, opts: { lookups?: Lookups; at?: Date; reopens?: ReopenLookups } = {}): ChangeLedger {
+  return nextLedger(ledger, data(parts), "me", opts.lookups ?? new Map(), opts.at ?? NOW, 30, 35, opts.reopens);
+}
+// The note a refresh adds once a PR or issue's assignments are looked up, if any.
+const handedNote = (subject: AssignmentSubject) => refresh(EMPTY_LEDGER, {}, { lookups: new Map([[subject.id, subject]]) }).events[0] ?? null;
+// The note a refresh adds for one of my PRs found merged or closed, or an issue of mine found closed.
+const endedNote = (pr: EndedPullRequest) => refresh(EMPTY_LEDGER, { ended: [pr] }).events[0] ?? null;
+const closedNote = (issue: ClosedIssue) => refresh(EMPTY_LEDGER, { closedIssues: [issue] }).events[0] ?? null;
+
 describe("who took my work out of my hands", () => {
   it("HIS-07: someone who unassigns me and assigns themselves took over", () => {
-    const change = handover(subject("PullRequest", ["phil"], [assigned("me", "me", 30), unassigned("me", "phil", 5), assigned("phil", "phil", 5)]), "me");
+    const change = handedNote(subject("PullRequest", ["phil"], [assigned("me", "me", 30), unassigned("me", "phil", 5), assigned("phil", "phil", 5)]));
     expect(change).toMatchObject({ kind: "took_over", actor: "phil", to: "phil", subject: "pr", at: hoursAgo(5) });
     expect(changeText(change!, NOW)).toBe("phil took over 5h ago");
   });
 
   it("HIS-07: someone who moves it to a third person handed it to them; the one named is who took me off", () => {
-    const change = handover(subject("Issue", ["carol"], [assigned("me", "me", 30), assigned("carol", "dave", 6), unassigned("me", "alice", 5)]), "me");
+    const change = handedNote(subject("Issue", ["carol"], [assigned("me", "me", 30), assigned("carol", "dave", 6), unassigned("me", "alice", 5)]));
     expect(change).toMatchObject({ kind: "handed", actor: "alice", to: "carol" });
     expect(changeText(change!, NOW)).toBe("alice handed it to carol 5h ago");
   });
 
   it("HIS-07: my PR with nobody assigned that someone assigns to another is handed over by whoever assigned them", () => {
-    expect(handover(subject("PullRequest", ["carol"], [assigned("carol", "dave", 3)]), "me")).toMatchObject({ kind: "handed", actor: "dave", to: "carol" });
+    expect(handedNote(subject("PullRequest", ["carol"], [assigned("carol", "dave", 3)]))).toMatchObject({ kind: "handed", actor: "dave", to: "carol" });
   });
 
   it("HIS-07: an issue I'm taken off with nobody on it says who unassigned me", () => {
-    const change = handover(subject("Issue", [], [assigned("me", "me", 30), unassigned("me", "bob", 72)]), "me");
+    const change = handedNote(subject("Issue", [], [assigned("me", "me", 30), unassigned("me", "bob", 72)]));
     expect(change).toMatchObject({ kind: "unassigned", actor: "bob" });
     expect(changeText(change!, NOW)).toBe("bob unassigned you 3d ago");
   });
 
   it("HIS-07: stays silent for my own doing, work still mine, an unproven issue, or an issue closed by now", () => {
-    expect(handover(subject("PullRequest", ["carol"], [unassigned("me", "me", 2), assigned("carol", "me", 2)]), "me")).toBeNull();
-    expect(handover(subject("PullRequest", ["me", "carol"], [assigned("carol", "dave", 2)]), "me")).toBeNull();
+    expect(handedNote(subject("PullRequest", ["carol"], [unassigned("me", "me", 2), assigned("carol", "me", 2)]))).toBeNull();
+    expect(handedNote(subject("PullRequest", ["me", "carol"], [assigned("carol", "dave", 2)]))).toBeNull();
     // A PR of mine that nobody has is still mine.
-    expect(handover(subject("PullRequest", [], [unassigned("me", "dave", 2)]), "me")).toBeNull();
+    expect(handedNote(subject("PullRequest", [], [unassigned("me", "dave", 2)]))).toBeNull();
     // An issue that left my search without an unassign event: search lag or a coverage change, not a handover.
-    expect(handover(subject("Issue", [], []), "me")).toBeNull();
-    expect(handover(subject("Issue", [], [unassigned("me", "bob", 2)], "CLOSED"), "me")).toBeNull();
+    expect(handedNote(subject("Issue", [], []))).toBeNull();
+    expect(handedNote(subject("Issue", [], [unassigned("me", "bob", 2)], "CLOSED"))).toBeNull();
   });
 
   it("HIS-07: names nobody when GitHub doesn't say who", () => {
-    expect(changeText(handover(subject("Issue", [], [unassigned("me", null, 1)]), "me")!, NOW)).toBe("unassigned you 1h ago");
+    expect(changeText(handedNote(subject("Issue", [], [unassigned("me", null, 1)]))!, NOW)).toBe("unassigned you 1h ago");
   });
 });
 
 describe("my PRs others merged or closed", () => {
   it("HIS-07: a merge or a close by someone else is a note; my own isn't", () => {
-    expect(changeText(ended(endedPr("P1", {}), "me")!, NOW)).toBe("merged by dave 2h ago");
-    expect(ended(endedPr("P1", { mergedBy: { login: "Me" } }), "me")).toBeNull();
+    expect(changeText(endedNote(endedPr("P1", {}))!, NOW)).toBe("merged by dave 2h ago");
+    expect(endedNote(endedPr("P1", { mergedBy: { login: "Me" } }))).toBeNull();
     const closed = endedPr("P2", { merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "alice" } }] } });
-    expect(changeText(ended(closed, "me")!, NOW)).toBe("closed by alice 2h ago, not merged");
-    expect(ended({ ...closed, timelineItems: { nodes: [{ actor: { login: "me" } }] } }, "me")).toBeNull();
+    expect(changeText(endedNote(closed)!, NOW)).toBe("closed by alice 2h ago, not merged");
+    expect(endedNote({ ...closed, timelineItems: { nodes: [{ actor: { login: "me" } }] } })).toBeNull();
   });
 
   it("HIS-07: a PR handed over before it ended is a handover, not a merge; one assigned after it ended is still my merge", () => {
     const pr = endedPr("P1", { assignees: users("carol"), mergedBy: { login: "carol" } });
     const lookup = (hours: number): Lookups => new Map([["P1", { ...subject("PullRequest", ["carol"], [assigned("carol", "carol", hours)]), id: "P1", state: "MERGED" }]]);
-    const before = nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", lookup(5), NOW, 30, 35);
+    const before = refresh(EMPTY_LEDGER, { ended: [pr] }, { lookups: lookup(5) });
     expect(before.events.map((event) => event.kind)).toEqual(["took_over"]);
-    const after = nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", lookup(1), NOW, 30, 35);
+    const after = refresh(EMPTY_LEDGER, { ended: [pr] }, { lookups: lookup(1) });
     expect(after.events.map((event) => [event.kind, event.actor])).toEqual([["merged", "carol"]]);
     // Not looked up yet (the lookup failed): wait a refresh rather than call it a merge.
-    expect(nextLedger(EMPTY_LEDGER, data({ ended: [pr] }), "me", new Map(), NOW, 30, 35).events).toEqual([]);
+    expect(refresh(EMPTY_LEDGER, { ended: [pr] }).events).toEqual([]);
   });
 });
 
@@ -136,21 +146,21 @@ describe("keeping and clearing", () => {
   const merged = (id: string, hours: number) => endedPr(id, { mergedAt: hoursAgo(hours), closedAt: hoursAgo(hours) });
 
   it("HIS-07, HIS-06: events are kept for keepDays, then dropped with their Got it", () => {
-    const kept = nextLedger(EMPTY_LEDGER, data({ ended: [merged("P1", 24 * 20)] }), "me", new Map(), NOW, 30, 35);
+    const kept = refresh(EMPTY_LEDGER, { ended: [merged("P1", 24 * 20)] });
     const tapped = { ...kept, gotIt: [kept.events[0].id] };
     const later = new Date(NOW.getTime() + 20 * 86_400_000);
-    expect(nextLedger(tapped, data({}), "me", new Map(), later, 30, 35)).toMatchObject({ events: [], gotIt: [] });
-    expect(nextLedger(tapped, data({}), "me", new Map(), NOW, 30, 35).gotIt).toEqual(tapped.gotIt);
+    expect(refresh(tapped, {}, { at: later })).toMatchObject({ events: [], gotIt: [] });
+    expect(refresh(tapped).gotIt).toEqual(tapped.gotIt);
   });
 
   it("HIS-07: a Got it tapped while a refresh ran survives it, and Undo while it ran too", () => {
-    const before = nextLedger(EMPTY_LEDGER, data({ ended: [merged("P1", 2), merged("P2", 3)] }), "me", new Map(), NOW, 30, 35);
+    const before = refresh(EMPTY_LEDGER, { ended: [merged("P1", 2), merged("P2", 3)] });
     const [first, second] = before.events.map((event) => event.id);
     // The refresh read the ledger with nothing tapped; meanwhile first was tapped.
-    const after = nextLedger(before, data({ ended: [merged("P1", 2), merged("P2", 3)] }), "me", new Map(), NOW, 30, 35);
+    const after = refresh(before, { ended: [merged("P1", 2), merged("P2", 3)] });
     expect(withGotIt(after, [first]).gotIt).toEqual([first]);
     // Read with second tapped, then Undo while it ran: the refresh doesn't bring the tap back.
-    const tappedBefore = nextLedger({ ...before, gotIt: [second] }, data({ ended: [merged("P1", 2), merged("P2", 3)] }), "me", new Map(), NOW, 30, 35);
+    const tappedBefore = refresh({ ...before, gotIt: [second] }, { ended: [merged("P1", 2), merged("P2", 3)] });
     expect(withGotIt(tappedBefore, []).gotIt).toEqual([]);
     // A tap on an event the refresh dropped goes with it.
     expect(withGotIt({ ...after, events: [after.events[0]] }, [first, second]).gotIt).toEqual([first]);
@@ -159,15 +169,15 @@ describe("keeping and clearing", () => {
 
 describe("ownership cycles", () => {
   it("HIS-07: a PR I took myself off is still mine until someone takes it, and that's who's named, when they took it", () => {
-    const self = handover(subject("PullRequest", ["carol"], [assigned("me", "me", 50), unassigned("me", "me", 40), assigned("carol", "carol", 3)]), "me");
+    const self = handedNote(subject("PullRequest", ["carol"], [assigned("me", "me", 50), unassigned("me", "me", 40), assigned("carol", "carol", 3)]));
     expect(self).toMatchObject({ kind: "took_over", actor: "carol", at: hoursAgo(3) });
-    const earlier = handover(subject("PullRequest", ["carol"], [unassigned("me", "dave", 40), assigned("carol", "carol", 3)]), "me");
+    const earlier = handedNote(subject("PullRequest", ["carol"], [unassigned("me", "dave", 40), assigned("carol", "carol", 3)]));
     expect(earlier).toMatchObject({ kind: "took_over", actor: "carol", at: hoursAgo(3) });
   });
 
   it("HIS-07: an old removal from an earlier round doesn't name who took it this time", () => {
     const events = [unassigned("me", "dave", 90), assigned("me", "me", 60), unassigned("me", "alice", 4), assigned("carol", "alice", 4)];
-    expect(handover(subject("Issue", ["carol"], events), "me")).toMatchObject({ kind: "handed", actor: "alice", to: "carol", at: hoursAgo(4) });
+    expect(handedNote(subject("Issue", ["carol"], events))).toMatchObject({ kind: "handed", actor: "alice", to: "carol", at: hoursAgo(4) });
   });
 });
 
@@ -175,79 +185,49 @@ describe("the ledger between refreshes", () => {
   const lookups = (...subjects: [string, AssignmentSubject | null][]): Lookups => new Map(subjects);
 
   it("HIS-07: on a first run, issues aren't missed but none count as gone; PRs others have are looked up once", () => {
-    const now = data({ mine: [openPr("P1", "carol")], assigned: [issue("I1")] });
-    expect(changeCandidates(EMPTY_LEDGER, now, "me")).toEqual(["P1"]);
-    const ledger = nextLedger(EMPTY_LEDGER, now, "me", lookups(["P1", { ...subject("PullRequest", ["carol"], [assigned("carol", "dave", 2)]), id: "P1" }]), NOW, 30, 35);
+    const now = { mine: [openPr("P1", "carol")], assigned: [issue("I1")] };
+    expect(changeCandidates(EMPTY_LEDGER, data(now), "me")).toEqual(["P1"]);
+    const ledger = refresh(EMPTY_LEDGER, now, { lookups: lookups(["P1", { ...subject("PullRequest", ["carol"], [assigned("carol", "dave", 2)]), id: "P1" }]) });
     expect(ledger.assigned).toEqual({ I1: "acme/shop#5" });
     expect(ledger.handed).toEqual({ P1: "carol" });
     expect(ledger.events.map((event) => event.kind)).toEqual(["handed"]);
     // Asked once: the same hands aren't looked up again.
-    expect(changeCandidates(ledger, now, "me")).toEqual([]);
+    expect(changeCandidates(ledger, data(now), "me")).toEqual([]);
   });
 
   it("HIS-07: an issue that leaves my assigned search is checked, and kept to check again when the lookup fails", () => {
     const before: ChangeLedger = { ...EMPTY_LEDGER, assigned: { I1: "acme/shop#5" } };
-    const after = data({});
-    expect(changeCandidates(before, after, "me")).toEqual(["I1"]);
-    const failed = nextLedger(before, after, "me", lookups(), NOW, 30, 35);
+    const after = {};
+    expect(changeCandidates(before, data(after), "me")).toEqual(["I1"]);
+    const failed = refresh(before, after);
     expect(failed.assigned).toEqual({ I1: "acme/shop#5" });
-    const still = nextLedger(before, after, "me", lookups(["I1", { ...subject("Issue", ["me"], []), id: "I1" }]), NOW, 30, 35);
+    const still = refresh(before, after, { lookups: lookups(["I1", { ...subject("Issue", ["me"], []), id: "I1" }]) });
     expect(still).toMatchObject({ assigned: {}, events: [] });
   });
 
   it("HIS-06, HIS-07: catches up only within the window, keeps each event once, and drops an uncleared handover once the work is mine again", () => {
     const old = endedPr("P9", { mergedAt: hoursAgo(24 * 40), closedAt: hoursAgo(24 * 40) });
-    const once = nextLedger(EMPTY_LEDGER, data({ ended: [endedPr("P1", {}), old] }), "me", lookups(), NOW, 30, 35);
+    const once = refresh(EMPTY_LEDGER, { ended: [endedPr("P1", {}), old] });
     expect(once.events.map((event) => event.subjectId)).toEqual(["P1"]);
-    expect(nextLedger(once, data({ ended: [endedPr("P1", {})] }), "me", lookups(), NOW, 30, 35).events).toHaveLength(1);
+    expect(refresh(once, { ended: [endedPr("P1", {})] }).events).toHaveLength(1);
 
     const handed: ChangeLedger = { ...EMPTY_LEDGER, events: [{ ...once.events[0], id: "h", kind: "handed", subjectId: "P3", to: "carol" }] };
-    const back = nextLedger(handed, data({ mine: [openPr("P3", "me")] }), "me", lookups(), NOW, 30, 35);
+    const back = refresh(handed, { mine: [openPr("P3", "me")] });
     expect(back).toMatchObject({ events: [], gotIt: [] });
     // Cleared into a week, it stays even when the work is mine again [HIS-06].
-    const cleared = nextLedger({ ...handed, gotIt: ["h"] }, data({ mine: [openPr("P3", "me")] }), "me", lookups(), NOW, 30, 35);
+    const cleared = refresh({ ...handed, gotIt: ["h"] }, { mine: [openPr("P3", "me")] });
     expect(cleared.events.map((event) => [event.id, event.returned])).toEqual([["h", true]]);
     expect(cleared.gotIt).toEqual(["h"]);
     // Mine again, then merged by dave: that's a merge note, not hidden behind the old handover [HIS-06, HIS-07].
-    const merged = nextLedger(cleared, data({ ended: [endedPr("P3", { mergedAt: hoursAgo(1), closedAt: hoursAgo(1) })] }), "me", lookups(), NOW, 30, 35);
+    const merged = refresh(cleared, { ended: [endedPr("P3", { mergedAt: hoursAgo(1), closedAt: hoursAgo(1) })] });
     expect(merged.events.map((event) => [event.kind, event.subjectId])).toContainEqual(["merged", "P3"]);
   });
 });
 
 describe("notes and History", () => {
-  const config = AttentionConfig.parse({});
-  const feed = { fetchedAt: NOW.toISOString(), refreshing: false, error: null };
-  const meta = { feeds: { live: feed, history: feed }, scopes: [], sources: [], projectFilter: [], historyFilter: [], config, pending: 0 };
-  const event = (kind: OthersChange["kind"], key: string, hours: number): OthersChange => ({
-    id: `${kind}:${key}`,
-    kind,
-    subjectId: key,
-    subject: "pr",
-    key,
-    repo: "acme/shop",
-    number: 9,
-    title: key,
-    url: "u",
-    actor: "dave",
-    to: "carol",
-    at: hoursAgo(hours),
-  });
-  const done = (key: string): Item => ({
-    key,
-    section: "done",
-    kind: "pr",
-    draft: false,
-    repo: "acme/shop",
-    number: 9,
-    title: key,
-    url: "u",
-    chips: [],
-    actions: [],
-    children: [],
-    target: { kind: "pr", repo: "acme/shop", number: 9, title: key, url: "u" },
-    othersActivityAt: hoursAgo(1),
-    closedAt: hoursAgo(1),
-  });
+  const meta = viewMeta({ feed: feed({ fetchedAt: NOW.toISOString() }) });
+  const event = (kind: OthersChange["kind"], key: string, hours: number) => change(kind, key, { at: hoursAgo(hours) });
+  const done = (key: string) => item(key, "done", { othersActivityAt: hoursAgo(1), closedAt: hoursAgo(1) });
   const ledger: ChangeLedger = { ...EMPTY_LEDGER, events: [event("merged", "acme/shop#1", 2), event("handed", "acme/shop#2", 5), event("closed", "acme/shop#3", 30)] };
   const attention: Attention = { login: "me", items: [], assigned: [], unclaimed: [] };
 
@@ -299,50 +279,49 @@ describe("notes and History", () => {
 
 describe("issues closed and PRs reopened by others", () => {
   it("HIS-07: someone else closing an issue assigned to me is a note, completed or not planned; my own close isn't", () => {
-    expect(changeText(closedByOther(closedIssue(), "me")!, NOW)).toBe("closed by alice 6h ago as completed");
-    expect(changeText(closedByOther(closedIssue({ stateReason: "NOT_PLANNED" }), "me")!, NOW)).toBe("closed by alice 6h ago as not planned");
-    expect(closedByOther(closedIssue({ timelineItems: { nodes: [{ actor: { login: "me" } }] } }), "me")).toBeNull();
-    const ledger = nextLedger(EMPTY_LEDGER, data({ closedIssues: [closedIssue()] }), "me", new Map(), NOW, 30, 35);
+    expect(changeText(closedNote(closedIssue())!, NOW)).toBe("closed by alice 6h ago as completed");
+    expect(changeText(closedNote(closedIssue({ stateReason: "NOT_PLANNED" }))!, NOW)).toBe("closed by alice 6h ago as not planned");
+    expect(closedNote(closedIssue({ timelineItems: { nodes: [{ actor: { login: "me" } }] } }))).toBeNull();
+    const ledger = refresh(EMPTY_LEDGER, { closedIssues: [closedIssue()] });
     expect(ledger.events.map((event) => [event.kind, event.reason, event.actor])).toEqual([["issue_closed", "completed", "alice"]]);
   });
 
   it("HIS-07: a PR Attention Span saw closed is tracked, and reopening by someone else replaces its close with a note", () => {
     const closed = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "alice" } }] } });
-    const before = nextLedger(EMPTY_LEDGER, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35);
+    const before = refresh(EMPTY_LEDGER, { ended: [closed] });
     expect(before.tracked.P1).toMatchObject({ key: "acme/shop#9" });
     // Still in the closed search: still closed, so not asked about [GH-01].
     expect(reopenCandidates(before, data({ ended: [closed] }))).toEqual([]);
     expect(reopenCandidates(before, data({}))).toEqual(["P1"]);
-    const after = nextLedger(before, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject()]]));
+    const after = refresh(before, { ended: [closed] }, { reopens: new Map([["P1", reopenSubject()]]) });
     expect(after.tracked).toEqual({});
     expect(after.events.map((event) => [event.kind, event.actor])).toEqual([["reopened", "bob"]]);
     expect(changeText(after.events[0], NOW)).toBe("reopened by bob 1h ago");
     // The closed PR leaves its week with its close.
-    expect(nextLedger(after, data({}), "me", new Map(), NOW, 30, 35).events.map((event) => event.kind)).toEqual(["reopened"]);
+    expect(refresh(after).events.map((event) => event.kind)).toEqual(["reopened"]);
   });
 
   it("HIS-07: my own reopen is silent, a failed lookup waits, and old events don't replay as a reopen", () => {
     const closed = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null });
-    const before = nextLedger(EMPTY_LEDGER, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35);
-    const mine = nextLedger(before, data({}), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject({ timelineItems: { nodes: [{ createdAt: hoursAgo(1), actor: { login: "me" } }] } })]]));
+    const before = refresh(EMPTY_LEDGER, { ended: [closed] });
+    const mine = refresh(before, {}, { reopens: new Map([["P1", reopenSubject({ timelineItems: { nodes: [{ createdAt: hoursAgo(1), actor: { login: "me" } }] } })]]) });
     // My own reopen is no note, but the close it undid leaves its week all the same.
     expect(mine.events).toEqual([]);
     expect(mine.tracked).toEqual({});
     // Nothing looked up (the batch failed): still tracked for next time.
-    expect(nextLedger(before, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35).tracked.P1).toBeDefined();
+    expect(refresh(before, { ended: [closed] }).tracked.P1).toBeDefined();
     // Still closed when looked up: keep watching it.
-    expect(nextLedger(before, data({}), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject({ state: "CLOSED" })]])).tracked.P1).toBeDefined();
+    expect(refresh(before, {}, { reopens: new Map([["P1", reopenSubject({ state: "CLOSED" })]]) }).tracked.P1).toBeDefined();
     // A ledger with an old close but nothing tracked has no reopen to announce.
     expect(reopenCandidates({ ...before, tracked: {} })).toEqual([]);
-    expect(reopened({ key: "acme/shop#9", number: 9, title: "Retry", url: "u", repo: "acme/shop", closedAt: hoursAgo(60) }, reopenSubject({ state: "MERGED" }), "me")).toBeNull();
   });
 
   it("HIS-07, GH-01: a merged PR stops being tracked, and nothing past the window is tracked, looked up or not", () => {
     const closed = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null });
-    const before = nextLedger(EMPTY_LEDGER, data({ ended: [closed] }), "me", new Map(), NOW, 30, 35);
-    expect(nextLedger(before, data({}), "me", new Map(), NOW, 30, 35, new Map([["P1", reopenSubject({ state: "MERGED" })]])).tracked).toEqual({});
+    const before = refresh(EMPTY_LEDGER, { ended: [closed] });
+    expect(refresh(before, {}, { reopens: new Map([["P1", reopenSubject({ state: "MERGED" })]]) }).tracked).toEqual({});
     const later = new Date(NOW.getTime() + 40 * 86_400_000);
-    expect(nextLedger(before, data({}), "me", new Map(), later, 30, 35, new Map([["P1", reopenSubject({ state: "CLOSED" })]])).tracked).toEqual({});
+    expect(refresh(before, {}, { at: later, reopens: new Map([["P1", reopenSubject({ state: "CLOSED" })]]) }).tracked).toEqual({});
   });
 
   it("ATT-22: my own unmerged closes are finished work for Wrap up; others' and merges aren't", () => {
@@ -352,18 +331,16 @@ describe("issues closed and PRs reopened by others", () => {
   });
 
   it("ATT-22: an archive acknowledges exactly the events on its work at that moment", () => {
-    const ledger = nextLedger(EMPTY_LEDGER, data({ ended: [endedPr("P1", {}), endedPr("P2", {})], closedIssues: [closedIssue()] }), "me", new Map(), NOW, 30, 35);
+    const ledger = refresh(EMPTY_LEDGER, { ended: [endedPr("P1", {}), endedPr("P2", {})], closedIssues: [closedIssue()] });
     expect(ledger.events).toHaveLength(3);
     const target = ledger.events[0];
     const after = acknowledge(ledger, [target.key]);
-    const marked = new Set(after.events.filter((event) => after.gotIt.includes(event.id)).map((event) => event.id));
-    expect([...marked]).toEqual(ledger.events.filter((event) => event.key === target.key).map((event) => event.id));
-    expect(after.gotIt).toHaveLength(ledger.events.filter((event) => event.key === target.key).length);
+    expect(after.gotIt.toSorted()).toEqual(ledger.events.filter((event) => event.key === target.key).map((event) => event.id).toSorted());
     expect(acknowledge(after, ["acme/shop#999"]).gotIt).toEqual(after.gotIt);
   });
 
   it("HIS-07, ATT-22: an archive in Paseo leaves what others did after it unread", () => {
-    const ledger = nextLedger(EMPTY_LEDGER, data({ ended: [endedPr("P1", {})] }), "me", new Map(), NOW, 30, 35);
+    const ledger = refresh(EMPTY_LEDGER, { ended: [endedPr("P1", {})] });
     const [event] = ledger.events;
     expect(acknowledge(ledger, [event.key], new Date(Date.parse(event.at) - 1000).toISOString()).gotIt).toEqual([]);
     expect(acknowledge(ledger, [event.key], event.at).gotIt).toEqual([event.id]);

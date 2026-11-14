@@ -88,7 +88,7 @@ const isAssignment = (node: AssignmentEvent | Record<string, never>): node is As
 // The new owner is the latest of the current assignees to be assigned. It left my hands with whichever came last of my
 // removal and the new owner's assignment, and whoever did that is named: "phil took over" when that's the new owner, else
 // "dave handed it to carol". So a PR I unassigned myself from is still mine until someone else takes it.
-export function handover(subject: AssignmentSubject, me: string): OthersChange | null {
+function handover(subject: AssignmentSubject, me: string): OthersChange | null {
   const assignees = logins(subject);
   if (assignees.some((login) => same(login, me))) return null;
   if (subject.__typename === "Issue" && subject.state !== "OPEN") return null;
@@ -109,7 +109,7 @@ export function handover(subject: AssignmentSubject, me: string): OthersChange |
 
 // A PR of mine someone else merged or closed unmerged [HIS-07]. Whether it left my hands before it ended is up to nextLedger,
 // which knows when that happened.
-export function ended(pr: EndedPullRequest, me: string): OthersChange | null {
+function ended(pr: EndedPullRequest, me: string): OthersChange | null {
   if (pr.merged) return same(pr.mergedBy?.login, me) || !pr.mergedAt ? null : change(pr, "pr", "merged", pr.mergedAt, pr.mergedBy?.login);
   const closer = pr.timelineItems.nodes.at(-1)?.actor?.login;
   return same(closer, me) ? null : change(pr, "pr", "closed", pr.closedAt, closer);
@@ -140,7 +140,7 @@ export function ownClosed(data: Pick<LiveResult, "ended">, me: string): Item[] {
 }
 
 // An issue assigned to me someone else closed, as completed or not planned [HIS-07]. My own closes are mine.
-export function closedByOther(issue: ClosedIssue, me: string): OthersChange | null {
+function closedByOther(issue: ClosedIssue, me: string): OthersChange | null {
   const closer = issue.timelineItems.nodes.at(-1)?.actor?.login;
   if (same(closer, me)) return null;
   const reason = issue.stateReason === "NOT_PLANNED" ? "not_planned" : issue.stateReason === "COMPLETED" ? "completed" : undefined;
@@ -149,7 +149,7 @@ export function closedByOther(issue: ClosedIssue, me: string): OthersChange | nu
 
 // A PR Attention Span saw closed, now open again by someone else [HIS-07]. Only PRs already tracked count, so a first run
 // doesn't announce every old reopen, and issues don't come here: they surface in Next up.
-export function reopened(tracked: TrackedPr, subject: ReopenSubject, me: string): OthersChange | null {
+function reopened(tracked: TrackedPr, subject: ReopenSubject, me: string): OthersChange | null {
   if (subject.state !== "OPEN") return null;
   const event = subject.timelineItems.nodes.at(-1);
   const actor = event?.actor?.login;

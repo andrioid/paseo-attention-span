@@ -1,17 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { type AgentSummary, itemSessions, looseSessions } from "./attention";
+import { agent as summary } from "./test-builders";
 import { linkedSessions, type PaseoAgentEntry, type PaseoWorkspaceEntry, pullRequestKey } from "./linked-sessions";
 
-const labelled = (id: string, itemKey: string, workspaceId: string): AgentSummary => ({
-  id,
-  itemKey,
-  kind: "start",
-  status: "idle",
-  requiresAttention: false,
-  title: null,
-  workspaceId,
-  lastActivityAt: "2026-11-01",
-});
+const labelled = (id: string, itemKey: string, workspaceId: string) => summary(id, itemKey, { kind: "start", workspaceId, lastActivityAt: "2026-11-01" });
 const agent = (id: string, workspaceId: string, extra: Partial<PaseoAgentEntry> = {}): PaseoAgentEntry => ({
   id,
   workspaceId,
