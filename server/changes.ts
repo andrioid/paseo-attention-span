@@ -1,5 +1,5 @@
 import { isFinishedChange, isHandover, type OthersChange } from "../shared/changes";
-import type { Item } from "../shared/attention";
+import { baseItem, type Item, type SectionId } from "../shared/attention";
 import type { AssignmentEvent, AssignmentSubject, ClosedIssue, EndedPullRequest, LiveResult, ReopenSubject } from "./github-types";
 import { prKey } from "./queries";
 import { keySet, sameName } from "../shared/names";
@@ -121,19 +121,7 @@ export function ownClosed(data: Pick<LiveResult, "ended">, me: string): Item[] {
   return present(data.ended.nodes)
     .filter((pr) => !pr.merged && sameName(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
     .map((pr) => ({
-      key: prKey(pr),
-      kind: "pr" as const,
-      section: "done" as const,
-      draft: false,
-      repo: pr.repository.nameWithOwner,
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      chips: [],
-      actions: [],
-      children: [],
-      target: { kind: "pr" as const, repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url },
-      othersActivityAt: pr.closedAt,
+      ...baseItem({ key: prKey(pr), section: "done", kind: "pr", repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url }, pr.closedAt),
       closedAt: pr.closedAt,
       closedUnmerged: true as const,
     }));
@@ -308,36 +296,24 @@ export function withGotIt(next: ChangeLedger, gotIt: string[]): ChangeLedger {
 export function changeItems(ledger: ChangeLedger, now: Date, windowDays: number, historySince: string): { notes: Item[]; history: Item[]; finished: Item[] } {
   const since = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
   const gotIt = new Set(ledger.gotIt);
-  const base = (change: OthersChange): Omit<Item, "key" | "section"> => ({
-    kind: change.subject,
-    draft: false,
-    repo: change.repo,
-    number: change.number,
-    title: change.title,
-    url: change.url,
-    chips: [],
-    actions: [],
-    children: [],
-    target: { kind: change.subject, repo: change.repo, number: change.number, title: change.title, url: change.url },
-    othersActivityAt: change.at,
+  const base = (change: OthersChange, key: string, section: SectionId): Item => ({
+    ...baseItem({ key, section, kind: change.subject, repo: change.repo, number: change.number, title: change.title, url: change.url }, change.at),
     closedAt: change.at,
     change,
   });
   const notes = ledger.events
     .filter((change) => !gotIt.has(change.id) && change.at >= since)
-    .map((change): Item => ({ ...base(change), key: `change:${change.id}`, section: "changed", actions: ["got_it"] }));
+    .map((change): Item => ({ ...base(change, `change:${change.id}`, "changed"), actions: ["got_it"] }));
   const history = ledger.events
     // A merge or an issue close is the week's Finished, not a change repeated under it [HIS-07].
     .filter((change) => gotIt.has(change.id) && !isFinishedChange(change) && change.at >= historySince)
-    .map((change): Item => ({ ...base(change), key: `handed:${change.id}`, section: "handed_off", actions: [] }));
+    .map((change) => base(change, `handed:${change.id}`, "handed_off"));
   // A merge or close someone else did is finished work at once, not only when History's daily fetch catches up [HIS-07].
   const finished = ledger.events
     .filter((change) => isFinishedChange(change) && change.at >= historySince)
     .map(
       (change): Item => ({
-        ...base(change),
-        key: change.key,
-        section: "done",
+        ...base(change, change.key, "done"),
         // The week's cards say it in the finished wording, not the note's: "merged 2h ago by dave" [HIS-05, HIS-07].
         change: undefined,
         ...(change.kind === "merged" && change.actor ? { mergedBy: change.actor } : {}),

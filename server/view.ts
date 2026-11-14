@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import { workChip, workKind } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
@@ -51,22 +51,12 @@ export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanne
   // Labels come with the next History fetch; until then the issue type and title prefix tell what kind of work it was [HIS-04].
   const work = workKind({ type: "type" in source ? source.type : undefined, title });
   return {
-    key,
-    section: "done",
-    kind,
-    draft: false,
-    repo,
-    number,
-    title,
-    url,
+    ...baseItem({ key, section: "done", kind, repo, number, title, url }),
     chips: [...(work ? [workChip(work)] : []), ...(notPlanned ? [{ text: "not planned", tone: "neutral" as const }] : [])],
     ...(work ? { work } : {}),
     ...(notPlanned ? { notPlanned: true as const } : {}),
-    actions: [],
     // Not planned issues list their PRs on their own, as classifyHistory does [HIS-03].
     children: "children" in source && !notPlanned ? source.children.map((child) => ({ ...child, draft: false, chips: [], attention: false })) : [],
-    target: { kind, repo, number, title, url },
-    othersActivityAt: "1970-01-01T00:00:00Z",
     closedAt,
   };
 }

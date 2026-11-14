@@ -245,6 +245,11 @@ export interface Item {
   wrap?: WrapInfo;
 }
 
+// An item with nothing on it yet: no chips, actions or sub-rows, and no one else's activity unless given. Callers add the rest.
+export function baseItem({ key, section, kind, repo, number, title, url }: Pick<Item, "key" | "section" | "kind" | "repo" | "number" | "title" | "url">, othersActivityAt = "1970-01-01T00:00:00Z"): Item {
+  return { key, section, kind, draft: false, repo, number, title, url, chips: [], actions: [], children: [], target: { kind, repo, number, title, url }, othersActivityAt };
+}
+
 // A Wrap up row's sessions: all idle, or it wouldn't be there [ATT-22].
 export interface WrapInfo {
   sessions: AgentSummary[];

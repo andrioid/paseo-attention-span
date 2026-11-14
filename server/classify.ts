@@ -1,5 +1,6 @@
 import {
   type ActionId,
+  baseItem,
   type Attention,
   type Chip,
   type Item,
@@ -397,24 +398,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const waiting = mentions.get(key);
     if (!waiting || listed.has(key)) continue;
     listed.add(key);
-    const kind = node.__typename === "PullRequest" ? "pr" : "issue";
-    const repo = node.repository.nameWithOwner;
-    items.push({
-      key,
-      section: "reply",
-      kind,
-      draft: false,
-      repo,
-      number: node.number,
-      title: node.title,
-      url: node.url,
-      chips: [],
-      person: waiting,
-      actions: replyActions(waiting),
-      children: [],
-      target: { kind, repo, number: node.number, title: node.title, url: node.url },
-      othersActivityAt: waiting.since,
-    });
+    items.push({ ...plain(node, node.__typename === "PullRequest" ? "pr" : "issue", "reply"), person: waiting, actions: replyActions(waiting), othersActivityAt: waiting.since });
   }
 
   // Issues and others' PRs I'm in: answered, or waiting on others, too long after waitingTooLongDays [WAI-01, ATT-11, ATT-16].
@@ -593,22 +577,7 @@ function recentReviewers(mine: PullRequestNode[], isOther: (actor: Actor | null 
 
 // An item with nothing to act on: waiting, history.
 function plain(node: { repository: { nameWithOwner: string }; number: number; title: string; url: string }, kind: "pr" | "issue", section: SectionId): Item {
-  const repo = node.repository.nameWithOwner;
-  return {
-    key: prKey(node),
-    section,
-    kind,
-    draft: false,
-    repo,
-    number: node.number,
-    title: node.title,
-    url: node.url,
-    chips: [],
-    actions: [],
-    children: [],
-    target: { kind, repo, number: node.number, title: node.title, url: node.url },
-    othersActivityAt: EPOCH,
-  };
+  return baseItem({ key: prKey(node), section, kind, repo: node.repository.nameWithOwner, number: node.number, title: node.title, url: node.url });
 }
 
 export function mergeMethodFor(pr: PullRequestNode, config: AttentionConfig): MergeMethod {
