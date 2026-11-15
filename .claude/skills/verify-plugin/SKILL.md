@@ -84,7 +84,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    - wrong sections or counts
    - anything that differs from what the change intended
 
-4. **Refresh the docs screenshots** after visible UI changes: `npm run screenshots` copies a curated set into `docs/screenshots/`. Commit them with the change.
+4. **Refresh the docs screenshots** after visible UI changes: `npm run screenshots` copies a curated set from `preview/out/` into `docs/screenshots/`, without running the preview again. It copies only a finished full run of the current source: a full run writes `preview/out/manifest.json` with a hash of what it was shot from (`preview/fingerprint.mjs`), and any change since, or a run with a selection, makes it refuse. Commit the copies with the change.
 5. **Report** what you looked at and what you saw. Say plainly that native iOS/Android wasn't covered.
 
 ## How it works
