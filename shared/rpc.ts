@@ -30,12 +30,14 @@ export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.o
 export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ ids: z.array(z.string()), on: z.boolean() }), output: view });
 // Reviewed and Changed by others in History's weeks; remembered in state.json [HIS-07].
 export const setHistoryFilter = defineRpc({ name: "history.filter", input: z.object({ filter: z.array(HistoryFilter) }), output: view });
-// Archives a Wrap up row's sessions, acknowledging what others did to the work [ATT-22]. `confirm` is the unsaved-work sheet.
+// Archives a Wrap up row's sessions, acknowledging what others did to the work [ATT-22]. `confirm` is the sheet that named
+// unsaved work, and `terminals` the open terminals it named.
 export const archiveSessions = defineRpc({
   name: "attention.archive",
   input: z.object({
     targets: z.array(ArchiveTarget),
     confirm: z.boolean(),
+    terminals: z.array(z.string()).default([]),
   }),
   output: z.custom<ArchiveOutcome>(),
 });

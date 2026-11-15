@@ -14,6 +14,8 @@ export interface UnsavedSession {
   uncommitted?: true;
   commits?: number;
   unknown?: true;
+  // The terminals of a worktree archiving removes, by name: Paseo closes them with it.
+  terminals?: string[];
 }
 
 // Paseo's own reading of a session's worktree, for when git can't be asked: null or missing where it couldn't tell.
@@ -51,6 +53,18 @@ export function unsavedWords(unsaved: UnsavedSession): string {
   return unsaved.branch ? `${what} on ${unsaved.branch}` : what;
 }
 
+// A session's lines on the confirm sheet: what its worktree could lose, then the terminals archiving closes [ATT-22].
+export function sheetWords(unsaved: UnsavedSession): string {
+  const { terminals = [] } = unsaved;
+  const lost = unsaved.unknown
+    ? "Couldn't check for unsaved changes. Archiving may remove the worktree."
+    : unsaved.files || unsaved.uncommitted || unsaved.commits
+      ? `Its worktree has ${unsavedWords(unsaved)}. Archiving may remove them.`
+      : "";
+  const closed = terminals.length ? `Archiving closes its ${terminals.length === 1 ? "terminal" : "terminals"}: ${terminals.join(", ")}.` : "";
+  return [lost, closed].filter(Boolean).join(" ") || `Its worktree has ${unsavedWords(unsaved)}. Archiving may remove them.`;
+}
+
 // What an archive request names: the row's item, its sessions, and the keys whose changes success acknowledges.
 export const ArchiveTarget = z.object({ itemKey: z.string(), agentIds: z.array(z.string()), keys: z.array(z.string()) });
 export type ArchiveTarget = z.infer<typeof ArchiveTarget>;
@@ -61,12 +75,13 @@ export const archiveTarget = (item: WrapItem): ArchiveTarget => ({
   keys: item.wrap.keys,
 });
 
-// What archiving answers. A refusal keeps the row and says why, or names the unsaved work to confirm. `warning`: the
-// sessions were archived, but a worktree that should have gone stayed, and why.
+// What archiving answers. A refusal keeps the row and says why, or names the unsaved work and open terminals to confirm,
+// with the terminals' ids for the confirm to send back. `warning`: the sessions were archived, but a worktree that should
+// have gone wouldn't, and why. `note`: a worktree stayed on purpose, as another session still lives in it.
 export type ArchiveResult =
-  | { ok: true; warning?: string }
+  | { ok: true; warning?: string; note?: string }
   | { ok: false; reason: "working"; message: string }
-  | { ok: false; reason: "unsaved"; sessions: UnsavedSession[] };
+  | { ok: false; reason: "unsaved"; sessions: UnsavedSession[]; terminals: string[] };
 
 // The answer the screen gets: the result, with the list after it.
 export type ArchiveOutcome = ArchiveResult & { view: AttentionView };

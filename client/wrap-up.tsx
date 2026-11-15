@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
 import type { AgentSummary, WrapItem } from "../shared/attention";
-import { type ArchiveOutcome, type UnsavedSession, unsavedWords } from "../shared/archive";
+import { type ArchiveOutcome, sheetWords, type UnsavedSession, unsavedWords } from "../shared/archive";
 import { allWrapBusy, wrapBusy } from "../shared/got-it";
 import { cleanSingle, sessionCleanliness, sessionUnsaved } from "../shared/wrap-up";
 import { CardList, CardRow } from "./card";
@@ -10,7 +10,7 @@ import { Dialog } from "./sheet";
 import { Button, SectionHeader, TablerIcon, useStyles } from "./ui";
 
 // Doing's Wrap up: finished or out-of-my-hands work whose sessions are still open, and archiving them [ATT-22]. The screen
-// assembles the rows and runs the archive; these draw them and ask before archiving anything unsaved.
+// assembles the rows and runs the archive; these draw them and ask before archiving anything unsaved or closing a terminal.
 
 interface RowProps {
   busy: ReadonlySet<string>;
@@ -18,7 +18,7 @@ interface RowProps {
   // Previews have made-up sessions: their snapshot is the answer, as there's no daemon to ask.
   fixture: boolean;
   openAgent: (agentId: string) => void;
-  onArchive: (item: WrapItem, confirm: boolean) => Promise<ArchiveOutcome | null>;
+  onArchive: (item: WrapItem, confirm: boolean, terminals?: string[]) => Promise<ArchiveOutcome | null>;
 }
 
 // Finished or out-of-my-hands work whose Paseo sessions are all idle: the cleanup Doing owns [ATT-22].
@@ -65,6 +65,8 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
   const { sessions } = item.wrap;
   const [sheet, setSheet] = useState<"multi" | "dirty" | null>(null);
   const [unsaved, setUnsaved] = useState<UnsavedSession[]>([]);
+  // The terminals the confirm sheet names, sent back with it: a terminal opened since brings the sheet back [ATT-22].
+  const [terminals, setTerminals] = useState<string[]>([]);
   const dirty = sessions.some((session) => sessionCleanliness(session) === "dirty");
   const press = async () => {
     if (sessions.length > 1) return setSheet("multi");
@@ -77,15 +79,18 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
     const outcome = await onArchive(item, false);
     if (outcome && !outcome.ok && outcome.reason === "unsaved") {
       setUnsaved(outcome.sessions);
+      setTerminals(outcome.terminals);
       setSheet("dirty");
     }
   };
-  // The multi sheet asks the server first, like a single row; unsaved work it finds gets the confirm that names it [ATT-22].
+  // The multi sheet asks the server first, like a single row; unsaved work or open terminals it finds get the confirm that
+  // names them [ATT-22].
   const confirm = async (confirm: boolean) => {
-    const outcome = await onArchive(item, confirm);
+    const outcome = await onArchive(item, confirm, confirm ? terminals : []);
     if (outcome?.ok) return setSheet(null);
     if (outcome && outcome.reason === "unsaved") {
       setUnsaved(outcome.sessions);
+      setTerminals(outcome.terminals);
       setSheet("dirty");
     }
   };
@@ -127,7 +132,7 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
               ))}
             </View>
             <Text style={styles.muted}>
-              Archives {sessions.length} sessions. Their worktrees go too when nothing else lives in them
+              Archives {sessions.length} sessions. Their worktrees go too when no other session lives in them, closing their terminals
               {sessions.some((session) => sessionCleanliness(session) === "unknown") ? "; the one that couldn't be checked may hold unsaved work" : ""}.
             </Text>
             <View style={[styles.row, { justifyContent: "flex-end" }]}>
@@ -141,7 +146,7 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
               <View key={info.agentId} style={{ gap: 2 }}>
                 <Text style={styles.text}>{info.title ?? "Session"}</Text>
                 <Text style={{ color: styles.c.statusWarning, fontSize: 13 }}>
-                  {info.unknown ? "Couldn't check for unsaved changes. Archiving may remove the worktree." : `Its worktree has ${unsavedWords(info)}. Archiving may remove them.`}
+                  {sheetWords(info)}
                 </Text>
               </View>
             ))}

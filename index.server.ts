@@ -67,7 +67,7 @@ export default function contribute(server: PluginServerContext) {
   server.on("agent.turn_ended", (_event, { paseo }) => {
     if (archived.waiting) void ready(() => archived.notice(paseo));
   });
-  server.handle(rpc.archiveSessions, ({ targets, confirm }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })));
+  server.handle(rpc.archiveSessions, ({ targets, confirm, terminals }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm, terminals)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()).then(shown));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)).then(shown));
   server.handle(rpc.setupStatus, () => setupStatus(store, answers.ghStatus));
