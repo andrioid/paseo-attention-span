@@ -65,6 +65,8 @@ describe("prompts", () => {
     it("REV-02, ATT-04: a stack's again names the PRs asked again, and the follow-up updates the checkout of its top first", () => {
       const stack = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature", review: true as const, reviewed }] };
       expect(renderPrompt("review", stack, "", config)).toContain("You reviewed some of them before");
+      const mixed = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature" }] };
+      expect(renderPrompt("review", mixed, "", config)).toContain("Review only #7; the rest of the stack is context.");
       const followUp = renderFollowUp(stack, "Your last review of #7: …");
       expect(followUp).toContain("Review was asked for again on #7, #8 in o/r");
       expect(followUp).toContain("if there are local changes, stop and ask me");

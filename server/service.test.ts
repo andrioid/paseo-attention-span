@@ -448,6 +448,15 @@ describe("review asked for again", () => {
     expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", target, context)).toBe("sent");
   });
 
+  it("REV-02: two presses at once send it once", async () => {
+    const { service, paseo, start } = harness();
+    await start();
+    const target = targetOf(await service.get("live"), AGAIN);
+    const outcomes = await Promise.all([service.reviewAgain(paseoApi, AGAIN, "agent-198", target, context), service.reviewAgain(paseoApi, AGAIN, "agent-198", target, context)]);
+    expect(outcomes).toEqual(["sent", "already"]);
+    expect(paseo.followUp).toHaveBeenCalledTimes(1);
+  });
+
   it("REV-02: a review nobody asked for again sends nothing", async () => {
     const { service, paseo, start } = harness();
     await start();

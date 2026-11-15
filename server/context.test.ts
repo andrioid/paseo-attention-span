@@ -145,7 +145,7 @@ describe("sessionContext: review asked for again", () => {
     expect(context).toContain("Your last review: commented on 2026-11-10T00:00:00Z.");
     expect(context).toContain("You reviewed commit old; the head is now new.");
     expect(context).toContain("`git diff old..new`");
-    expect(context).toContain("`git range-diff origin/main..old origin/main..new`");
+    expect(context).toContain("`git range-diff old...new`");
     expect(context).toContain("What you wrote in your reviews:\n- changes_requested, 2026-11-10T00:00:00Z: Rounding is off");
     expect(context).toContain("- src/cart.ts:12 (unresolved)\n  you: Round per line\n  @alice: Done in abc");
     expect(context).not.toContain("LGTM");

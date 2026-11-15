@@ -91,7 +91,7 @@ async function lastReview(repo: string, number: number, named: boolean): Promise
       repository(owner: $owner, name: $name) {
         pullRequest(number: $number) {
           url baseRefName headRefOid
-          reviews(last: 50) { nodes { author { login } state body submittedAt commit { oid } } }
+          reviews(last: 50, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) { nodes { author { login } state body submittedAt commit { oid } } }
           reviewThreads(first: ${MY_THREADS}) { totalCount nodes { isResolved path line comments(first: ${THREAD_COMMENTS}) { totalCount nodes { author { login } body } } } }
         }
       }
@@ -101,6 +101,7 @@ async function lastReview(repo: string, number: number, named: boolean): Promise
   const me = data.viewer.login.toLowerCase();
   const mine = (author: Author) => author?.login.toLowerCase() === me;
   const pr = data.repository.pullRequest;
+  // Submitted ones only: a review I've started and not sent isn't where I left off.
   const reviews = pr.reviews.nodes.filter((r) => mine(r.author));
   const latest = reviews.at(-1);
   const title = `Your last review${named ? ` of #${number}` : ""}`;
@@ -128,7 +129,8 @@ async function lastReview(repo: string, number: number, named: boolean): Promise
   );
 }
 
-// How to find the commits since the one I reviewed: they follow it, or the branch was rebased or force-pushed past it.
+// How to find the commits since the one I reviewed: they follow it, or the branch was rebased or force-pushed past it. The
+// rebase case compares the two versions from where they meet, as the base may have moved too, a stack's parent with it.
 function sinceSteps(reviewed: string | undefined, head: string, base: string): string {
   if (!reviewed) return `GitHub no longer has the commit you reviewed, so review the whole diff against ${base} and say you couldn't narrow it down.`;
   if (reviewed === head) return `No commits since: the head is still ${head}. What's new is in the replies below.`;
@@ -136,7 +138,7 @@ function sinceSteps(reviewed: string | undefined, head: string, base: string): s
     `You reviewed commit ${reviewed}; the head is now ${head}.`,
     `- \`git fetch origin ${reviewed} ${head}\``,
     `- If \`git merge-base --is-ancestor ${reviewed} ${head}\`: the new commits are \`git log ${reviewed}..${head}\`, their changes \`git diff ${reviewed}..${head}\`.`,
-    `- Otherwise the branch was rebased or force-pushed: compare the two versions with \`git range-diff origin/${base}..${reviewed} origin/${base}..${head}\`.`,
+    `- Otherwise the branch was rebased or force-pushed: compare the two versions with \`git range-diff ${reviewed}...${head}\`. Commits that came with ${base} or a rebased parent show up too, as added, dropped or matched; leave those out.`,
     `- If ${reviewed} can't be fetched, review the whole diff against ${base} and say you couldn't narrow it down.`,
   ].join("\n");
 }

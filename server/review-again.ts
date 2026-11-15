@@ -15,11 +15,18 @@ export function followUpMark(target: Pick<Target, "stack">): string | null {
 }
 
 // A session mid-turn, starting up, or waiting on a permission isn't sent anything; its own snapshot says, fresh from Paseo.
+// Asked before the prompt's context is fetched, so a busy one costs no GitHub request, and again right before sending, as
+// it may have started meanwhile.
 export async function sendFollowUp(paseo: Paseo, agentId: string, prompt: () => Promise<string>): Promise<"sent" | "busy"> {
   const agent = paseo.agents.ref(agentId);
-  const snapshot = (await agent.refresh())?.agent;
-  if (!snapshot) throw new Error("The review session wasn't found");
-  if (snapshot.status === "running" || snapshot.status === "initializing" || (snapshot.pendingPermissions?.length ?? 0) > 0) return "busy";
-  await agent.send(await prompt());
+  const busy = async () => {
+    const snapshot = (await agent.refresh())?.agent;
+    if (!snapshot) throw new Error("The review session wasn't found");
+    return snapshot.status === "running" || snapshot.status === "initializing" || (snapshot.pendingPermissions?.length ?? 0) > 0;
+  };
+  if (await busy()) return "busy";
+  const text = await prompt();
+  if (await busy()) return "busy";
+  await agent.send(text);
   return "sent";
 }

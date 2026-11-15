@@ -28,6 +28,13 @@ describe("sending a Review session the follow-up", () => {
     }
   });
 
+  it("REV-02: a session that starts working while the prompt is fetched is sent nothing", async () => {
+    const agent = { status: "idle" };
+    const { paseo, sent } = paseoWith(agent);
+    expect(await sendFollowUp(paseo, "a1", async () => ((agent.status = "running"), "what changed"))).toBe("busy");
+    expect(sent).toEqual([]);
+  });
+
   it("REV-02: a session Paseo no longer has fails, so the screen says so", async () => {
     await expect(sendFollowUp(paseoWith(null).paseo, "a1", async () => "")).rejects.toThrow("The review session wasn't found");
   });

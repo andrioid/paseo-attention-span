@@ -86,7 +86,7 @@ export const REVIEW_AGAIN_TEMPLATE = reviewTemplate(
 );
 export const REVIEW_STACK_AGAIN_TEMPLATE = reviewTemplate(
   `${STACK_INTRO} You reviewed some of them before, and review was asked for again.`,
-  `${AGAIN_STEP} For a PR you haven't reviewed before, ${STACK_DIFF.replace(/^for each of \{\{review\}\}, r/, "r")}`,
+  `${AGAIN_STEP} For a PR asking for your review that you haven't reviewed before, ${STACK_DIFF.replace(/^for each of \{\{review\}\}, r/, "r")} Review only {{review}}; the rest of the stack is context.`,
   "the code the new commits touch",
   ", for each PR",
   AGAIN_REPORT,

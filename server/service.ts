@@ -43,6 +43,8 @@ export class AttentionService {
   private state: State = State.parse({});
   // Workspaces Paseo said were archived; an archive that keeps one of them after the fact adds no row for it [ATT-22].
   private archivedWorkspaces = new Set<string>();
+  // Review again follow-ups under way, by item key [REV-02].
+  private followingUp = new Map<string, Promise<void>>();
   // Merged PRs of mine a History fetch was asked for, once each, so a search slow to show one doesn't fetch on every refresh.
   private historyAskedFor = new Set<string>();
   private config: AttentionConfig = AttentionConfig.parse({});
@@ -180,7 +182,17 @@ export class AttentionService {
 
   // Review again on an open Review session: sends it the follow-up once per re-request, unless it's busy; the next press
   // after a busy one tries again [REV-02]. Marks for items no longer listed go.
+  // One at a time per item, so two presses, or two devices, don't both send it.
   async reviewAgain(paseo: PluginHandlerContext["paseo"], key: string, agentId: string, target: Target, context: (target: Target) => Promise<string>): Promise<FollowUpOutcome> {
+    const before = this.followingUp.get(key) ?? Promise.resolve();
+    const run = before.then(() => this.sendReviewAgain(paseo, key, agentId, target, context));
+    const settled = run.then(() => {}, () => {});
+    this.followingUp.set(key, settled);
+    void settled.then(() => this.followingUp.get(key) === settled && this.followingUp.delete(key));
+    return run;
+  }
+
+  private async sendReviewAgain(paseo: PluginHandlerContext["paseo"], key: string, agentId: string, target: Target, context: (target: Target) => Promise<string>): Promise<FollowUpOutcome> {
     const mark = followUpMark(target);
     if (!mark) return "none";
     if (this.state.followUps[key] === mark) return "already";
