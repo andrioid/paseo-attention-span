@@ -125,8 +125,8 @@ export default function contribute(server: PluginServerContext) {
   // The server's Paseo connection expands the snapshot; the app's may not (getpaseo compact snapshots) [SES-06].
   server.handle(rpc.readyProviders, async (_input, { paseo }) => ({ providers: readyProviders((await paseo.providers.snapshot()).entries) }));
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: await answers.sessionContext(kind, target) }));
-  server.handle(rpc.reviewAgain, ({ key, agentId, target }, { paseo }) =>
-    ready(() => attention.reviewAgain(paseo, key, agentId, target, answers.reviewAgainContext)).then((outcome) => ({ outcome })),
+  server.handle(rpc.reviewAgain, ({ key, agentId }, { paseo }) =>
+    ready(() => attention.reviewAgain(paseo, key, agentId, answers.reviewAgainContext)).then((outcome) => ({ outcome })),
   );
 
   return () => attention.stop();

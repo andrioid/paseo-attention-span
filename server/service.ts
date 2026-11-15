@@ -182,10 +182,14 @@ export class AttentionService {
 
   // Review again on an open Review session: sends it the follow-up once per re-request, unless it's busy; the next press
   // after a busy one tries again [REV-02]. Marks for items no longer listed go.
-  // One at a time per item, so two presses, or two devices, don't both send it.
-  async reviewAgain(paseo: PluginHandlerContext["paseo"], key: string, agentId: string, target: Target, context: (target: Target) => Promise<string>): Promise<FollowUpOutcome> {
+  // One at a time per item, so two presses, or two devices, don't both send it. What's asked again is the server's own
+  // latest view of the item, not the screen's, so a device showing an older head doesn't send it again.
+  async reviewAgain(paseo: PluginHandlerContext["paseo"], key: string, agentId: string, context: (target: Target) => Promise<string>): Promise<FollowUpOutcome> {
     const before = this.followingUp.get(key) ?? Promise.resolve();
-    const run = before.then(() => this.sendReviewAgain(paseo, key, agentId, target, context));
+    const run = before.then(() => {
+      const target = this.items().find((item) => item.key === key)?.target;
+      return target ? this.sendReviewAgain(paseo, key, agentId, target, context) : ("none" as const);
+    });
     const settled = run.then(() => {}, () => {});
     this.followingUp.set(key, settled);
     void settled.then(() => this.followingUp.get(key) === settled && this.followingUp.delete(key));

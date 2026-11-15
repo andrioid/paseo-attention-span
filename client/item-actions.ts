@@ -260,7 +260,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
       openAgent,
       reviewAgain: (item, agentId) =>
         void run(item.key, "Review again", async () => {
-          const { outcome } = await sendReviewAgain({ key: item.key, agentId, target: item.target });
+          const { outcome } = await sendReviewAgain({ key: item.key, agentId });
           openAgent(agentId);
           if (outcome === "sent") toast.show("Sent the review session what changed since your last review", { variant: "success" });
           if (outcome === "busy") toast.show("The review session is busy, so nothing was sent. Press Review again once it's done.");

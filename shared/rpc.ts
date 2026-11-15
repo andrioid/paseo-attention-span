@@ -116,7 +116,7 @@ export const sessionContext = defineRpc({
 // Review again on an open Review session: sends it the follow-up, once per re-request, unless it's busy [REV-02].
 export const reviewAgain = defineRpc({
   name: "session.review-again",
-  input: z.object({ key: z.string(), agentId: z.string(), target }),
+  input: z.object({ key: z.string(), agentId: z.string() }),
   output: z.object({ outcome: z.enum(["sent", "busy", "already", "none"]) }),
 });
 

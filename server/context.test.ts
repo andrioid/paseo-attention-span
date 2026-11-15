@@ -152,6 +152,14 @@ describe("sessionContext: review asked for again", () => {
     expect(context).not.toContain("Nit");
   });
 
+  it("REV-02: says how many long threads weren't read far enough to tell whether I'm in them", async () => {
+    const long = { ...thread(false, ["bob", "Opening"]), comments: { totalCount: 30, nodes: [{ author: { login: "bob" }, body: "Opening" }] } };
+    github([review("me", "COMMENTED", "")], [long, thread(false, ["me", "Mine"])]);
+    const context = await reviewAgainContext(again);
+    expect(context).toContain("1 long review thread was read only to comment 20 and may have yours further down; see https://github.com/acme/app/pull/7");
+    expect(context).toContain("you: Mine");
+  });
+
   it("REV-02: says when there's nothing new to diff, or the commit I reviewed is gone", async () => {
     github([review("me", "COMMENTED", "")], [], "old");
     expect(await reviewAgainContext(again)).toContain("No commits since: the head is still old.");

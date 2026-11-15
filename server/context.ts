@@ -119,12 +119,16 @@ async function lastReview(repo: string, number: number, named: boolean): Promise
       const more = notShown(t.comments.totalCount - t.comments.nodes.length, "more comments", pr.url);
       return [`- ${t.path}${t.line ? `:${t.line}` : ""} (${t.isResolved ? "resolved" : "unresolved"})`, ...comments, more && `  ${more}`].filter(Boolean).join("\n");
     });
+  // A long thread I'm not in among its first comments may still have mine further down; say how many weren't read through.
+  const longThreads = pr.reviewThreads.nodes.filter((t) => t.comments.totalCount > t.comments.nodes.length && !t.comments.nodes.some((c) => mine(c.author))).length;
+  const unread = longThreads ? `${longThreads === 1 ? "1 long review thread was" : `${longThreads} long review threads were`} read only to comment ${THREAD_COMMENTS} and may have yours further down; see ${pr.url}` : "";
   const laterThreads = notShown(pr.reviewThreads.totalCount - pr.reviewThreads.nodes.length, "more review threads, some maybe yours", pr.url);
 
   return join(
     `${title}: ${latest.state.toLowerCase()}${latest.submittedAt ? ` on ${latest.submittedAt}` : ""}.\n${sinceSteps(latest.commit?.oid, pr.headRefOid, pr.baseRefName)}`,
     said.length ? `What you wrote in your reviews:\n${said.join("\n")}` : "",
     threads.length ? `Review threads you're in, with the replies:\n${threads.join("\n")}` : "",
+    unread,
     laterThreads,
   );
 }
