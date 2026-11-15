@@ -106,6 +106,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 
 - **New screen states:** when you add a section, chip, action or row state, add a case to `fixture()` in `server/fixture.ts` so the preview shows it. Session states come from `FIXTURE_AGENTS`. The test "covers every section with the preview fixture" in `server/classify.test.ts` counts the sections; update its number.
 - **New interactions:** to screenshot one (a modal, Options, a confirm bar), add a step to `shoot.mjs` after the tab loop. Find elements by visible text or accessibility label, and only press things that don't call GitHub.
+- **No fixed sleeps.** Wait for what the shot shows (`locator.waitFor`), then `settled()`: it returns once nothing in the page has changed for 150 ms, no CSS transition is running and every image has loaded. For state outside the page, such as config.json, poll with `until()`. A `waitForTimeout` costs its full length in every layout and still guesses.
 - **Tabs on phones are icon-only,** so the shooter finds them by `accessibilityLabel` ("Doing, 11"). Keep that label on the `Tab` component.
 
 ## Troubleshooting

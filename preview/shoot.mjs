@@ -21,6 +21,32 @@ const quietPath = `${process.env.HOME}/.config/paseo-attention-span/fixture-quie
 
 const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", args: ["--no-sandbox"] });
 let failed = false;
+// Instead of fixed sleeps: wait until the page stops changing (no DOM mutations, which JS-driven animations make, for a
+// moment, and no CSS transition running) and every image has loaded. Gives up after a few seconds, so a page that never settles is slow, not stuck.
+const QUIET_MS = 150;
+const SETTLE_LIMIT_MS = 5000;
+const settledIn = (page) =>
+  page.evaluate(
+    ({ quiet, limit }) =>
+      new Promise((resolve) => {
+        const start = performance.now();
+        let last = start;
+        const observer = new MutationObserver(() => (last = performance.now()));
+        observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+        const check = () => {
+          const now = performance.now();
+          const images = [...document.images].every((image) => image.complete);
+          // CSS transitions (a sheet sliding up) move things without touching the DOM. Endless ones (spinners) don't count.
+          const moving = document.getAnimations().some((animation) => animation.playState === "running" && animation.effect?.getTiming().iterations !== Infinity);
+          if ((now - last >= quiet && images && !moving) || now - start >= limit) {
+            observer.disconnect();
+            resolve(now - start >= limit);
+          } else requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      }),
+    { quiet: QUIET_MS, limit: SETTLE_LIMIT_MS },
+  );
 
 for (const layout of layouts) {
   for (const colorScheme of schemes) {
@@ -29,6 +55,18 @@ for (const layout of layouts) {
     // The top of the page, at most a desktop monitor tall.
     const fold = () => ({ x: 0, y: 0, width: layout.viewport.width, height: Math.min(layout.viewport.height, MAX_HEIGHT) });
     const page = await browser.newPage({ viewport: layout.viewport, isMobile: layout.isMobile, hasTouch: layout.isMobile, colorScheme });
+    const started = Date.now();
+    let unsettled = 0;
+    const settled = async () => {
+      if (await settledIn(page)) unsettled++;
+    };
+    // Poll a condition on this side (config.json, a count), failing with what was awaited.
+    const until = async (condition, what, timeout = 10000) => {
+      for (const end = Date.now() + timeout; !(await condition()); ) {
+        if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
     // Clip to where the plugin's scrolled content ends, so tall viewports don't leave empty space.
     const shot = async (name) => {
       const bottom = await page.evaluate(() => {
@@ -61,9 +99,8 @@ for (const layout of layouts) {
       await writeFile(configPath, originalConfig);
       await rm(quietPath, { force: true });
       // The container's daemon serves the web app and is the only host it knows.
-      await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
-      await page.waitForTimeout(3000);
-      // Screens without tabs: the top of the page is enough.
+      await page.goto("http://127.0.0.1:6767/", { waitUntil: "domcontentloaded" });
+      await settled();
       const top = (name) => page.screenshot({ path: `/out/${prefix}-${name}.png`, clip: { ...fold(), height: layout.isMobile ? 1080 : 900 } });
       // On phones the sidebar sits behind a menu button. Wait for the entry first, so a slow load doesn't look like a phone.
       const openAttention = async () => {
@@ -75,25 +112,25 @@ for (const layout of layouts) {
       };
       await openAttention();
       await page.getByRole("button", { name: "Refresh now" }).click(); // reloads config.json
-      await page.waitForTimeout(2000); // avatars and icons
+      await settled();
       // An earlier layout's dismissal lives on in the daemon; bring it back.
       const restore = page.getByText(/dismissed · show them again/);
       if (await restore.isVisible()) {
         await restore.click();
-        await page.waitForTimeout(500);
+        await settled();
       }
       for (const tab of tabs) {
         await page.getByRole("tab", { name: new RegExp(tab) }).first().click();
-        await page.waitForTimeout(800);
+        await settled();
         await shot(tab.toLowerCase().replace(" ", "-"));
       }
       // Doing's sections, one band each.
       await page.getByRole("tab", { name: /Doing/ }).first().click();
-      await page.waitForTimeout(800);
+      await settled();
       const band = async (from, to) => {
         const header = (title) => page.locator(`text=/^${title}/ >> visible=true`).first();
         await header(from).scrollIntoViewIfNeeded();
-        await page.waitForTimeout(300);
+        await settled();
         const y = Math.max(0, Math.floor((await header(from).boundingBox()).y) - 24);
         const end = Math.ceil((await header(to).boundingBox()).y) - 16;
         // Just the list's column, with even margins: the sidebar on desktops is 320 px wide.
@@ -109,19 +146,19 @@ for (const layout of layouts) {
       // A dirty session asks first; several sessions list themselves. Neither archives until confirmed.
       await page.getByRole("button", { name: "Archive the session on #186" }).click();
       await page.getByText("Closes terminals: dev, shell").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("doing-wrap-dirty");
       // A phone's bottom sheet has no Escape; its × closes it.
       const closeModal = async () => {
         const close = page.getByRole("button", { name: /^close/i }).last();
         if (await close.isVisible().catch(() => false)) await close.click();
         else await page.keyboard.press("Escape");
-        await page.waitForTimeout(400);
+        await settled();
       };
       await closeModal();
       await page.getByRole("button", { name: "Archive the sessions on #172" }).click();
       await page.getByText("Archive both").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("doing-wrap-multi");
       await closeModal();
       // Interactions that don't reach GitHub.
@@ -129,13 +166,13 @@ for (const layout of layouts) {
       const openSheet = async (title) => {
         await page.getByRole("button", { name: `${title}, more` }).first().click();
         await page.getByText(/^Open (issue|PR)( on GitHub)?$/).last().waitFor({ timeout: 10000 });
-        await page.waitForTimeout(800); // details load
+        await settled();
       };
       const closeSheet = async () => {
         await page.keyboard.press("Escape");
-        await page.waitForTimeout(400);
+        await settled();
         if (await page.getByText(/^Open (issue|PR)( on GitHub)?$/).last().isVisible()) await page.getByRole("button", { name: /^(?!Close issue).*close/i }).last().click(); // the sheet's ×, not its Close issue entry
-        await page.waitForTimeout(300);
+        await settled();
       };
       // What a face and an amber age mean, in words on hover, floating over the card so nothing moves [ATT-19, ATT-11].
       // A band around what's pointed at; touch has no hover.
@@ -148,22 +185,22 @@ for (const layout of layouts) {
         const face = page.getByLabel(/^Waiting on bob since/).first();
         await face.scrollIntoViewIfNeeded();
         await face.hover();
-        await page.waitForTimeout(600);
+        await settled();
         await page.screenshot({ path: `/out/${prefix}-doing-hint.png`, clip: await around(face) });
         await page.mouse.move(0, 0);
         await page.getByRole("tab", { name: /Waiting/ }).first().click();
-        await page.waitForTimeout(800);
+        await settled();
         const age = page.getByLabel(/^Waited too long:/).first();
         await age.scrollIntoViewIfNeeded();
         await age.hover();
-        await page.waitForTimeout(600);
+        await settled();
         await page.screenshot({ path: `/out/${prefix}-waiting-too-long.png`, clip: await around(age) });
         await page.mouse.move(0, 0);
       }
       // Copy what waits on alice for a nudge, and keep what landed on the clipboard [WAI-03].
       // Then who a question waits on, each by name in its sheet [WAI-02].
       await page.getByRole("tab", { name: /Waiting/ }).first().click();
-      await page.waitForTimeout(800);
+      await settled();
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:6767" });
       await page.getByRole("button", { name: "Copy what waits on alice" }).click();
       await page.getByText(/^Copied \d+ links? for alice$/).waitFor({ timeout: 5000 });
@@ -196,53 +233,50 @@ for (const layout of layouts) {
       await openSheet("Publish security.txt");
       await page.getByRole("button", { name: "Acknowledge" }).last().click();
       await page.getByRole("button", { name: "Acknowledge 2 comments" }).waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("doing-acknowledge");
       await page.getByRole("button", { name: "Cancel" }).last().click();
-      await page.waitForTimeout(300);
-      // Who should review a PR nobody was asked on: suggestions, recent reviewers, teams, a typed name [PRS-12].
+      await settled();
       await page.getByRole("button", { name: "Request review", exact: true }).first().click();
       await page.getByText("Suggested by GitHub").waitFor({ timeout: 10000 });
       await page.getByRole("checkbox", { name: "carol" }).click();
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("doing-reviewers");
       await page.getByRole("button", { name: "Cancel" }).last().click();
-      await page.waitForTimeout(300);
-      // Without a session, a session action's line in the sheet asks first [SES-02].
+      await settled();
       await openSheet("Harden the upload endpoint");
       await page.getByRole("button", { name: "Address comments…" }).last().click();
       await page.getByText("Agent profile").last().waitFor({ timeout: 15000 });
-      await page.waitForTimeout(500);
+      await settled();
       await modalShot("doing-options");
       await page.getByRole("button", { name: "Cancel" }).last().click();
       // The first Ready card's: the a11y stack's.
       await page.getByRole("button", { name: "Merge", exact: true }).first().click();
-      await page.waitForTimeout(400);
+      await settled();
       await shot("doing-merge-confirm");
       await page.getByRole("button", { name: "Cancel" }).click();
       // Feedback from the bottom of the tab: the three lines, then the first words for a problem [FB-01].
       await page.getByRole("button", { name: "Enjoying Attention Span?" }).click();
       await page.getByText("I'll star it on GitHub").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("doing-feedback");
       await page.getByRole("button", { name: "Something's wrong…" }).click();
       await page.getByText("What happened?").waitFor({ timeout: 10000 });
       await page.getByPlaceholder(/Waiting still shows/).fill("Waiting still shows a PR I merged yesterday.");
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("doing-feedback-ask");
       await page.getByRole("button", { name: /close/i }).last().click();
-      await page.waitForTimeout(400);
+      await settled();
       await page.getByRole("tab", { name: /History/ }).first().click();
-      await page.waitForTimeout(800);
-      // History's filter: Finished always, Reviewed and cleared Changed by others when asked [HIS-07].
+      await settled();
       await page.getByRole("button", { name: /^Filter/ }).first().click();
       await page.getByText("Show in each week").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("history-filter");
       await page.getByRole("checkbox", { name: "Reviewed", exact: true }).click();
       await page.getByRole("checkbox", { name: "Changed by others", exact: true }).click();
       await page.getByRole("button", { name: "Done" }).click();
-      await page.waitForTimeout(600);
+      await settled();
       await shot("history-filtered");
       // Both of the week's other lists under Finished, Reviewed then Changed by others [HIS-02, HIS-07].
       await page.screenshot({ path: `/out/${prefix}-history-groups.png`, clip: await band("Reviewed", "Last week") });
@@ -255,13 +289,13 @@ for (const layout of layouts) {
       await shot("history-copied");
       const week = await clipboard();
       await page.getByRole("button", { name: /^Copy link to #\d+$/ }).first().click();
-      await page.waitForTimeout(400);
+      await settled();
       await writeFile(`/out/${prefix}-history-clipboard.txt`, `${week}\n---\n${await clipboard()}\n`);
       // Clear the filter, so the next layout starts with Finished only.
       await page.getByRole("button", { name: /^Filter/ }).first().click();
       await page.getByRole("button", { name: "Clear" }).click();
       await page.getByRole("button", { name: "Done" }).click();
-      await page.waitForTimeout(400);
+      await settled();
       await page.getByRole("tab", { name: /Next up/ }).first().click();
       await openSheet("Orders export times out for big shops");
       await modalShot("next-up-sheet");
@@ -270,7 +304,7 @@ for (const layout of layouts) {
       await openSheet("Merge the two import commands");
       await page.getByRole("button", { name: "Close issue" }).click();
       await page.locator('[role="button"][aria-label="Not planned"] >> visible=true').first().waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await shot("next-up-close");
       await page.locator('[role="button"][aria-label="Cancel"] >> visible=true').first().click();
       // New issue: a line or two, then where it goes, opened [ISS-01]. Never started, since that would open a session.
@@ -280,7 +314,7 @@ for (const layout of layouts) {
       await page.getByRole("button", { name: "acme/shop", exact: true }).click();
       await page.getByRole("button", { name: /^acme\/shop · Default profile$/ }).click();
       await page.getByText("Agent profile").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await modalShot("next-up-new-issue");
       await closeModal();
       // Source and scope filters sit behind one button [NXT-03, NXT-09]. Ticks apply right away.
@@ -291,10 +325,10 @@ for (const layout of layouts) {
       };
       const done = async () => {
         await page.getByRole("button", { name: "Done" }).click();
-        await page.waitForTimeout(400);
+        await settled();
       };
       await filter(["🔙 Backend"]);
-      await page.waitForTimeout(300);
+      await settled();
       await modalShot("next-up-filter");
       await done();
       await shot("next-up-filtered");
@@ -304,11 +338,11 @@ for (const layout of layouts) {
       // Clear empties a source and a scope together. Picks are saved, so this also resets the next layout.
       // My repos is still ticked from above; tick a scope beside it.
       await filter(["🔙 Backend"]);
-      await page.waitForTimeout(300);
+      await settled();
       const ticked = await page.getByRole("checkbox", { checked: true }).count();
       if (ticked !== 2) throw new Error(`Expected a source and a scope ticked before Clear, got ${ticked}`);
       await page.getByRole("button", { name: "Clear" }).click();
-      await page.waitForTimeout(300);
+      await settled();
       const stillTicked = await page.getByRole("checkbox", { checked: true }).count();
       if (stillTicked) throw new Error(`Clear left ${stillTicked} filter(s) ticked`);
       await done();
@@ -321,7 +355,7 @@ for (const layout of layouts) {
       await page.getByText("Project", { exact: true }).waitFor({ timeout: 10000 });
       await page.getByRole("checkbox", { name: "Ideas", exact: true }).click();
       await page.getByRole("checkbox", { name: "Todo", exact: true }).click();
-      await page.waitForTimeout(300);
+      await settled();
       const projectTicks = await page.getByRole("checkbox", { checked: true }).count();
       // Ideas itself, its three statuses and No status, and Todo; TODO is only partly ticked, which doesn't count.
       if (projectTicks !== 6) throw new Error(`Expected 6 ticked for all of Ideas and TODO's Todo, got ${projectTicks}`);
@@ -343,7 +377,7 @@ for (const layout of layouts) {
       await addRepo.fill("acme/web");
       await addRepo.press("Enter");
       await page.getByText("acme/web", { exact: true }).waitFor({ timeout: 10000 });
-      await page.waitForTimeout(500);
+      await settled();
       await top("settings");
       const withRepo = JSON.parse(await readFile(configPath, "utf8"));
       if (withRepo.repos?.[0] !== "acme/web" || withRepo.orgs?.[0] !== "acme" || !withRepo.nextUp) throw new Error(`config.json after adding: ${JSON.stringify(withRepo)}`);
@@ -353,12 +387,12 @@ for (const layout of layouts) {
       await addNextUpRepo.press("Enter");
       await page.getByText("me/tool", { exact: true }).waitFor({ timeout: 10000 });
       await page.getByText("My repos", { exact: true }).scrollIntoViewIfNeeded();
-      await page.waitForTimeout(500);
+      await settled();
       await page.screenshot({ path: `/out/${prefix}-settings-next-up.png`, clip: fold() });
       // Only orgs I belong to, minus those already added [NXT-04].
       await page.getByText("Choose…", { exact: true }).click();
       await page.getByText("globex", { exact: true }).waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
+      await settled();
       await page.screenshot({ path: `/out/${prefix}-settings-org-picker.png`, clip: fold() });
       await page.keyboard.press("Escape");
       const withSource = JSON.parse(await readFile(configPath, "utf8"));
@@ -366,8 +400,7 @@ for (const layout of layouts) {
       // Next up's fields: Priority and Scope found by their names, Effort as config.json has it [NXT-04].
       const fieldsHeading = page.getByText("Next up fields", { exact: true });
       await page.getByText(/Picked by its name/).first().waitFor({ timeout: 10000 });
-      await page.waitForTimeout(400);
-      // The viewport is tall, so clip a band from the section down rather than scroll to it.
+      await settled();
       const fieldsBand = async () => {
         const box = await fieldsHeading.boundingBox();
         return { ...fold(), y: Math.max(0, box.y - 24), height: 500 };
@@ -377,7 +410,7 @@ for (const layout of layouts) {
       await page.getByText("Scope", { exact: true }).last().click();
       await page.getByText("Team", { exact: true }).last().click();
       await page.getByText("Team", { exact: true }).first().waitFor({ timeout: 10000 });
-      await page.waitForTimeout(500);
+      await settled();
       const withFields = JSON.parse(await readFile(configPath, "utf8"));
       if (withFields.nextUp?.scope?.field !== "Team" || "priority" in withFields.nextUp || withFields.nextUp.effort?.order?.length !== 4)
         throw new Error(`config.json after picking a field: ${JSON.stringify(withFields)}`);
@@ -385,11 +418,11 @@ for (const layout of layouts) {
       // The setup checklist, from a config.json that doesn't parse; fixed, Check again brings the tabs back [SET-01].
       await writeFile(configPath, "{ broken");
       // Out of Paseo's settings: phones have only a back arrow, so start over from the app.
-      await page.goto("http://127.0.0.1:6767/", { waitUntil: "networkidle" });
+      await page.goto("http://127.0.0.1:6767/", { waitUntil: "domcontentloaded" });
       await openAttention();
       await page.getByRole("button", { name: "Refresh now" }).click();
       await page.locator(`text="Set up Attention Span" >> visible=true`).waitFor({ timeout: 15000 });
-      await page.waitForTimeout(800);
+      await settled();
       await top("setup");
       await writeFile(configPath, originalConfig);
       await page.getByRole("button", { name: "Check again" }).click();
@@ -399,50 +432,52 @@ for (const layout of layouts) {
       const archiveAll = page.getByRole("button", { name: /^Archive all clean/ });
       if (await archiveAll.isVisible().catch(() => false)) {
         await archiveAll.click();
-        await page.waitForTimeout(800);
+        await settled();
       }
       await page.getByRole("button", { name: "Archive the session on #186" }).click();
       // The sheet's Archive is the last: Paseo's own UI has hidden ones of the same name.
       const archive = page.getByRole("button", { name: "Archive", exact: true }).last();
       await archive.waitFor({ timeout: 10000 });
       await archive.click();
-      await page.waitForTimeout(800);
+      await settled();
       await page.getByRole("button", { name: "Archive the sessions on #172" }).click();
       await page.getByRole("button", { name: "Archive both" }).waitFor({ timeout: 10000 });
       await page.getByRole("button", { name: "Archive both" }).click();
-      await page.waitForTimeout(1000);
-      // Last, because it changes the daemon's state: dismiss one item.
+      await settled();
       await doing();
       await page.getByRole("button", { name: /^Details for #/ }).first().click();
       await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
+      await settled();
       await shot("doing-dismissed");
+      // Dismiss the rest: a clear Doing tab shows its horizon, as on a real screen's height [ATT-18].
       // Kept worktrees keep the horizon away too: dismiss them first [ATT-22].
       const keptRows = page.getByRole("button", { name: /^Dismiss: keep / });
       for (let left = await keptRows.count(); left > 0; left = await keptRows.count()) {
+        const title = await keptRows.first().getAttribute("aria-label");
         await keptRows.first().click();
-        for (let i = 0; i < 50 && (await keptRows.count()) === left; i++) await page.waitForTimeout(100);
+        await until(async () => (await keptRows.count()) < left, `"${title}" to leave Doing`);
       }
-      // Dismiss the rest: a clear Doing tab shows its horizon, as on a real screen's height [ATT-18].
       const details = page.getByRole("button", { name: /^Details for #/ });
       for (let left = await details.count(); left > 0; left = await details.count()) {
+        const title = await details.first().getAttribute("aria-label");
         await details.first().click();
         await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
-        for (let i = 0; i < 50 && (await details.count()) === left; i++) await page.waitForTimeout(100);
+        await until(async () => (await details.count()) < left, `"${title}" to leave Doing after Dismiss`);
       }
       const tall = page.viewportSize();
       await page.setViewportSize({ width: tall.width, height: layout.isMobile ? 844 : 900 });
       await page.getByRole("tab", { name: /Waiting/ }).first().click(); // clears the Undo rows
       await doing();
       await page.getByText("Nothing's on you.").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(1200); // it settles in
+      await settled();
       await page.screenshot({ path: `/out/${prefix}-doing-clear.png`, clip: { x: 0, y: 0, ...page.viewportSize() } });
       // A quiet day: every other tab empty shows its own scene [HIS-08, WAI-04, NXT-13]. Each tab refreshes its own feed.
       const calm = async (tab, text, name) => {
         await page.getByRole("tab", { name: new RegExp(tab) }).first().click();
         await page.getByRole("button", { name: "Refresh now" }).click();
         await page.getByText(text).waitFor({ timeout: 15000 });
-        await page.waitForTimeout(1200); // it settles in
+        await settled();
         await page.screenshot({ path: `/out/${prefix}-${name}.png`, clip: { x: 0, y: 0, ...page.viewportSize() } });
       };
       // Always back to the full fixture and config, so later steps and layouts see them even if a shot fails.
@@ -475,22 +510,24 @@ for (const layout of layouts) {
       await nextUp();
       await startIssue();
       await picker.waitFor({ timeout: 15000 });
-      await page.waitForTimeout(500);
+      await settled();
       await modalShot("next-up-code-repo");
       await page.getByRole("button", { name: "acme/shop" }).click();
-      await page.waitForTimeout(3000);
-      const saved = JSON.parse(await readFile(configPath, "utf8"));
+      const config = async () => JSON.parse(await readFile(configPath, "utf8"));
+      await until(async () => (await config()).codeRepos?.["acme/issues"], "config.json to map acme/issues").catch(() => {});
+      await settled();
+      const saved = await config();
       if (saved.codeRepos?.["acme/issues"] !== "acme/shop" || saved.orgs?.[0] !== "acme") throw new Error(`config.json after picking: ${JSON.stringify(saved)}`);
       await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-after.png`, clip: fold() });
       // Still on the list means the start stopped later (no agent provider in here); press it again.
       if (await page.getByRole("tab", { name: /Next up/ }).first().isVisible()) {
         await nextUp();
         await startIssue();
-        await page.waitForTimeout(3000);
+        await settled();
         if (await picker.isVisible()) throw new Error("asked where the code lives a second time");
         await page.screenshot({ path: `/out/${prefix}-next-up-code-repo-again.png`, clip: fold() });
       }
-      console.log(`ok ${prefix}`);
+      console.log(`ok ${prefix} in ${Math.round((Date.now() - started) / 1000)}s${unsettled ? `, ${unsettled} waits gave up settling` : ""}`);
     } catch (error) {
       failed = true;
       console.log(`failed ${prefix}: ${error.message.split("\n")[0]}`);
