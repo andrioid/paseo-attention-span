@@ -69,8 +69,6 @@ export interface Actions {
   dismiss: (item: Item) => void;
   gotItAll: (items: Item[]) => void;
   openAgent: (agentId: string) => void;
-  // Opens a Review session on a review asked for again, sending it the follow-up first when it hasn't had it [REV-02].
-  reviewAgain: (item: Item, agentId: string) => void;
   started: (agentId: string) => Promise<void>;
 }
 
@@ -118,7 +116,6 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   const rerunFailed = useRpc(rpc.rerunFailed);
   const fetchDetails = useRpc(rpc.itemDetails);
   const setCodeRepo = useRpc(rpc.setCodeRepo);
-  const sendReviewAgain = useRpc(rpc.reviewAgain);
   // Every card with a change still running: each runs on its own.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   // Sessions archived here, hidden before Paseo's list catches up; in previews, where nothing really archives, this is what
@@ -258,13 +255,6 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
       login: view.login,
       fetchDetails,
       openAgent,
-      reviewAgain: (item, agentId) =>
-        void run(item.key, "Review again", async () => {
-          const { outcome } = await sendReviewAgain({ key: item.key, agentId });
-          openAgent(agentId);
-          if (outcome === "sent") toast.show("Sent the review session what changed since your last review", { variant: "success" });
-          if (outcome === "busy") toast.show("The review session is busy, so nothing was sent. Press Review again once it's done.");
-        }),
       started,
       act: (item, action) => {
         const session = ACTION_SESSION[action];

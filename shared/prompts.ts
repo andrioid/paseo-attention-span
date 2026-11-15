@@ -1,4 +1,4 @@
-import { type ActionId, checkoutPr, ownStack, reviewAgain, type Target } from "./attention";
+import { type ActionId, ownStack, reviewAgain, type Target } from "./attention";
 import type { AttentionConfig, SessionKind } from "./config";
 
 // Built-in prompt templates [SES-04]. A template in config.json replaces one.
@@ -92,23 +92,6 @@ export const REVIEW_STACK_AGAIN_TEMPLATE = reviewTemplate(
   AGAIN_REPORT,
 );
 
-// What a Review session already open hears when review is asked for again: bring the checkout up to date, then the same
-// look at what changed. Fixed text, not a config.json template [REV-02].
-export const REVIEW_FOLLOW_UP = `Review was asked for again on {{review}} in {{repo}} since you last looked.
-
-1. Update this checkout first. Run \`git status\`: if there are local changes, stop and ask me what to do with them. Otherwise run \`gh pr checkout {{checkout}} --force\`, which follows a force-push too.
-2. Review: ${AGAIN_STEP}
-3. Investigate: dig into anything risky or unclear in the code the new commits touch.
-4. Report back{{each}}:
-   - ${AGAIN_REPORT}
-   - Findings, most important first.
-   - Verdict: approve, request changes or comment, with a one-line reason.
-   - Draft review comments, ready to paste, each with file:line.
-
-Do not post anything to GitHub.
-
-{{context}}`;
-
 export const ACTION_SESSION: Partial<Record<ActionId, SessionKind>> = {
   review: "review",
   fix: "fix",
@@ -145,17 +128,4 @@ export function renderPrompt(
     context: context.trim(),
   };
   return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => values[name] ?? match).trim();
-}
-
-// The follow-up for a Review session already open, when review is asked for again [REV-02].
-export function renderFollowUp(target: Target, context: string): string {
-  const again = reviewAgain(target);
-  const values: Record<string, string> = {
-    repo: target.repo,
-    review: (again.length ? again : [{ number: target.number }]).map((pr) => `#${pr.number}`).join(", "),
-    checkout: String(checkoutPr("review", target).number),
-    each: again.length > 1 ? ", for each PR" : "",
-    context: context.trim(),
-  };
-  return REVIEW_FOLLOW_UP.replace(/\{\{(\w+)\}\}/g, (match, name: string) => values[name] ?? match).trim();
 }

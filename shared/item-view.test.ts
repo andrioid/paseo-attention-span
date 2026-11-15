@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActionId, FailingChecks, Item, LastReview, SubRow, WaitingOn } from "./attention";
-import { actionDetail, actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, reviewAgainSession, sessionBadge, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
+import { actionDetail, actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, sessionBadge, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
 import { AttentionConfig } from "./config";
 import { ACTION_SESSION } from "./prompts";
 import { agent, change, clock, item } from "./test-builders";
@@ -101,7 +101,7 @@ describe("an item's sheet", () => {
 });
 
 describe("review asked for again", () => {
-  const reviewed = { at: daysAgo(2), oid: "old", head: "new" };
+  const reviewed = { at: daysAgo(2), oid: "old" };
   const again = item("o/r#1", "review", { actions: ["review"], target: stackTarget("o/r#1", [{ number: 1, review: true, reviewed }]) });
 
   it("REV-02: its Review says so, and what the agent will look at", () => {
@@ -114,22 +114,9 @@ describe("review asked for again", () => {
     expect(actionLabel("review", first)).toBe("Review");
   });
 
-  it("REV-02, SES-03: an open Review session keeps its line, which sends it what changed; it goes to the one active last", () => {
-    const older = agent("a1", "o/r#1", { kind: "review", lastActivityAt: daysAgo(3) });
-    const newer = agent("a2", "o/r#1", { kind: "review", lastActivityAt: daysAgo(2) });
-    const fix = agent("a3", "o/r#1", { kind: "fix", lastActivityAt: hoursAgo(1) });
-    const steps = sheetPlan(again, [older, newer]);
-    expect(lines(steps).slice(0, 2)).toEqual(["Review again (session a1)", "Review again (session a2)"]);
-    expect(steps.filter((step) => step.kind === "session").every((step) => step.kind === "session" && step.again)).toBe(true);
-    expect(reviewAgainSession(again, [older, fix, newer])?.id).toBe("a2");
-  });
-
-  it("REV-02: a first request, or no open Review session, leaves the card as it was", () => {
-    const first = item("o/r#1", "review", { actions: ["review"], target: stackTarget("o/r#1", [{ number: 1, review: true }]) });
+  it("REV-02, SES-03: an open Review session keeps its line, which opens it", () => {
     const session = agent("a1", "o/r#1", { kind: "review" });
-    expect(reviewAgainSession(first, [session])).toBeUndefined();
-    expect(sheetPlan(first, [session]).some((step) => step.kind === "session" && step.again)).toBe(false);
-    expect(reviewAgainSession(again, [agent("a2", "o/r#1", { kind: "fix" }), agent("a3", "o/r#1")])).toBeUndefined();
+    expect(lines(sheetPlan(again, [session]))[0]).toBe("Review again (session a1)");
   });
 });
 

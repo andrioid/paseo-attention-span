@@ -303,7 +303,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   const lastReview = (pr: PullRequestNode): LastReview | undefined => {
     const review = pr.latestReviews.nodes.find((r) => isMe(r.author));
     if (!review) return undefined;
-    return { at: review.submittedAt ?? EPOCH, ...(review.commit?.oid ? { oid: review.commit.oid } : {}), head: pr.headRefOid };
+    return { at: review.submittedAt ?? EPOCH, ...(review.commit?.oid ? { oid: review.commit.oid } : {}) };
   };
 
   // Others' PRs in a stack that ask for my review: one Review for them all [REV-01, ATT-04], marked when it's asked again [REV-02].

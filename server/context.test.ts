@@ -118,7 +118,7 @@ describe("sessionContext: address", () => {
 });
 
 describe("sessionContext: review asked for again", () => {
-  const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old", head: "new" };
+  const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old" };
   const again: Target = { ...pr, stack: [{ number: 7, head: "feature", base: "main", review: true, reviewed }] };
   type Review = { author: { login: string }; state: string; body: string; submittedAt: string; commit: { oid: string } | null };
   const review = (login: string, state: string, body: string, oid: string | null = "old"): Review => ({ author: { login }, state, body, submittedAt: "2026-11-10T00:00:00Z", commit: oid ? { oid } : null });

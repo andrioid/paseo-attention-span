@@ -49,7 +49,7 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
   } as Partial<Store> as Store;
   const port: Port = {
     github,
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }), followUp: vi.fn<Port["paseo"]["followUp"]>(async (_paseo, _id, prompt) => (await prompt(), "sent")) },
+    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },
     store,
     now: () => now,
     setTimer: (run, ms) => {
@@ -410,73 +410,5 @@ describe("kept worktrees", () => {
     await h.service.forgetKept("w1");
     finish();
     expect((await archiving).view.kept).toEqual([]);
-  });
-});
-
-
-describe("review asked for again", () => {
-  const AGAIN = `${REPO}#198`; // asked again after I reviewed it, in server/fixture.ts
-  const paseoApi = {} as Parameters<AttentionService["reviewAgain"]>[0];
-  const context = vi.fn(async () => "Your last review: commented.");
-  // The made-up GitHub with #198's head moved on by a push.
-  const pushedTo = (head: string) => (_config: unknown, at: Date) => {
-    const found = fixture(at);
-    for (const pr of found.data.reviews.nodes) if (pr?.number === 198) pr.headRefOid = head;
-    return Promise.resolve(found);
-  };
-
-  it("REV-02: an open Review session is sent what changed once per re-request, and again after a new push", async () => {
-    const { service, github, paseo, saved, start } = harness();
-    await start();
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("sent");
-    expect(paseo.followUp).toHaveBeenCalledWith(paseoApi, "agent-198", expect.any(Function));
-    const prompt = await vi.mocked(paseo.followUp).mock.calls[0][2]();
-    expect(prompt).toContain("Review was asked for again on #198");
-    expect(prompt).toContain("Your last review: commented.");
-    expect(saved.at(-1)?.followUps[AGAIN]).toBeTruthy();
-
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("already");
-    expect(paseo.followUp).toHaveBeenCalledTimes(1);
-
-    github.live.mockImplementation(pushedTo("newer"));
-    await service.refresh("live", true);
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("sent");
-    expect(paseo.followUp).toHaveBeenCalledTimes(2);
-  });
-
-  it("REV-02: what's asked again is the server's latest view, so a device still showing an older head can't send it again", async () => {
-    const { service, github, paseo, start } = harness();
-    await start();
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("sent");
-    github.live.mockImplementation(pushedTo("newer"));
-    await service.refresh("live", true);
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("sent");
-    // A press from a screen that still has the first head answers from the same view.
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("already");
-    expect(paseo.followUp).toHaveBeenCalledTimes(2);
-  });
-
-  it("REV-02: a busy session is sent nothing and nothing is noted, so the next press tries again", async () => {
-    const { service, paseo, start } = harness();
-    await start();
-    vi.mocked(paseo.followUp).mockResolvedValueOnce("busy");
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("busy");
-    expect(await service.reviewAgain(paseoApi, AGAIN, "agent-198", context)).toBe("sent");
-  });
-
-  it("REV-02: two presses at once send it once", async () => {
-    const { service, paseo, start } = harness();
-    await start();
-    const outcomes = await Promise.all([service.reviewAgain(paseoApi, AGAIN, "agent-198", context), service.reviewAgain(paseoApi, AGAIN, "agent-198", context)]);
-    expect(outcomes).toEqual(["sent", "already"]);
-    expect(paseo.followUp).toHaveBeenCalledTimes(1);
-  });
-
-  it("REV-02: a review nobody asked for again, or an item no longer listed, sends nothing", async () => {
-    const { service, paseo, start } = harness();
-    await start();
-    expect(await service.reviewAgain(paseoApi, `${REPO}#196`, "agent-197", context)).toBe("none");
-    expect(await service.reviewAgain(paseoApi, `${REPO}#999`, "agent-1", context)).toBe("none");
-    expect(paseo.followUp).not.toHaveBeenCalled();
   });
 });

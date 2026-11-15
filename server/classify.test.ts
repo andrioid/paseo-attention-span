@@ -327,11 +327,11 @@ describe("stacks whoever opened them", () => {
 describe("review asked for again", () => {
   const mine = (state: string, days: number, oid = "reviewed") => ({ author: me, state, submittedAt: daysAgo(days), commit: { oid } });
 
-  it("REV-02: a request after my review is marked review again, with the commit I reviewed and the head now", () => {
+  it("REV-02: a request after my review is marked review again, with when and on which commit I reviewed it", () => {
     const [item] = run({ reviews: [pr(1, { author: alice, latestReviews: { nodes: [mine("CHANGES_REQUESTED", 2)] } })] }).items;
     expect(item).toMatchObject({ section: "review", actions: ["review"] });
     expect(chips(item)).toEqual(["review again"]);
-    expect(item.target.stack).toEqual([{ number: 1, head: "branch-1", base: "main", review: true, reviewed: { at: daysAgo(2), oid: "reviewed", head: "oid1" } }]);
+    expect(item.target.stack).toEqual([{ number: 1, head: "branch-1", base: "main", review: true, reviewed: { at: daysAgo(2), oid: "reviewed" } }]);
   });
 
   it("REV-02: any review of mine counts, a comment or a dismissed one too", () => {
@@ -351,7 +351,7 @@ describe("review asked for again", () => {
 
   it("REV-02: a review GitHub kept no commit for still counts, without one", () => {
     const [item] = run({ reviews: [pr(1, { author: alice, latestReviews: { nodes: [{ ...mine("COMMENTED", 1), commit: null }] } })] }).items;
-    expect(item.target.stack?.[0].reviewed).toEqual({ at: daysAgo(1), head: "oid1" });
+    expect(item.target.stack?.[0].reviewed).toEqual({ at: daysAgo(1) });
   });
 
   it("REV-02, ATT-04: in a stack, only the PRs I reviewed before carry it; the stack is marked once", () => {

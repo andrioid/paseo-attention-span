@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkoutPr } from "./attention";
 import { AttentionConfig } from "./config";
-import { renderFollowUp, renderPrompt } from "./prompts";
+import { renderPrompt } from "./prompts";
 
 const config = AttentionConfig.parse({});
 const target = { kind: "pr" as const, repo: "o/r", number: 7, title: "T", url: "https://x/7", headRefName: "feature", baseRefName: "main", stack: [{ number: 7, head: "feature", base: "main" }, { number: 8, head: "next", base: "feature" }] };
@@ -43,7 +43,7 @@ describe("prompts", () => {
   });
 
   describe("review asked for again", () => {
-    const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old", head: "new" };
+    const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old" };
     const again = { ...target, stack: [{ number: 7, head: "feature", base: "main", review: true as const, reviewed }] };
 
     it("REV-02: the built-in Review focuses on what changed and asks how my earlier comments were taken up", () => {
@@ -62,20 +62,11 @@ describe("prompts", () => {
       expect(renderPrompt("review", again, "since old", custom)).toBe("Look at o/r#7. since old");
     });
 
-    it("REV-02, ATT-04: a stack's again names the PRs asked again, and the follow-up updates the checkout of its top first", () => {
+    it("REV-02, ATT-04: a stack asked again says so, and still reviews only the PRs asking for it", () => {
       const stack = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature", review: true as const, reviewed }] };
       expect(renderPrompt("review", stack, "", config)).toContain("You reviewed some of them before");
       const mixed = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature" }] };
       expect(renderPrompt("review", mixed, "", config)).toContain("Review only #7; the rest of the stack is context.");
-      const followUp = renderFollowUp(stack, "Your last review of #7: …");
-      expect(followUp).toContain("Review was asked for again on #7, #8 in o/r");
-      expect(followUp).toContain("if there are local changes, stop and ask me");
-      expect(followUp).toContain("`gh pr checkout 8 --force`");
-      expect(followUp).toContain("Report back, for each PR:");
-      expect(followUp).toContain("Your last review of #7: …");
-      expect(followUp).toContain("Do not post anything to GitHub.");
-      expect(followUp).not.toContain("{{");
-      expect(renderFollowUp(again, "")).toContain("`gh pr checkout 7 --force`");
     });
   });
 });

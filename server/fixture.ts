@@ -384,7 +384,7 @@ export function fixtureGotIt(now: Date): string[] {
 // #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
 // #120's was started outside Attention Span, in a workspace Paseo linked to the PR, so it has no kind [SES-08].
 // #197's too, so it shows on its stack, led by #196 [ATT-04].
-// #198 is asked to be reviewed again while its Review session is still open [REV-02].
+// #198 is asked to be reviewed again while its Review session is still open: the card opens it [REV-02].
 const agent = (
   id: string,
   itemKey: string,
@@ -491,8 +491,7 @@ export function fixturePort(store: Store, dir: string): Port {
       issueFields: async () => FIXTURE_ISSUE_FIELDS,
     },
     // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
-    // Nor any to send a follow-up to; it counts as sent, so the screen's answer shows [REV-02].
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }), followUp: async () => "sent" },
+    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },
     store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
     now: Date.now,
     setTimer,
@@ -539,5 +538,4 @@ export const fixtureAnswers = {
   itemDetails: async (subject: { kind: "pr" | "issue"; repo: string; number: number }, target: Target | undefined, checks: boolean) => fixtureDetails(subject, target, checks),
   defaultBranch: async () => "main",
   sessionContext: async () => FIXTURE_CONTEXT,
-  reviewAgainContext: async () => FIXTURE_CONTEXT,
 };
