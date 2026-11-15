@@ -21,7 +21,7 @@ import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FilterSheet, githubEntry, type SheetEntry, usePrefetchOnRest } from "./sheet";
 import { IssuePills, PlaceText } from "./entity";
 import { Still } from "./still";
-import { FilterButton, Meta, SectionHeader, useStyles } from "./ui";
+import { Button, FilterButton, Meta, SectionHeader, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
@@ -55,12 +55,14 @@ interface Props {
   // Close it, once I've confirmed the reason [NXT-11].
   onCloseIssue: (issue: NextUpIssue, reason: IssueCloseReason, comment: string) => void;
   onOpenAgent: (agentId: string) => void;
+  // The New issue sheet [ISS-01].
+  onNewIssue: () => void;
 }
 
-type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter">;
+type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter" | "onNewIssue">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
-export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, ...rowProps }: Props) {
+export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, onNewIssue, ...rowProps }: Props) {
   const styles = useStyles();
   const filter = useMemo(
     () => nextUpFilter({ unclaimed, selected, sources, selectedSources, projects, selectedProjects }),
@@ -93,9 +95,10 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
           title="Unclaimed"
           count={shown.length}
           action={
-            groups.length > 0 ? (
-              <FilterButton count={picked} onPress={() => setFiltering(true)} />
-            ) : null
+            <View style={styles.wrap}>
+              <Button label="New issue" icon="plus" variant="ghost" onPress={onNewIssue} />
+              {groups.length > 0 ? <FilterButton count={picked} onPress={() => setFiltering(true)} /> : null}
+            </View>
           }
         />
         {/* Source, project and scope filters behind one button, so they take no room above the list [NXT-03, NXT-09]. */}

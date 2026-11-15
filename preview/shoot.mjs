@@ -273,6 +273,16 @@ for (const layout of layouts) {
       await page.waitForTimeout(400);
       await shot("next-up-close");
       await page.locator('[role="button"][aria-label="Cancel"] >> visible=true').first().click();
+      // New issue: a line or two, then where it goes, opened [ISS-01]. Never started, since that would open a session.
+      await page.getByRole("button", { name: "New issue" }).click();
+      await page.getByText("What should the issue be about?").waitFor({ timeout: 10000 });
+      await page.getByPlaceholder(/Export fails/).fill("Export fails when a month has no entries");
+      await page.getByRole("button", { name: "acme/shop", exact: true }).click();
+      await page.getByRole("button", { name: /^acme\/shop · Default profile$/ }).click();
+      await page.getByText("Agent profile").waitFor({ timeout: 10000 });
+      await page.waitForTimeout(400);
+      await modalShot("next-up-new-issue");
+      await closeModal();
       // Source and scope filters sit behind one button [NXT-03, NXT-09]. Ticks apply right away.
       const filter = async (ticks) => {
         await page.getByRole("button", { name: /^Filter/ }).click();

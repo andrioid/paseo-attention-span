@@ -2,6 +2,8 @@
 // Built in on purpose: these prompts carry the rules about privacy, where it's filed and approval,
 // so config.json can't replace them the way it can the session templates.
 
+import { APPROVE, askUntilClear, fill, quote, SKIMMABLE } from "./drafting";
+
 export const FEEDBACK_REPO = "andrioid/paseo-attention-span";
 
 export interface FeedbackInfo {
@@ -40,16 +42,16 @@ Context: {{context}}
 How to work:
 - You are in an empty scratch directory made for this session: put temporary files here. {{where}}
 - Reply in the language they write in. Write the post in English, in their voice ("I …").
-- Ask one question at a time, and only what the checklist below still needs. Offer likely answers when you can. After about five questions, draft with what you have and say what's missing.
+- ${askUntilClear("the checklist below")}
 - Read requirements.yaml, docs/architecture.md and the code to understand what they describe. Find the Paseo version with \`paseo --version\`.
 - You may read ~/.config/paseo-attention-span/config.json and state.json, and look items up with gh, to diagnose. Nothing from them goes in the post: no repository names, titles or logins they didn't write themselves.
 - Search open issues and discussions in ${FEEDBACK_REPO} (\`gh issue list --repo ${FEEDBACK_REPO} --search …\`, and \`gh api graphql\` with \`search(type: DISCUSSION, query: "repo:${FEEDBACK_REPO} …")\`). If one matches, give its link and stop. Don't comment or react on it.
 
 Where it goes: an issue if a maintainer could finish it and close it. Otherwise a discussion: Q&A for questions and for bugs nobody can reproduce yet, Ideas for broad or contested ideas. Say which and why; they may override it.
 
-Keep posts skimmable: a few short lines up front, and anything longer (environment, logs, error text, likely cause, background) in a collapsed \`<details><summary>…</summary>\` block.
+${SKIMMABLE}
 
-Show the whole draft, title included, then ask with your question tool: Post it / Change something / Cancel. Without a question tool, ask in plain text and post only after they reply "post".
+${APPROVE}
 - Issue: \`gh issue create --repo ${FEEDBACK_REPO} --title … --body-file …\`, with the body in a file in the scratch directory.
 - Discussion: look up the repository ID and the category by its slug (\`ideas\` or \`q-a\`) with \`gh api graphql\` (\`repository { id discussionCategories { nodes { id slug } } }\`), then call the \`createDiscussion\` mutation.
 
@@ -78,8 +80,7 @@ export function feedbackPrompt(kind: FeedbackKind, input: FeedbackContext): stri
   const where = input.dir
     ? `The plugin's installed source is at ${input.dir}: read it there, and don't change anything in it.`
     : `The plugin's source isn't on this host: read it from GitHub with \`gh api repos/${FEEDBACK_REPO}/contents/<path>\`.`;
-  const values: Record<string, string> = { message: input.message.trim().replace(/\n/g, "\n> "), context: `${facts.join(", ")}.`, where };
-  const shared = SHARED.replace(/\{\{(\w+)\}\}/g, (match, name: string) => values[name] ?? match);
+  const shared = fill(SHARED, { message: quote(input.message), context: `${facts.join(", ")}.`, where });
   return `${shared}\n\n${kind === "problem" ? PROBLEM : IDEA}`;
 }
 

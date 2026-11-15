@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { OthersChange } from "./changes";
 import { keySet, uniqueKeys } from "./names";
+import type { NewIssueInfo } from "./new-issue";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
 import type { WorkKind } from "./work";
 
@@ -482,6 +483,8 @@ export interface AttentionView {
   // Reviewed and Changed by others shown in each of History's weeks; none means finished only [HIS-07].
   historyFilter: HistoryFilter[];
   config: AttentionConfig;
+  // Where the New issue sheet can file, and what it started with last time [ISS-01].
+  newIssue: NewIssueInfo;
   // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
   pending: number;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
