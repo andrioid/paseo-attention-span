@@ -43,6 +43,14 @@ describe("Wrap up membership", () => {
     expect(wrapItems({ ...view([listed]), ownClosed: [merged] }, [session("a", "acme/shop#8")], now).map((row) => row.title)).toEqual(["From History"]);
   });
 
+  it("FRESH-03, ATT-22: a merged PR History lists under its issue makes no row of its own while the issue's is held back", () => {
+    const child = { key: "acme/shop#41", number: 41, title: "PR", url: "u", draft: false, chips: [], attention: false };
+    const issue = { ...item("acme/shop#40", "done", 2, [child]), kind: "issue" as const };
+    const merged = item("Acme/Shop#41", "done", 2);
+    const sessions = [session("i", "acme/shop#40", { status: "running" }), session("p", "acme/shop#41")];
+    expect(wrapItems({ ...view([issue]), ownClosed: [merged] }, sessions, now)).toEqual([]);
+  });
+
   it("ATT-22: a finished item with an idle session is a row, newest finish first", () => {
     const rows = wrapItems(
       view([item("acme/shop#1", "done", 2), item("acme/shop#2", "done", 5)]),

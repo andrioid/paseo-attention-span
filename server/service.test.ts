@@ -223,6 +223,25 @@ describe("what I just did", () => {
     expect(github.history).toHaveBeenCalledTimes(2);
   });
 
+  it("FRESH-03: a merge History already lists, under its issue and in other case, fetches nothing more", async () => {
+    const { github, start, advance } = harness({ refreshMinutes: 10 });
+    const at = new Date(START).toISOString();
+    const repository = { nameWithOwner: REPO };
+    github.history.mockImplementation(async () => ({
+      ...fixture(new Date(START)).data,
+      closed: { nodes: [{ number: 40, title: "Backups", url: "u", closedAt: at, stateReason: "COMPLETED", repository }] },
+      merged: { nodes: [{ number: 41, title: "Verify", url: "u", mergedAt: at, repository, closingIssuesReferences: { nodes: [{ number: 40, repository }] } }] },
+    }));
+    github.live.mockImplementation(async (_config, now) => {
+      const { data, details } = fixture(now);
+      const merged = { id: "PR_41", number: 41, title: "Verify", url: "u", merged: true, mergedAt: at, closedAt: at, repository: { nameWithOwner: REPO.toUpperCase() }, mergedBy: null, assignees: { nodes: [] }, timelineItems: { nodes: [] } };
+      return { data: { ...data, ended: { nodes: [merged] } }, details };
+    });
+    await start();
+    await advance(30 * MINUTE);
+    expect(github.history).toHaveBeenCalledTimes(1);
+  });
+
   it("FRESH-02: an action's effect shows until a fetch begun after GitHub caught up, which follows by itself", async () => {
     const { service, github, start, advance, jump } = harness();
     await start();

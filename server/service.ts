@@ -308,6 +308,8 @@ export class AttentionService {
   private followMerges(): void {
     const listed = new Set((this.state.history?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]).map((key) => key.toLowerCase()));
     const merged = (this.state.live?.attention.ownClosed ?? []).filter((item) => !item.closedUnmerged).map((item) => item.key.toLowerCase());
+    // Kept only while the live feed still lists them, so the record stays as small as its recent closes.
+    this.historyAskedFor = new Set(merged.filter((key) => this.historyAskedFor.has(key)));
     const unseen = merged.filter((key) => !listed.has(key) && !this.historyAskedFor.has(key));
     if (unseen.length === 0) return;
     for (const key of unseen) this.historyAskedFor.add(key);
