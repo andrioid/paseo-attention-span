@@ -143,6 +143,7 @@ non_functional:
   freshness:
     FRESH-01: stays current without me refreshing it; so that its count can be trusted.
     FRESH-02: shows what I just did on GitHub right away, and keeps showing it until GitHub's search catches up; so that I never refresh to see it.
+    FRESH-03: brings a pull request of mine merged outside Attention Span into History and Wrap up within minutes; so that finished work gets cleaned up without me refreshing History.
 
 deferred:
   feedback:

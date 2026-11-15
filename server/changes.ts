@@ -115,15 +115,19 @@ function ended(pr: EndedPullRequest, me: string): OthersChange | null {
   return sameName(closer, me) ? null : change(pr, "pr", "closed", pr.closedAt, closer);
 }
 
-// My PRs I closed without merging, from the closed search: finished work whose sessions Wrap up puts away, though no note
-// and no week lists them [ATT-22].
+// My PRs that ended lately, from the closed search, as finished work whose sessions Wrap up puts away [ATT-22]: those I
+// closed without merging, which no note and no week lists, and merged ones, which stand in for History's entry until its
+// next fetch has them [FRESH-03]. A merge by someone else says who.
 export function ownClosed(data: Pick<LiveResult, "ended">, me: string): Item[] {
   return present(data.ended.nodes)
-    .filter((pr) => !pr.merged && sameName(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
+    .filter((pr) => pr.merged || sameName(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
     .map((pr) => {
       const item = baseItem({ key: prKey(pr), section: "done", kind: "pr", repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url }, pr.closedAt);
       // Its branch, so a session left on it finds its row in Wrap up [ATT-22].
-      return { ...item, target: { ...item.target, ...(pr.headRefName ? { headRefName: pr.headRefName } : {}) }, closedAt: pr.closedAt, closedUnmerged: true as const };
+      const target = { ...item.target, ...(pr.headRefName ? { headRefName: pr.headRefName } : {}) };
+      if (!pr.merged) return { ...item, target, closedAt: pr.closedAt, closedUnmerged: true as const };
+      const by = pr.mergedBy?.login;
+      return { ...item, target, closedAt: pr.mergedAt ?? pr.closedAt, ...(by && !sameName(by, me) ? { mergedBy: by } : {}) };
     });
 }
 

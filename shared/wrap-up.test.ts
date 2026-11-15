@@ -35,6 +35,14 @@ describe("Wrap up membership", () => {
     expect(rows.map((row) => row.wrap?.finish)).toEqual(["closed 3h ago, not merged"]);
   });
 
+  it("FRESH-03, ATT-22: a merge History doesn't have yet is a row from the live feed, and History's own entry replaces it", () => {
+    const merged = { ...item("acme/shop#8", "done", 1), mergedBy: "dave" };
+    const early = wrapItems({ ...view([]), ownClosed: [merged] }, [session("a", "acme/shop#8")], now);
+    expect(early.map((row) => [row.number, row.wrap?.finish])).toEqual([[8, "merged 1h ago by dave"]]);
+    const listed = { ...item("acme/shop#8", "done", 1), title: "From History" };
+    expect(wrapItems({ ...view([listed]), ownClosed: [merged] }, [session("a", "acme/shop#8")], now).map((row) => row.title)).toEqual(["From History"]);
+  });
+
   it("ATT-22: a finished item with an idle session is a row, newest finish first", () => {
     const rows = wrapItems(
       view([item("acme/shop#1", "done", 2), item("acme/shop#2", "done", 5)]),
