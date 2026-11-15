@@ -29,6 +29,8 @@ export const State = z.object({
   sources: z.array(z.string()).default([]),
   // Project statuses ticked in Next up's filter; none means all [NXT-03].
   projectFilter: z.array(z.string()).default([]),
+  // Unclaimed grouped by repository rather than one list by priority [NXT-14].
+  unclaimedByRepo: z.boolean().default(false).catch(false),
   // Reviewed and Changed by others shown in each of History's weeks; none means finished only [HIS-07].
   historyFilter: z.array(z.enum(["reviewed", "changed"])).default([]).catch([] as HistoryFilter[]),
   // The device's IANA time zone, which History's weeks follow; the last device to send one wins. UTC until then [HIS-01].

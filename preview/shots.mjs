@@ -27,6 +27,7 @@ export const SCENARIOS = [
   { name: "next-up-sheet", shots: ["next-up-sheet"] },
   { name: "next-up-close", shots: ["next-up-close"] },
   { name: "next-up-new-issue", shots: ["next-up-new-issue"] },
+  { name: "next-up-by-repo", shots: ["next-up-by-repo"] },
   { name: "next-up-filters", shots: ["next-up-filter", "next-up-filtered", "next-up-source", "next-up-cleared", "next-up-filter-projects", "next-up-projects"] },
   { name: "settings", shots: ["settings-typo", "settings", "settings-next-up", "settings-org-picker", "settings-fields", "settings-fields-picked"] },
   { name: "setup", shots: ["setup"] },

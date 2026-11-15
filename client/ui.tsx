@@ -294,7 +294,7 @@ export function useHover() {
 }
 
 // Calm by default: accent text on a subtle surface. Solid accent is for confirmations.
-// Busy: a spinner in place of the icon, and no second press while it runs.
+// Busy: a spinner in place of the icon, and no second press while it runs. Selected: a toggle that's on.
 export function Button({
   label,
   icon,
@@ -302,6 +302,7 @@ export function Button({
   variant = "plain",
   disabled,
   busy,
+  selected,
   accessibilityLabel,
 }: {
   label?: string;
@@ -310,6 +311,7 @@ export function Button({
   variant?: Variant;
   disabled?: boolean;
   busy?: boolean;
+  selected?: boolean;
   accessibilityLabel?: string;
 }) {
   const styles = useStyles();
@@ -320,7 +322,8 @@ export function Button({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label ?? icon}
-      accessibilityState={{ disabled: disabled || busy, busy }}
+      accessibilityState={{ disabled: disabled || busy, busy, selected }}
+      aria-selected={selected}
       disabled={disabled || busy}
       onPress={onPress}
       {...hover}

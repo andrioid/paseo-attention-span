@@ -517,6 +517,8 @@ export interface AttentionView {
   sources: string[];
   // Project statuses ticked in Next up's filter, as projectFilterId makes them; none means all [NXT-03].
   projectFilter: string[];
+  // Unclaimed grouped by repository rather than one list by priority [NXT-14].
+  unclaimedByRepo: boolean;
   // Reviewed and Changed by others shown in each of History's weeks; none means finished only [HIS-07].
   historyFilter: HistoryFilter[];
   config: AttentionConfig;

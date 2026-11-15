@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NextUpIssue, ProjectInfo } from "./attention";
-import { type FilterChange, type FilterKind, type NextUpFilterInput, nextUpFilter } from "./next-up-filter";
+import { type FilterChange, type FilterKind, type NextUpFilterInput, nextUpFilter, repoGroups } from "./next-up-filter";
 import { issue } from "./test-builders";
 
 const board: ProjectInfo = {
@@ -137,5 +137,30 @@ describe("Next up filter", () => {
     });
     expect(nextUpFilter(state).empty).toBe("No unclaimed issues in these sources and projects and scopes.");
     expect(nextUpFilter({ ...state, selectedProjects: [] }).empty).toBe("No unclaimed issues in these sources and scopes.");
+  });
+});
+
+describe("Unclaimed by repo", () => {
+  // Already in NXT-02's order, as the server sends them.
+  const ranked = [issue("acme/shop#1"), issue("acme/api#2"), issue("acme/shop#3"), issue("me/tool#4"), issue("acme/api#5")];
+  const grouped = (shown: NextUpIssue[]) => repoGroups(shown)?.map((group) => `${group.repo}: ${group.issues.map((one) => one.number).join(",")}`);
+
+  it("NXT-14: groups by repository, the one with the top issue first, each keeping NXT-02's order", () => {
+    expect(grouped(ranked)).toEqual(["acme/shop: 1,3", "acme/api: 2,5", "me/tool: 4"]);
+  });
+
+  it("NXT-14: a repository's issues stay together whatever the case of its name", () => {
+    expect(grouped([issue("acme/shop#1"), issue("acme/api#2"), issue("Acme/Shop#3")])).toEqual(["acme/shop: 1,3", "acme/api: 2"]);
+  });
+
+  it("NXT-14: with one repository shown there's nothing to group, even when the filter narrowed it down", () => {
+    expect(repoGroups([issue("acme/shop#1"), issue("acme/shop#3")])).toBeNull();
+    expect(repoGroups([])).toBeNull();
+    const sources = [
+      { id: "org:acme", label: "acme" },
+      { id: "mine", label: "My repos" },
+    ];
+    const state = input([issue("acme/shop#1", { sources: ["org:acme"] }), issue("me/tool#4", { sources: ["mine"] })], { sources, selectedSources: ["mine"] });
+    expect(repoGroups(nextUpFilter(state).shown)).toBeNull();
   });
 });

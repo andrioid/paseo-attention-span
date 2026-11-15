@@ -90,6 +90,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
   server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setUnclaimedByRepo, ({ on }) => ready(() => attention.setUnclaimedByRepo(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.setNewIssueChoice, ({ repo, profileId }) => ready(() => attention.setNewIssueChoice(repo, profileId)).then(() => ({ ok: true as const })));
   server.handle(rpc.projectsAccess, () => ready(() => attention.projectsAccess(true)));
   server.handle(rpc.updateBranch, ({ key, target }) => act(key, () => updateBranch(target), chip("updating")));

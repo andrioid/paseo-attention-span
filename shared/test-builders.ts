@@ -56,5 +56,5 @@ export function feed(fields: Partial<FeedStatus> = {}): FeedStatus {
 // What buildView needs besides the lists.
 export function viewMeta(fields: { config?: AttentionConfig; feed?: FeedStatus } = {}) {
   const status = fields.feed ?? feed();
-  return { feeds: { live: status, history: status }, scopes: [], sources: [], projectFilter: [], historyFilter: [], config: fields.config ?? AttentionConfig.parse({}), pending: 0, newIssue: { repos: [] as string[], repo: null, profileId: null } };
+  return { feeds: { live: status, history: status }, scopes: [], sources: [], projectFilter: [], unclaimedByRepo: false, historyFilter: [], config: fields.config ?? AttentionConfig.parse({}), pending: 0, newIssue: { repos: [] as string[], repo: null, profileId: null } };
 }

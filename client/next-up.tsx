@@ -13,15 +13,15 @@ import {
   type UnclaimedSource,
 } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
-import { CLEAR_FILTER, type FilterChange, nextUpFilter } from "../shared/next-up-filter";
+import { CLEAR_FILTER, type FilterChange, nextUpFilter, repoGroups } from "../shared/next-up-filter";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./item-actions";
 import { CardList, CardRow, type Tone } from "./card";
 import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, type DetailsQuery, detailsKey, FilterSheet, githubEntry, type SheetEntry, usePrefetchOnRest } from "./sheet";
-import { IssuePills, PlaceText } from "./entity";
+import { IssuePills, PlaceText, RepoText } from "./entity";
 import { Still } from "./still";
-import { Button, FilterButton, Meta, SectionHeader, useStyles } from "./ui";
+import { Button, FilterButton, Meta, SectionHeader, TablerIcon, useStyles } from "./ui";
 
 const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
 
@@ -42,6 +42,9 @@ interface Props {
   selectedProjects: string[];
   // Change any filter or all at once, so Clear empties them in one go.
   onFilter: (change: FilterChange) => void;
+  // Unclaimed grouped by repository, and turning it on or off [NXT-14].
+  byRepo: boolean;
+  onByRepo: (on: boolean) => void;
   agents: AgentSummary[];
   // Mine, so my repos show without the owner.
   login: string | null;
@@ -59,16 +62,18 @@ interface Props {
   onNewIssue: () => void;
 }
 
-type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter" | "onNewIssue">;
+type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter" | "byRepo" | "onByRepo" | "onNewIssue">;
 
 // Assigned issues first [NXT-06], then unclaimed ones [NXT-01]; both already ranked by the server [NXT-02].
-export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, onNewIssue, ...rowProps }: Props) {
+export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedFrom, selected, sources, selectedSources, projects, selectedProjects, onFilter, byRepo, onByRepo, onNewIssue, ...rowProps }: Props) {
   const styles = useStyles();
   const filter = useMemo(
     () => nextUpFilter({ unclaimed, selected, sources, selectedSources, projects, selectedProjects }),
     [unclaimed, selected, sources, selectedSources, projects, selectedProjects],
   );
   const { shown, picked, groups } = filter;
+  // Only with two repositories or more is there anything to group [NXT-14].
+  const repos = useMemo(() => repoGroups(shown), [shown]);
   const [filtering, setFiltering] = useState(false);
 
   // Both point at where Next up looks: plainly when it has nowhere to look, quietly when it found nothing [NXT-13].
@@ -96,7 +101,18 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
           count={shown.length}
           action={
             <View style={styles.wrap}>
-              <Button label="New issue" icon="plus" variant="ghost" onPress={onNewIssue} />
+              {/* Just icons on a phone, so the header stays one line with Filter in it [NXT-14]. */}
+              {repos ? (
+                <Button
+                  label={styles.compact ? undefined : "Group by repo"}
+                  accessibilityLabel="Group by repo"
+                  icon="folder"
+                  variant={byRepo ? "calm" : "ghost"}
+                  selected={byRepo}
+                  onPress={() => onByRepo(!byRepo)}
+                />
+              ) : null}
+              <Button label={styles.compact ? undefined : "New issue"} accessibilityLabel="New issue" icon="plus" variant="ghost" onPress={onNewIssue} />
               {groups.length > 0 ? <FilterButton count={picked} onPress={() => setFiltering(true)} /> : null}
             </View>
           }
@@ -114,10 +130,34 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
           <Text style={styles.text}>No repos to look in. Register a project in Paseo, or choose where Next up looks in Settings.</Text>
         ) : shown.length === 0 ? (
           <Text style={styles.text}>{filter.empty}</Text>
+        ) : byRepo && repos ? (
+          <View style={{ gap: 8 }}>
+            {repos.map((group, index) => (
+              <View key={group.repo} style={{ gap: 8, marginTop: index ? 10 : 0 }}>
+                <RepoHeading repo={group.repo} count={group.issues.length} login={rowProps.login} />
+                <IssueList issues={group.issues} claim {...rowProps} />
+              </View>
+            ))}
+          </View>
         ) : (
           <IssueList issues={shown} claim {...rowProps} />
         )}
       </View>
+    </View>
+  );
+}
+
+// A repository's name over its issues, standing out more than History's sub-groups, since it's what the list is sorted by
+// [NXT-14]. Cards keep their repo too, for when this has scrolled away [NXT-10].
+function RepoHeading({ repo, count, login }: { repo: string; count: number; login: string | null }) {
+  const styles = useStyles();
+  return (
+    <View style={[styles.row, { gap: 6, paddingVertical: 2 }]} accessibilityRole="header">
+      <TablerIcon name="folder" size={14} color={styles.c.foregroundMuted} />
+      <Text style={[styles.muted, { fontSize: 13 }]}>
+        <RepoText repo={repo} login={login} bold />
+        {` · ${count}`}
+      </Text>
     </View>
   );
 }

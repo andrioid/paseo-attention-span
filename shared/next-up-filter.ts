@@ -135,3 +135,22 @@ function projectTree(unclaimed: NextUpIssue[], projects: ProjectInfo[]): Project
   const noProject = projectFilterId(null);
   return loose ? [...nodes, { id: noProject, title: "No project", children: [{ id: noProject, label: "No project" }] }] : nodes;
 }
+
+// Unclaimed by repo [NXT-14]: a group per repository, led by the one with the top issue, each keeping NXT-02's order. Null
+// with fewer than two repositories shown, so there's nothing to group and no switch to offer. Repositories match whatever
+// their case, so one never splits in two.
+export interface RepoGroup {
+  repo: string;
+  issues: NextUpIssue[];
+}
+
+export function repoGroups(shown: NextUpIssue[]): RepoGroup[] | null {
+  const groups = new Map<string, RepoGroup>();
+  for (const issue of shown) {
+    const id = issue.repo.toLowerCase();
+    const group = groups.get(id);
+    if (group) group.issues.push(issue);
+    else groups.set(id, { repo: issue.repo, issues: [issue] });
+  }
+  return groups.size > 1 ? [...groups.values()] : null;
+}
