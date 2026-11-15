@@ -54,6 +54,9 @@ export const State = z.object({
   groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}) satisfies z.ZodType<RememberedGroups>,
   // Issue key -> the latest merge under it when I chose Keep open; a later merge asks again [ATT-24].
   keptOpen: z.record(z.string(), z.string()).default({}).catch({}),
+  // Issue key -> an issue closed when Wrap up asked, with my merged PRs under it, as History's search can't find one not
+  // assigned to me; kept for History's weeks [ATT-24].
+  closedAsks: z.record(z.string(), z.custom<Item>((value) => typeof (value as Item)?.key === "string" && Array.isArray((value as Item)?.children))).default({}).catch({}),
   // Wrap up rows whose sessions were archived but whose worktree stayed, until it goes or is dismissed [ATT-22].
   kept: z.array(z.custom<KeptRow>((value) => typeof (value as KeptRow)?.workspaceId === "string" && typeof (value as KeptRow)?.itemKey === "string")).default([]).catch([]),
   // The repository and agent profile the New issue sheet last started with [ISS-01].

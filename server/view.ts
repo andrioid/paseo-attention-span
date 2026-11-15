@@ -157,7 +157,10 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
   const activeKeys = (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]);
   const active = keySet(activeKeys);
   // An issue with a PR of mine open under it isn't done: that PR's in the live feed, which History's asks can't know [ATT-24].
-  const closeAsks = (meta.closeAsks ?? []).filter((ask) => !active.has(ask.key.toLowerCase()));
+  // Only what merged within History's weeks counts, as History shows it, until it's fetched again [HIS-01].
+  const closeAsks = (meta.closeAsks ?? [])
+    .filter((ask) => !active.has(ask.key.toLowerCase()) && Date.parse(ask.mergedAt) >= Date.parse(since))
+    .map((ask) => ({ ...ask, prs: ask.prs.filter((pr) => Date.parse(pr.mergedAt ?? ask.mergedAt) >= Date.parse(since)) }));
   // Next up keeps an issue it asks about, saying its PRs merged [ATT-24].
   const asked = keySet(closeAsks.map((ask) => ask.key));
   const marked = (issues: NextUpIssue[]) => issues.map((issue) => (asked.has(issue.key.toLowerCase()) ? { ...issue, prsMerged: true as const } : issue));

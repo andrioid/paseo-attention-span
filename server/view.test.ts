@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
-import { agent, item, viewMeta } from "../shared/test-builders";
+import { agent, issue, item, viewMeta } from "../shared/test-builders";
 import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
 const meta = viewMeta({ feed: { fetchedAt: null, refreshing: false, error: null } });
@@ -192,9 +192,17 @@ describe("asking to close an issue", () => {
     expect([open.closeAsks, done.closeAsks?.map((a) => a.number)]).toEqual([[], [12]]);
   });
 
+  it("ATT-24, HIS-01: only what merged within History's weeks asks, as History shows it", () => {
+    const pr = (number: number, mergedAt: string) => ({ key: `acme/shop#${number}`, number, title: "t", url: "u", draft: false, chips: [], attention: false, mergedAt });
+    const ask = (number: number, ...prs: ReturnType<typeof pr>[]) => ({ key: `acme/shop#${number}`, repo: "acme/shop", number, title: "t", url: "u", prs, mergedAt: prs.at(-1)!.mergedAt });
+    // Four weeks from Monday 19 October.
+    const asks = [ask(12, pr(34, "2026-10-10T00:00:00Z")), ask(13, pr(35, "2026-10-10T00:00:00Z"), pr(36, "2026-11-10T00:00:00Z"))];
+    const view = buildView(attention([]), [], {}, { ...meta, closeAsks: asks }, undefined, new Date("2026-11-14T12:00:00Z"));
+    expect(view.closeAsks?.map((a) => [a.number, a.prs.map((p) => p.number)])).toEqual([[13, [36]]]);
+  });
+
   it("ATT-24: Next up keeps an issue it asks about, saying its PRs merged", () => {
     const ask = { key: "acme/shop#12", repo: "acme/shop", number: 12, title: "Export", url: "u", prs: [], mergedAt: "2026-11-01T00:00:00Z" };
-    const issue = (key: string) => ({ key, repo: "acme/shop", number: 0, title: "t", url: "u", createdAt: "2026-10-01T00:00:00Z", sources: [], openPrs: [] }) satisfies NextUpIssue;
     const view = buildView({ ...attention([]), assigned: [issue("acme/shop#12"), issue("acme/shop#13")] }, [], {}, { ...meta, closeAsks: [ask] });
     expect(view.assigned.map((next) => [next.key, !!next.prsMerged])).toEqual([["acme/shop#12", true], ["acme/shop#13", false]]);
   });

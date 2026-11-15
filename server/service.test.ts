@@ -417,11 +417,11 @@ describe("asking to close an issue", () => {
   const repository = { nameWithOwner: REPO };
   const ISSUE = `${REPO}#900`;
   const merged = (number: number, mergedAt: string) => ({ number, title: `Step ${number}`, url: `u${number}`, body: `Part of #900`, mergedAt, repository, closingIssuesReferences: { nodes: [] } });
-  const open = { number: 900, title: "Export to CSV", url: "u900", state: "OPEN", repository, closedByPullRequestsReferences: { nodes: [] } };
-  // gh answering History's search with my merged PRs, and the lookup of the issue they refer to as still open.
-  const gh = (prs: ReturnType<typeof merged>[]): Gh => ({
+  const open = { number: 900, title: "Export to CSV", url: "u900", state: "OPEN", repository, closedByPullRequestsReferences: { nodes: [] as { state: string }[] } };
+  // gh answering History's search with my merged PRs, and the lookup of the issue they refer to as `issue` says.
+  const gh = (prs: ReturnType<typeof merged>[], issue = open): Gh => ({
     graphql: (async () => ({ viewer: { login: "me", id: "U_me" }, merged: { nodes: prs }, reviewed: { nodes: [] }, closed: { nodes: [] } }) satisfies HistoryResult) as Gh["graphql"],
-    graphqlResult: (async (query: string) => ({ data: query.includes("number: 900") ? { i0: { issueOrPullRequest: open } } : {}, errors: [], failures: [] })) as never,
+    graphqlResult: (async (query: string) => ({ data: query.includes(`number: ${issue.number}`) ? { i0: { issueOrPullRequest: issue } } : {}, errors: [], failures: [] })) as never,
   });
   const asked = (view: AttentionView) => (view.closeAsks ?? []).map((ask) => [ask.key, ask.prs.map((pr) => pr.number)]);
 
@@ -444,5 +444,40 @@ describe("asking to close an issue", () => {
     expect(asked(closed)).toEqual([]);
     expect(closed.history.find((item) => item.key === ISSUE)?.children.map((child) => child.number)).toEqual([901]);
     expect(asked(await service.act(ISSUE, async () => {}, null))).toEqual([[ISSUE, [901]]]);
+  });
+
+  it("ATT-24: Keep open outlasts a fetch that doesn't ask, as while someone's PR is open for it", async () => {
+    const issue = structuredClone(open);
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.keepOpen(ISSUE, true);
+    issue.closedByPullRequestsReferences.nodes = [{ state: "OPEN" }];
+    expect(asked(await service.get("history"))).toEqual([]);
+    // Their PR closed unmerged: nothing of mine merged since, so it's still kept open.
+    issue.closedByPullRequestsReferences.nodes = [];
+    expect(asked(await service.get("history"))).toEqual([]);
+  });
+
+  it("ATT-24, HIS-01: an issue closed when asked stays in History with its PRs under it, though History's search can't find it", async () => {
+    const issue = structuredClone(open);
+    const { service, start, advance } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.act(ISSUE, async () => {}, { kind: "finished" });
+    issue.state = "CLOSED";
+    // GitHub caught up: History is fetched again, and the close is no longer pending.
+    await advance(SETTLE_MS + 1);
+    const view = await service.get(undefined, true);
+    expect([view.pending, asked(view)]).toEqual([0, []]);
+    expect(view.history.filter((item) => [ISSUE, `${REPO}#901`].includes(item.key)).map((item) => [item.key, item.children.map((child) => child.number)])).toEqual([[ISSUE, [901]]]);
+  });
+
+  it("ATT-24: closing an issue assigned to me keeps my merged PRs under it", async () => {
+    // #152 is assigned to me in the fixture's live feed.
+    const assigned = { ...structuredClone(open), number: 152, title: "Customer statements as PDF" };
+    const pr = { ...merged(901, "2026-11-12T10:00:00Z"), body: "Part of #152" };
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([pr], assigned)).history(config, now, timeZone));
+    await start();
+    const closed = await service.act(`${REPO}#152`, async () => {}, { kind: "finished" });
+    expect(closed.history.find((item) => item.key === `${REPO}#152`)?.children.map((child) => child.number)).toEqual([901]);
   });
 });

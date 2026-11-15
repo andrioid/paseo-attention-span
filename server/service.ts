@@ -9,7 +9,7 @@ import { acknowledge, ownClosed } from "./changes";
 import { classify, classifyCloseAsks, classifyHistory } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning } from "./projects";
 import type { Port } from "./port";
-import { isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
+import { historySince, isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import type { Details, LiveResult } from "./github-types";
 import { State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, type Pending, SETTLE_MS } from "./view";
@@ -306,6 +306,11 @@ export class AttentionService {
     const at = new Date(this.port.now()).toISOString();
     if (change) this.state.pending[key] = { at, effect: change.kind === "finished" ? this.finished(key, at, change.notPlanned) : change };
     else delete this.state.pending[key];
+    // History's search only finds closed issues assigned to me, so one Wrap up asked to close is kept here, its merged PRs
+    // under it, for its week and its sessions' row; Undo forgets it [ATT-24, HIS-01].
+    const effect = this.state.pending[key]?.effect;
+    if (effect?.kind === "done" && this.state.history?.asks.some((ask) => ask.key === key)) this.state.closedAsks[key] = effect.item;
+    else if (!change) delete this.state.closedAsks[key];
     await this.save();
     const history = change?.kind === "finished" || before?.effect.kind === "done";
     this.followUp("live");
@@ -316,14 +321,16 @@ export class AttentionService {
   // Into History if it's mine: a PR in my lists, or an issue assigned to me [HIS-01]. Else just off the lists.
   private finished(key: string, at: string, notPlanned?: boolean): Effect {
     const live = this.state.live?.attention;
-    const source = live?.items.find((item) => item.key === key) ?? live?.assigned.find((issue) => issue.key === key) ?? this.askItem(key);
+    const source = live?.items.find((item) => item.key === key) ?? live?.assigned.find((issue) => issue.key === key);
+    const ask = this.state.history?.asks.find((candidate) => candidate.key === key);
+    // An issue Wrap up asked to close keeps my merged PRs under it, assigned to me or not [ATT-24, HIS-01].
+    if (ask) return { kind: "done", item: { ...doneItem(source ?? this.askItem(ask), at, notPlanned), children: notPlanned ? [] : ask.prs } };
     return source ? { kind: "done", item: doneItem(source, at, notPlanned) } : { kind: "gone" };
   }
 
-  // An issue Wrap up asked to close, as History will list it once closed: my merged PRs under it [ATT-24, HIS-01].
-  private askItem(key: string): Item | undefined {
-    const ask = this.state.history?.asks.find((candidate) => candidate.key === key);
-    return ask && { ...baseItem({ key, section: "done", kind: "issue", repo: ask.repo, number: ask.number, title: ask.title, url: ask.url }), children: ask.prs };
+  // An issue Wrap up asked to close, not in the live feed's lists [ATT-24].
+  private askItem(ask: CloseAsk): Item {
+    return baseItem({ key: ask.key, section: "done", kind: "issue", repo: ask.repo, number: ask.number, title: ask.title, url: ask.url });
   }
 
   // A PR of mine the live feed saw merged, which History doesn't list yet, perhaps merged on GitHub: History is fetched
@@ -375,9 +382,12 @@ export class AttentionService {
       }
       else {
         this.state.history = { fetchedAt, ...(await this.fetchHistory(now)) };
-        // Keep open is forgotten once the issue isn't asked about: closed, or out of History's weeks [ATT-24].
-        const asked = new Set(this.state.history.asks.map((ask) => ask.key));
-        for (const key of Object.keys(this.state.keptOpen)) if (!asked.has(key)) delete this.state.keptOpen[key];
+        // Keep open, and an issue closed when asked, last as long as History's weeks: an ask missing from one fetch, while
+        // someone's PR is open or a lookup failed, may come back. A closed one History lists itself needs no keeping [ATT-24].
+        const since = historySince(now, this.config.historyWeeks, this.timeZone);
+        for (const [key, mergedAt] of Object.entries(this.state.keptOpen)) if (mergedAt < since) delete this.state.keptOpen[key];
+        const listed = new Set(this.state.history.items.map((item) => item.key));
+        for (const [key, item] of Object.entries(this.state.closedAsks)) if (listed.has(key) || (item.closedAt ?? "") < since) delete this.state.closedAsks[key];
       }
       // Forget dismissals of items that are gone.
       const keys = new Set(this.items().map((item) => item.key));
@@ -525,6 +535,16 @@ export class AttentionService {
     return (this.state.history?.asks ?? []).filter((ask) => !off(ask.key) && !((this.state.keptOpen[ask.key] ?? "") >= ask.mergedAt));
   }
 
+  // History as fetched, with the issues closed when Wrap up asked, which its search can't find, and their PRs under them
+  // rather than alone [ATT-24, HIS-01].
+  private historyItems(): Item[] {
+    const items = this.state.history?.items ?? [];
+    const listed = new Set(items.map((item) => item.key));
+    const closed = Object.values(this.state.closedAsks).filter((item) => !listed.has(item.key));
+    const under = new Set(closed.flatMap((item) => item.children.map((child) => child.key)));
+    return [...closed, ...items.filter((item) => !under.has(item.key))];
+  }
+
   private view(): AttentionView {
     const status = (id: FeedId): FeedStatus => ({
       fetchedAt: this.state[id]?.fetchedAt ?? null,
@@ -533,7 +553,7 @@ export class AttentionService {
     });
     const now = this.port.now();
     const pending = Object.fromEntries(Object.entries(this.state.pending).filter(([, entry]) => isPending(entry, this.fetchedAt(), now)));
-    const shown = applyPending(this.state.live?.attention ?? null, this.state.history?.items ?? [], pending);
+    const shown = applyPending(this.state.live?.attention ?? null, this.historyItems(), pending);
     return buildView(
       shown.attention,
       shown.history,
