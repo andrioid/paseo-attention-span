@@ -471,8 +471,12 @@ export function classifyHistory(data: HistoryResult): Item[] {
     // Each merged PR on its own: its branches are gone, so it can't be put back in its stack [ATT-03].
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
     const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
-    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy(pr) });
-    else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt, ...mergedBy(pr) }, pr));
+    const head = pr.headRefName ? { headRefName: pr.headRefName } : {};
+    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy(pr), ...head });
+    else {
+      const item = plain(pr, "pr", "done");
+      items.push(kinded({ ...item, target: { ...item.target, ...head }, closedAt: pr.mergedAt, ...mergedBy(pr) }, pr));
+    }
   }
   for (const pr of compact(data.reviewed.nodes)) {
     items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt), ...mergedBy(pr) }, pr));

@@ -211,6 +211,8 @@ export interface SubRow {
   attention: boolean;
   // History only: who merged it, when it wasn't me [HIS-05].
   mergedBy?: string;
+  // History only: the branch it merged from, so a session left on it finds its row in Wrap up [ATT-22].
+  headRefName?: string;
 }
 
 export interface Item {

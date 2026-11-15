@@ -163,6 +163,8 @@ export interface EndedPullRequest {
   number: number;
   title: string;
   url: string;
+  // Missing in older fixtures and caches.
+  headRefName?: string;
   merged: boolean;
   mergedAt: string | null;
   closedAt: string;
@@ -199,7 +201,7 @@ type Labels = { labels?: Nodes<{ name: string }> };
 export interface HistoryResult {
   // Who I am, to tell a merge by someone else [HIS-05]; missing in older fixtures.
   viewer?: { login: string; id: string };
-  merged: Nodes<{ number: number; title: string; url: string; body?: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
+  merged: Nodes<{ number: number; title: string; url: string; headRefName?: string; body?: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
   reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; author: Actor | null } & Labels>;
   closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo; issueType?: { name: string } | null; timelineItems?: Nodes<{ actor?: { login: string } | null }> } & Labels>;
 }

@@ -33,7 +33,7 @@ const SEARCHES = {
   ended: {
     first: 50,
     nodes: `... on PullRequest {
-      id number title url merged mergedAt closedAt repository { nameWithOwner } mergedBy { login }
+      id number title url headRefName merged mergedAt closedAt repository { nameWithOwner } mergedBy { login }
       assignees(first: 10) { nodes { login } }
       timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { createdAt actor { login } } } }
     }`,
@@ -46,10 +46,10 @@ const SEARCHES = {
       timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { createdAt actor { login } } } }
     }`,
   },
-  // Who merged it, when it wasn't me [HIS-05].
+  // Who merged it, when it wasn't me [HIS-05]; its branch, so a session left on it finds its way to Wrap up [ATT-22].
   merged: {
     first: 100,
-    nodes: "... on PullRequest { number title url body mergedAt mergedBy { login } repository { nameWithOwner } labels(first: 20) { nodes { name } } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
+    nodes: "... on PullRequest { number title url headRefName body mergedAt mergedBy { login } repository { nameWithOwner } labels(first: 20) { nodes { name } } closingIssuesReferences(first: 3) { nodes { number repository { nameWithOwner } } } }",
   },
   // Who merged someone else's PR I reviewed, for the week's Changed by others copy and Wrap up [HIS-02, ATT-22].
   reviewed: { first: 100, nodes: "... on PullRequest { number title url mergedAt mergedBy { login } repository { nameWithOwner } author { ...author } labels(first: 20) { nodes { name } } }" },
