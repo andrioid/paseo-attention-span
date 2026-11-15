@@ -152,11 +152,11 @@ export class AttentionService {
 
   // Archive a Wrap up row's sessions; success acknowledges the events on that work, so they go to their week as cleared, not
   // History's unread notes [ATT-22, HIS-07]. A failure leaves the row to try again.
-  async archive(paseo: PluginHandlerContext["paseo"], targets: ArchiveTarget[], confirm: boolean): Promise<ArchiveOutcome> {
-    const answer = await this.port.paseo.archive(paseo, targets.flatMap((target) => target.agentIds), confirm);
+  async archive(paseo: PluginHandlerContext["paseo"], targets: ArchiveTarget[], confirm: boolean, terminals: string[] = []): Promise<ArchiveOutcome> {
+    const answer = await this.port.paseo.archive(paseo, targets.flatMap((target) => target.agentIds), confirm, terminals);
     if (!answer.ok) return { ...answer, view: this.view() };
     const view = await this.acknowledge(targets.flatMap((target) => target.keys));
-    return answer.warning ? { ok: true, view, warning: answer.warning } : { ok: true, view };
+    return { ...answer, view };
   }
 
   // Remember where an issue repo's code lives [SES-07].

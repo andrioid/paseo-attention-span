@@ -20,7 +20,8 @@ interface FakeWorkspace {
 }
 
 // Paseo's agents, workspaces and terminals, as far as archiving uses them, recording what it archived.
-function paseoFor(agents: { id: string; workspaceId?: string; status?: string }[], workspaces: FakeWorkspace[], terminals: string[] = []) {
+// Terminals are "id" in w1, or "id@w2" in another workspace.
+function paseoFor(agents: { id: string; workspaceId?: string; status?: string; title?: string }[], workspaces: FakeWorkspace[], terminals: string[] = []) {
   const archivedAgents: string[] = [];
   const archivedWorkspaces: string[] = [];
   const api = {
@@ -32,9 +33,19 @@ function paseoFor(agents: { id: string; workspaceId?: string; status?: string }[
       list: async () => ({ entries: workspaces.map((workspace) => ({ gitRuntime: { isDirty: false, aheadOfOrigin: 0, currentBranch: "b" }, ...workspace })) }),
       archive: async (id: string) => (archivedWorkspaces.push(id), { archivedAt: "now", error: null, workspaceId: id, requestId: "r" }),
     },
-    terminals: { list: async () => ({ entries: terminals.map((id) => ({ id, workspaceId: "w1", cwd: "/tmp", name: id })), requestId: "r" }) },
+    terminals: {
+      list: async ({ workspaceId }: { workspaceId: string }) => ({
+        entries: terminals
+          .map((spec) => ({ id: spec.split("@")[0], workspaceId: spec.split("@")[1] ?? "w1" }))
+          .filter((terminal) => terminal.workspaceId === workspaceId)
+          .map(({ id }) => ({ id, workspaceId, cwd: "/tmp", name: `${id} shell` })),
+        requestId: "r",
+      }),
+    },
   };
-  return { paseo: api as unknown as Paseo, archivedAgents, archivedWorkspaces };
+  // Opens a terminal, as if from Paseo, between calls.
+  const open = (id: string) => terminals.push(id);
+  return { paseo: api as unknown as Paseo, archivedAgents, archivedWorkspaces, open };
 }
 
 // Throwaway git repos: a bare "origin" and a clone tracking it, so ahead and uncommitted are real git answers.
@@ -114,21 +125,106 @@ describe("archive safety", () => {
     expect(archivedWorkspaces).toEqual([]);
   });
 
-  it("ATT-22: a worktree another session or a terminal lives in stays", async () => {
+  it("ATT-22: a worktree another session lives in stays, and says which session kept it", async () => {
     const shared = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "a2", workspaceId: "w1", title: "Fix flaky test" },
+      ],
+      [{ id: "w1", workspaceKind: "worktree" }],
+    );
+    expect(await archiveSessions(shared.paseo, ["a1"], false)).toEqual({ ok: true, note: "Archived; kept b: Fix flaky test is still in it" });
+    expect(shared.archivedAgents).toEqual(["a1"]);
+    expect(shared.archivedWorkspaces).toEqual([]);
+  });
+
+  it("ATT-22: open terminals are named first, and close with the worktree once confirmed", async () => {
+    const { paseo, archivedAgents, archivedWorkspaces } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree", workspaceDirectory: clone() }], ["t1", "t2"]);
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({
+      ok: false,
+      reason: "unsaved",
+      sessions: [{ agentId: "a1", title: "Session", branch: "b", terminals: ["t1 shell", "t2 shell"] }],
+      terminals: ["t1", "t2"],
+    });
+    expect(archivedAgents).toEqual([]);
+    expect(await archiveSessions(paseo, ["a1"], true, ["t1", "t2"])).toEqual({ ok: true });
+    expect(archivedAgents).toEqual(["a1"]);
+    expect(archivedWorkspaces).toEqual(["w1"]);
+  });
+
+  it("ATT-22: unsaved work and open terminals share one sheet", async () => {
+    const work = clone();
+    writeFileSync(join(work, "late.txt"), "late\n");
+    const { paseo } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree", workspaceDirectory: work }], ["t1"]);
+    expect(await archiveSessions(paseo, ["a1"], false)).toMatchObject({ reason: "unsaved", sessions: [{ agentId: "a1", files: 1, terminals: ["t1 shell"] }], terminals: ["t1"] });
+  });
+
+  it("ATT-22: a terminal opened after the sheet asks again, still naming the unsaved work", async () => {
+    const work = clone();
+    writeFileSync(join(work, "late.txt"), "late\n");
+    const { paseo, archivedAgents, open } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree", workspaceDirectory: work }], ["t1"]);
+    await archiveSessions(paseo, ["a1"], false);
+    open("t2");
+    expect(await archiveSessions(paseo, ["a1"], true, ["t1"])).toMatchObject({
+      reason: "unsaved",
+      sessions: [{ files: 1, terminals: ["t1 shell", "t2 shell"] }],
+      terminals: ["t1", "t2"],
+    });
+    expect(archivedAgents).toEqual([]);
+  });
+
+  it("ATT-22: a terminal opened while the sessions were archived keeps its worktree, and says so", async () => {
+    const { paseo, archivedAgents, archivedWorkspaces, open } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree", workspaceDirectory: clone() }], ["t1"]);
+    const ref = paseo.agents.ref;
+    paseo.agents.ref = ((id: string) => (open("t2"), ref(id))) as typeof ref;
+    expect(await archiveSessions(paseo, ["a1"], true, ["t1"])).toEqual({ ok: true, note: "Archived; kept b: t2 shell opened meanwhile" });
+    expect(archivedAgents).toEqual(["a1"]);
+    expect(archivedWorkspaces).toEqual([]);
+  });
+
+  it("ATT-22: only a worktree's own terminals are named, and a kept worktree is said beside one that wouldn't go", async () => {
+    const { paseo } = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "a2", workspaceId: "w2" },
+        { id: "a3", workspaceId: "w2", title: "Fix flaky test" },
+      ],
+      [
+        { id: "w1", workspaceKind: "worktree" },
+        { id: "w2", workspaceKind: "worktree" },
+      ],
+      ["t1@w2"],
+    );
+    expect(await archiveSessions(paseo, ["a1", "a2"], false)).toMatchObject({ ok: true });
+    paseo.workspaces.archive = (async () => {
+      throw new Error("busy");
+    }) as typeof paseo.workspaces.archive;
+    expect(await archiveSessions(paseo, ["a1", "a2"], false)).toEqual({
+      ok: true,
+      warning: "Archived, but couldn't remove b: busy",
+      note: "Archived; kept b: Fix flaky test is still in it",
+    });
+  });
+
+  it("ATT-22: terminals that can't be listed don't keep the worktree", async () => {
+    const { paseo, archivedWorkspaces } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree", workspaceDirectory: clone() }]);
+    paseo.terminals.list = (async () => {
+      throw new Error("no terminals");
+    }) as typeof paseo.terminals.list;
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true });
+    expect(archivedWorkspaces).toEqual(["w1"]);
+  });
+
+  it("ATT-22: a worktree that stays names no terminals", async () => {
+    const { paseo } = paseoFor(
       [
         { id: "a1", workspaceId: "w1" },
         { id: "a2", workspaceId: "w1" },
       ],
-      [{ id: "w1", workspaceKind: "worktree" }],
+      [{ id: "w1", workspaceKind: "worktree", workspaceDirectory: clone() }],
+      ["t1"],
     );
-    await archiveSessions(shared.paseo, ["a1"], false);
-    expect(shared.archivedAgents).toEqual(["a1"]);
-    expect(shared.archivedWorkspaces).toEqual([]);
-    const terminal = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "worktree" }], ["t1"]);
-    await archiveSessions(terminal.paseo, ["a1"], false);
-    expect(terminal.archivedAgents).toEqual(["a1"]);
-    expect(terminal.archivedWorkspaces).toEqual([]);
+    expect(await archiveSessions(paseo, ["a1"], false)).toMatchObject({ ok: true, note: expect.any(String) });
   });
 
   it("ATT-22: a session that is working never archives", async () => {

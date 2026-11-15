@@ -5,7 +5,8 @@ import { isIdle } from "../shared/attention";
 import { type ArchiveResult, type UnsavedSession, unsavedOf } from "../shared/archive";
 
 // Archiving finished work's sessions, safely [ATT-22]. Paseo's SDK has no restore, so an archive has no Undo here; instead
-// nothing with unsaved work leaves without a confirmation. A worktree goes only when nothing else lives in it. Which
+// nothing with unsaved work or open terminals leaves without a confirmation. A worktree goes only when no other session
+// lives in it. Which
 // sessions to archive, and what that acknowledges, is the service's business; this only archives what it's given.
 
 const run = promisify(execFile);
@@ -55,9 +56,10 @@ async function unsavedWork(session: ArchiveSession, workspace: ListedWorkspace |
   return found.unknown || found.files || found.commits ? found : null;
 }
 
-// Archives the given sessions, and the worktree behind each when nothing else lives in it [ATT-22]. A workspace shared with
-// anything else stays, and a local checkout always does. `confirm` is the sheet that named unsaved work.
-export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm: boolean): Promise<ArchiveResult> {
+// Archives the given sessions, and the worktree behind each when no other session lives in it [ATT-22]. A workspace shared
+// with another session stays, and a local checkout always does. `confirm` is the sheet that named unsaved work and open
+// terminals; `seen` are the terminals it named, the only ones archiving may close.
+export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm: boolean, seen: string[] = []): Promise<ArchiveResult> {
   const [agentList, workspaceList] = await Promise.all([paseo.agents.list(), paseo.workspaces.list()]);
   const agents = new Map<string, ListedAgent>(agentList.entries.map(({ agent }) => [agent.id, agent]));
   const workspaces = new Map<string, ListedWorkspace>(workspaceList.entries.map((workspace) => [workspace.id, workspace]));
@@ -84,14 +86,15 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
     });
   const busy = working(agentList.entries);
   if (busy) return { ok: false, reason: "working", message: `${busy.title ?? "A session"} is still working` };
-  if (!confirm) {
-    const dirty: UnsavedSession[] = [];
+  const unsaved = async () => {
+    const dirty = new Map<string, UnsavedSession>();
     for (const session of sessions) {
       const found = await unsavedWork(session, session.workspaceId ? workspaces.get(session.workspaceId) : undefined);
-      if (found) dirty.push(found);
+      if (found) dirty.set(session.agentId, found);
     }
-    if (dirty.length) return { ok: false, reason: "unsaved", sessions: dirty };
-  }
+    return dirty;
+  };
+  const dirty = confirm ? new Map<string, UnsavedSession>() : await unsaved();
 
   // The checks above can take a while: look again right before archiving, so a session that started working, or a session
   // that moved into one of these worktrees meanwhile, is seen [ATT-22].
@@ -99,26 +102,64 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
   const resumed = working(latest.entries);
   if (resumed) return { ok: false, reason: "working", message: `${resumed.title ?? "A session"} is working again` };
 
+  // Which worktrees go: Paseo's, with no unarchived session in them but these. One that holds another session stays, and
+  // says which one kept it.
+  // Paseo closes a worktree's terminals when it goes, so the sheet names them first. Terminals that can't be listed don't
+  // keep it: Paseo would close them all the same.
+  const terminalsOf = (workspaceId: string) =>
+    paseo.terminals
+      .list({ workspaceId })
+      .then((result) => result.entries.map(({ id, name }) => ({ id, name })))
+      .catch(() => []);
+  const leaving: { workspaceId: string; session: ArchiveSession; terminals: { id: string; name: string }[] }[] = [];
+  const kept: string[] = [];
+  for (const workspaceId of new Set(sessions.flatMap((session) => (session.workspaceId ? [session.workspaceId] : [])))) {
+    const workspace = workspaces.get(workspaceId);
+    if (!workspace || workspace.workspaceKind !== "worktree") continue;
+    const other = latest.entries.find(({ agent }) => agent.workspaceId === workspaceId && !agent.archivedAt && !wanted.includes(agent.id))?.agent;
+    if (other) {
+      kept.push(`kept ${workspace.gitRuntime?.currentBranch ?? "its worktree"}: ${other.title ?? "another session"} is still in it`);
+      continue;
+    }
+    leaving.push({ workspaceId, session: sessions.find((session) => session.workspaceId === workspaceId)!, terminals: await terminalsOf(workspaceId) });
+  }
+
+  // Unsaved work, or a terminal the sheet didn't name, asks first; a terminal that opened after the sheet asks again, with
+  // whatever else is unsaved by then [ATT-22].
+  const unseen = leaving.some(({ terminals }) => terminals.some((terminal) => !seen.includes(terminal.id)));
+  if (dirty.size || unseen) {
+    const found = confirm ? await unsaved() : dirty;
+    for (const { session, terminals } of leaving) {
+      if (!terminals.length) continue;
+      found.set(session.agentId, { ...(found.get(session.agentId) ?? base(session)), terminals: terminals.map(({ name }) => name) });
+    }
+    const named = sessions.flatMap((session) => found.get(session.agentId) ?? []);
+    return { ok: false, reason: "unsaved", sessions: named, terminals: leaving.flatMap(({ terminals }) => terminals.map(({ id }) => id)) };
+  }
+
   // Archive the sessions; an already archived one counts as done.
   for (const session of sessions) {
     if (agents.get(session.agentId)?.archivedAt) continue;
     await paseo.agents.ref(session.agentId).archive();
   }
-  // A worktree goes only when it's Paseo's, every unarchived agent in it was one of these sessions, and it has no terminal of
-  // its own. If the terminals can't be read, it stays: better a leftover worktree than somebody's shell.
+  // The sessions are put away either way; a worktree that wouldn't go is said, not swallowed. Its terminals are listed once
+  // more right before it goes: one that opened while the sessions were archived wasn't on the sheet, so the worktree stays.
   const warnings: string[] = [];
-  for (const workspaceId of new Set(sessions.flatMap((session) => (session.workspaceId ? [session.workspaceId] : [])))) {
-    const workspace = workspaces.get(workspaceId);
-    if (!workspace || workspace.workspaceKind !== "worktree") continue;
-    if (latest.entries.some(({ agent }) => agent.workspaceId === workspaceId && !agent.archivedAt && !wanted.includes(agent.id))) continue;
-    const terminals = await paseo.terminals.list({ workspaceId }).catch(() => null);
-    if (!terminals || terminals.entries.length > 0) continue;
-    // The sessions are put away either way; a worktree that wouldn't go is said, not swallowed.
+  for (const { workspaceId, session } of leaving) {
+    const late = (await terminalsOf(workspaceId)).filter((terminal) => !seen.includes(terminal.id));
+    if (late.length) {
+      kept.push(`kept ${session.branch ?? "its worktree"}: ${late.map(({ name }) => name).join(", ")} opened meanwhile`);
+      continue;
+    }
     const failed = await paseo.workspaces
       .archive(workspaceId)
       .then((result) => (result.error ? String(result.error) : null))
       .catch((error: Error) => error.message);
-    if (failed) warnings.push(`${workspace.gitRuntime?.currentBranch ?? "its worktree"}: ${failed}`);
+    if (failed) warnings.push(`${session.branch ?? "its worktree"}: ${failed}`);
   }
-  return warnings.length ? { ok: true, warning: `Archived, but couldn't remove ${warnings.join("; ")}` } : { ok: true };
+  return {
+    ok: true,
+    ...(warnings.length ? { warning: `Archived, but couldn't remove ${warnings.join("; ")}` } : {}),
+    ...(kept.length ? { note: `Archived; ${kept.join("; ")}` } : {}),
+  };
 }

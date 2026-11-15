@@ -177,18 +177,21 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
 
   // Archive sessions, with the busy key that makes it wait for Archive all clean and the other way round [ATT-22].
   // No Undo: Paseo's SDK can't restore a workspace and its agents, so the sheet is the safeguard instead.
-  async function archiveRows(items: WrapItem[], confirm: boolean, key = ALL_WRAP): Promise<ArchiveOutcome | null> {
+  // `terminals` are the ones the confirm sheet named; archiving closes no other.
+  async function archiveRows(items: WrapItem[], confirm: boolean, key = ALL_WRAP, terminals: string[] = []): Promise<ArchiveOutcome | null> {
     if (items.length === 0) return null;
     setBusy((keys) => new Set(keys).add(key));
     try {
-      const outcome = await archiveSessions({ targets: items.map(archiveTarget), confirm });
+      const outcome = await archiveSessions({ targets: items.map(archiveTarget), confirm, terminals });
       attention.setView(outcome.view);
       if (outcome.ok) {
         const archived = new Set(items.flatMap((item) => item.wrap.sessions.map((session) => session.id)));
         setArchivedSessions((known) => new Set([...known, ...archived]));
         const sessions = archived.size;
+        // A worktree that wouldn't go is an error; one kept on purpose, for another session, is just said.
         if (outcome.warning) toast.error(outcome.warning);
-        else toast.show(sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`, { variant: "success" });
+        if (outcome.note) toast.show(outcome.note, { variant: "info" });
+        if (!outcome.warning && !outcome.note) toast.show(sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`, { variant: "success" });
       } else if (outcome.reason === "working") {
         toast.error(`Couldn't archive: ${outcome.message}`);
       }

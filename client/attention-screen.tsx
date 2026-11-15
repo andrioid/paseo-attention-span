@@ -210,12 +210,12 @@ function AttentionList({
                   login={view.login}
                   fixture={!!view.fixtureAgents}
                   openAgent={act.openAgent}
-                  onArchive={(item, confirm) => act.archiveRows([item], confirm, item.key)}
+                  onArchive={(item, confirm, terminals) => act.archiveRows([item], confirm, item.key, terminals)}
                   onArchiveAll={async () => {
                     const clean = wrap.filter(cleanSingle);
                     if (clean.length === 0) return;
                     const outcome = await act.archiveRows(clean, false);
-                    if (outcome && !outcome.ok && outcome.reason === "unsaved") toast.error("Some sessions have unsaved changes. Archive them one by one.");
+                    if (outcome && !outcome.ok && outcome.reason === "unsaved") toast.error("Some sessions have unsaved changes or open terminals. Archive them one by one.");
                   }}
                 />
               ) : null}
