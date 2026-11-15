@@ -108,7 +108,7 @@ export function NextUpList({ calm, openSettings, assigned, unclaimed, unclaimedF
                   accessibilityLabel="Group by repo"
                   icon="folder"
                   variant={byRepo ? "calm" : "ghost"}
-                  selected={byRepo}
+                  pressed={byRepo}
                   onPress={() => onByRepo(!byRepo)}
                 />
               ) : null}

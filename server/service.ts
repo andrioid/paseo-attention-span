@@ -265,10 +265,11 @@ export class AttentionService {
     await this.save();
   }
 
-  // Not a filter, so Clear leaves it [NXT-14].
-  async setUnclaimedByRepo(on: boolean): Promise<void> {
+  // Not a filter, so Clear leaves it [NXT-14]. Answered with the view, so a refresh that read the old choice can't undo it.
+  async setUnclaimedByRepo(on: boolean): Promise<AttentionView> {
     this.state.unclaimedByRepo = on;
     await this.save();
+    return this.view();
   }
 
   // "Not now" on an update notice holds until a newer one [UPD-01].

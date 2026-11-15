@@ -401,7 +401,7 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await settled();
       const names = await headings.allTextContents();
       if (names.join(" | ") !== "acme/shop · 4 | acme/web · 2 | tool · 1") throw new Error(`Repo headings: ${names.join(" | ")}`);
-      if ((await toggle.getAttribute("aria-selected")) !== "true") throw new Error("Group by repo isn't marked as on");
+      if ((await toggle.getAttribute("aria-pressed")) !== "true") throw new Error("Group by repo isn't marked as on");
       const unclaimed = page.locator("text=/^Unclaimed/ >> visible=true").first();
       await unclaimed.evaluate((node) => node.scrollIntoView({ block: "start" }));
       await settled();

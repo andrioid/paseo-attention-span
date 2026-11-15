@@ -73,7 +73,7 @@ export const setSources = defineRpc({ name: "next-up.sources", input: z.object({
 // And the project statuses [NXT-03].
 export const setProjectFilter = defineRpc({ name: "next-up.projects", input: z.object({ projects: z.array(z.string()) }), output: done });
 // Unclaimed grouped by repository, or not [NXT-14].
-export const setUnclaimedByRepo = defineRpc({ name: "next-up.by-repo", input: z.object({ on: z.boolean() }), output: done });
+export const setUnclaimedByRepo = defineRpc({ name: "next-up.by-repo", input: z.object({ on: z.boolean() }), output: view });
 // Whether the gh login may read projects, asked again now, for Settings [NXT-12].
 export const projectsAccess = defineRpc({ name: "config.projects-access", input: z.object({}), output: z.custom<ProjectsAccess>() });
 

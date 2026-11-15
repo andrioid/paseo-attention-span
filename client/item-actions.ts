@@ -356,10 +356,12 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     if (change.sources) saveSources({ sources: change.sources }).catch(failedSaving);
     if (change.projectFilter) saveProjects({ projects: change.projectFilter }).catch(failedSaving);
   }
-  // Shown at once, and remembered [NXT-14].
+  // Shown at once, and remembered; the saved view then wins over a refresh that started before it [NXT-14].
   function groupNextUp(view: AttentionView, on: boolean) {
     attention.setView({ ...view, unclaimedByRepo: on });
-    saveByRepo({ on }).catch((error: Error) => toast.error(`Saving the grouping failed: ${error.message}`));
+    saveByRepo({ on })
+      .then((saved) => attention.setView(saved))
+      .catch((error: Error) => toast.error(`Saving the grouping failed: ${error.message}`));
   }
 
   return {
