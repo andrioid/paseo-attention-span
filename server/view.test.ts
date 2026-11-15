@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
-import { agent, item, viewMeta } from "../shared/test-builders";
+import { agent, issue, item, viewMeta } from "../shared/test-builders";
 import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
 const meta = viewMeta({ feed: { fetchedAt: null, refreshing: false, error: null } });
@@ -181,5 +181,32 @@ describe("History's weeks", () => {
       buildView(null, [item("old", "done", { closedAt: "2026-11-09T02:00:00Z" }), item("new", "done", { closedAt: "2026-11-15T16:00:00Z" })], {}, viewMeta({ config: AttentionConfig.parse({ historyWeeks: 1 }) }), undefined, now, timeZone).history.map((shown) => shown.key);
     expect(view("Asia/Tokyo")).toEqual(["new"]);
     expect(view("UTC")).toEqual(["old", "new"]);
+  });
+});
+
+describe("asking to close an issue", () => {
+  it("ATT-24: doesn't ask while a PR is open for the issue, mine or anyone's, or once the live refresh found it closed; a mention alone doesn't stop it", () => {
+    const ask = { key: "acme/shop#12", repo: "acme/shop", number: 12, title: "Export", url: "u", prs: [], mergedAt: "2026-11-01T00:00:00Z" };
+    const asks = (live: Attention) => buildView(live, [], {}, { ...meta, closeAsks: [ask] }).closeAsks?.map((a) => a.number);
+    const pr = { key: "acme/shop#40", number: 40, title: "Step", url: "u", draft: false, chips: [], attention: false };
+    expect(asks(attention([item("ACME/shop#12", "ci", { kind: "issue", children: [pr] })]))).toEqual([]);
+    expect(asks({ ...attention([]), unclaimed: [issue("acme/shop#12", { openPrs: [{ number: 41, url: "u", author: "alice" }] })] })).toEqual([]);
+    expect(asks({ ...attention([]), askOff: ["acme/shop#12"] })).toEqual([]);
+    expect(asks(attention([item("acme/shop#12", "reply", { kind: "issue" })]))).toEqual([12]);
+  });
+
+  it("ATT-24, HIS-01: only what merged within History's weeks asks, as History shows it", () => {
+    const pr = (number: number, mergedAt: string) => ({ key: `acme/shop#${number}`, number, title: "t", url: "u", draft: false, chips: [], attention: false, mergedAt });
+    const ask = (number: number, ...prs: ReturnType<typeof pr>[]) => ({ key: `acme/shop#${number}`, repo: "acme/shop", number, title: "t", url: "u", prs, mergedAt: prs.at(-1)!.mergedAt });
+    // Four weeks from Monday 19 October.
+    const asks = [ask(12, pr(34, "2026-10-10T00:00:00Z")), ask(13, pr(35, "2026-10-10T00:00:00Z"), pr(36, "2026-11-10T00:00:00Z"))];
+    const view = buildView(attention([]), [], {}, { ...meta, closeAsks: asks }, undefined, new Date("2026-11-14T12:00:00Z"));
+    expect(view.closeAsks?.map((a) => [a.number, a.prs.map((p) => p.number)])).toEqual([[13, [36]]]);
+  });
+
+  it("ATT-24: Next up keeps an issue it asks about, saying its PRs merged", () => {
+    const ask = { key: "acme/shop#12", repo: "acme/shop", number: 12, title: "Export", url: "u", prs: [], mergedAt: "2026-11-01T00:00:00Z" };
+    const view = buildView({ ...attention([]), assigned: [issue("acme/shop#12"), issue("acme/shop#13")] }, [], {}, { ...meta, closeAsks: [ask] });
+    expect(view.assigned.map((next) => [next.key, !!next.prsMerged])).toEqual([["acme/shop#12", true], ["acme/shop#13", false]]);
   });
 });

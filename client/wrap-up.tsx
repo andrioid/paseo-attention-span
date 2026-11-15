@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { openExternalUrl } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
 import type { AgentSummary, WrapItem } from "../shared/attention";
 import { type ArchiveOutcome, type KeptRow, keptText, sheetLines, type UnsavedSession, unsavedWords } from "../shared/archive";
@@ -29,7 +30,22 @@ interface KeptProps {
 }
 
 // Finished or out-of-my-hands work whose Paseo sessions are all idle: the cleanup Doing owns [ATT-22].
-export function WrapUp({ items, onArchiveAll, kept, onArchiveWorktree, onDismissKept, ...row }: { items: WrapItem[]; onArchiveAll: () => Promise<void> } & RowProps & KeptProps) {
+interface AskProps {
+  // Close as completed, with Undo, or Keep open until another PR merges under it [ATT-24].
+  onCloseIssue: (item: WrapItem) => void;
+  onKeepOpen: (item: WrapItem) => void;
+}
+
+export function WrapUp({
+  items,
+  onArchiveAll,
+  kept,
+  onArchiveWorktree,
+  onDismissKept,
+  onCloseIssue,
+  onKeepOpen,
+  ...row
+}: { items: WrapItem[]; onArchiveAll: () => Promise<void> } & RowProps & KeptProps & AskProps) {
   const styles = useStyles();
   const clean = items.filter(cleanSingle);
   return (
@@ -53,9 +69,13 @@ export function WrapUp({ items, onArchiveAll, kept, onArchiveWorktree, onDismiss
         }
       />
       <CardList>
-        {items.map((item, index) => (
-          <WrapRow key={item.key} item={item} first={index === 0} {...row} />
-        ))}
+        {items.map((item, index) =>
+          item.wrap.ask ? (
+            <AskRow key={item.key} item={item} first={index === 0} busy={row.busy} login={row.login} openSession={row.openAgent} onCloseIssue={onCloseIssue} onKeepOpen={onKeepOpen} />
+          ) : (
+            <WrapRow key={item.key} item={item} first={index === 0} {...row} />
+          ),
+        )}
         {kept.map((keptRow, index) => (
           <KeptWorktreeRow
             key={keptRow.workspaceId}
@@ -70,6 +90,33 @@ export function WrapUp({ items, onArchiveAll, kept, onArchiveWorktree, onDismiss
         ))}
       </CardList>
     </View>
+  );
+}
+
+// An open issue whose PRs of mine all merged: "Close #12? #34 and #35 merged 2h ago", Close #12, or × to keep it open until
+// another merges. A session open on the work waits for the usual row, which closing leaves behind [ATT-24].
+function AskRow({
+  item,
+  first,
+  busy,
+  login,
+  openSession,
+  onCloseIssue,
+  onKeepOpen,
+}: { item: WrapItem; first: boolean; busy: ReadonlySet<string>; login: string | null; openSession: (agentId: string) => void } & AskProps) {
+  const { sessions } = item.wrap;
+  const still = sessions.length > 1 ? ` · ${sessions.length} sessions still open` : sessions.length ? " · your session's still open" : "";
+  return (
+    <CardRow
+      first={first}
+      mark={stateMark(item)}
+      title={item.title}
+      meta={{ place: { repo: item.repo, number: item.number, login }, when: `Close #${item.number}? ${item.wrap.finish}${still}`, signals: [] }}
+      onOpen={() => (sessions[0] ? openSession(sessions[0].id) : void openExternalUrl(item.url))}
+      busy={wrapBusy(busy, item.key)}
+      primary={{ label: `Close #${item.number}`, accessibilityLabel: `Close #${item.number} as completed`, icon: "issueClosed", onPress: () => onCloseIssue(item) }}
+      secondary={[{ label: "Keep open", icon: "close", accessibilityLabel: `Keep #${item.number} open`, onPress: () => onKeepOpen(item) }]}
+    />
   );
 }
 

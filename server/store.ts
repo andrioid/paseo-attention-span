@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { type Attention, type HistoryFilter, type Item, type RememberedGroups, type SectionId, SECTIONS } from "../shared/attention";
+import { type Attention, type CloseAsk, type HistoryFilter, type Item, type RememberedGroups, type SectionId, SECTIONS } from "../shared/attention";
 import { AttentionConfig, FIELD_ROLES, type FieldRole } from "../shared/config";
 import type { KeptRow } from "../shared/archive";
 import type { OthersChange } from "../shared/changes";
@@ -52,6 +52,11 @@ export const State = z.object({
   // Key -> the keys of the stack or issue group it was last seen in, and when, so Wrap up still knows a merged PR's open
   // siblings after History lists it on its own [ATT-22, ATT-04].
   groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}) satisfies z.ZodType<RememberedGroups>,
+  // Issue key -> the latest merge under it when I chose Keep open; a later merge asks again [ATT-24].
+  keptOpen: z.record(z.string(), z.string()).default({}).catch({}),
+  // Issue key -> an issue closed when Wrap up asked, with my merged PRs under it, as History's search can't find one not
+  // assigned to me; kept for History's weeks [ATT-24].
+  closedAsks: z.record(z.string(), z.custom<Item>((value) => typeof (value as Item)?.key === "string" && Array.isArray((value as Item)?.children))).default({}).catch({}),
   // Wrap up rows whose sessions were archived but whose worktree stayed, until it goes or is dismissed [ATT-22].
   kept: z.array(z.custom<KeptRow>((value) => typeof (value as KeptRow)?.workspaceId === "string" && typeof (value as KeptRow)?.itemKey === "string")).default([]).catch([]),
   // The repository and agent profile the New issue sheet last started with [ISS-01].
@@ -70,7 +75,15 @@ export const State = z.object({
     })
     .nullable()
     .catch(null),
-  history: z.object({ fetchedAt: z.string(), items: z.custom<Item[]>(knownSections) }).nullable().catch(null),
+  history: z
+    .object({
+      fetchedAt: z.string(),
+      items: z.custom<Item[]>(knownSections),
+      // Open issues whose PRs of mine have all merged, to ask about closing [ATT-24].
+      asks: z.array(z.custom<CloseAsk>((value) => typeof (value as CloseAsk)?.key === "string" && Array.isArray((value as CloseAsk)?.prs))).default([]).catch([]),
+    })
+    .nullable()
+    .catch(null),
 });
 export type State = z.infer<typeof State>;
 

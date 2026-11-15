@@ -105,6 +105,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   const saveByRepo = useRpc(rpc.setUnclaimedByRepo);
   const closeIssue = useRpc(rpc.closeIssue);
   const reopenIssue = useRpc(rpc.reopenIssue);
+  const keepOpen = useRpc(rpc.keepOpen);
   const update = useRpc(rpc.updateBranch);
   const merge = useRpc(rpc.mergePullRequest);
   const close = useRpc(rpc.closePullRequest);
@@ -341,6 +342,19 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     },
   };
 
+  // Wrap up's "Close #12?": closes as completed, or keeps it open until another PR merges under it; each with Undo [ATT-24].
+  const askActions = {
+    onCloseIssue: (item: WrapItem) => {
+      const key = item.wrap.itemKey;
+      const target: Target = { kind: "issue", repo: item.repo, number: item.number, title: item.title, url: item.url };
+      change(item.key, "Close", () => closeIssue({ key, target, reason: "completed" }), `Closed #${item.number} as completed`, () => reopenIssue({ key, target }));
+    },
+    onKeepOpen: (item: WrapItem) => {
+      const key = item.wrap.itemKey;
+      change(item.key, "Keep open", () => keepOpen({ key, on: true }), `Kept #${item.number} open`, () => keepOpen({ key, on: false }));
+    },
+  };
+
   const failedSaving = (error: Error) => toast.error(`Saving the filter failed: ${error.message}`);
   // Ticks apply right away, like Next up's; the server remembers them [HIS-07].
   function filterHistory(view: AttentionView, next: HistoryFilter[]) {
@@ -389,6 +403,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     dismissKept: (row: KeptRow) => void run(`kept:${row.workspaceId}`, "Dismiss", async () => attention.setView(await dismissKept({ workspaceId: row.workspaceId }))),
     itemActions,
     issueActions,
+    askActions,
     filterHistory,
     filterNextUp,
     groupNextUp,

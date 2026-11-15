@@ -3,9 +3,10 @@ import { type Item, itemSessions, projectFilterIds, SECTIONS } from "../shared/a
 import { closedBranches, linkedSessions } from "../shared/linked-sessions";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { changeItems, EMPTY_LEDGER } from "./changes";
-import { classify, classifyHistory } from "./classify";
+import { classify, classifyCloseAsks, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, fixtureChanges, fixtureGotIt, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
+import { item } from "../shared/test-builders";
 import {
   detailsQuery,
   HISTORY_SEARCHES,
@@ -744,6 +745,42 @@ describe("needs a reviewer", () => {
   });
 });
 
+describe("asking to close an issue", () => {
+  const repository = { nameWithOwner: REPO };
+  const merged = (number: number, days: number, body: string, linked: number[] = []) => ({
+    number, title: `Step ${number}`, url: `u${number}`, body, mergedAt: daysAgo(days), repository, closingIssuesReferences: { nodes: linked.map((n) => ({ number: n, repository })) },
+  });
+  const referenced = (number: number, state: string, openPrs = 0) => ({
+    [`${REPO}#${number}`]: { number, title: `Issue ${number}`, url: `u${number}`, state, repository, closedByPullRequestsReferences: { nodes: Array.from({ length: openPrs }, () => ({ state: "OPEN" })) } },
+  });
+
+  it("ATT-24, ATT-03: asks about an open issue my merged PRs worked on, however they referred to it", () => {
+    const asks = classifyCloseAsks({
+      ...search({ merged: [merged(62, 1, "Second of two for #60"), merged(61, 3, "", [60])] }),
+      referenced: referenced(60, "OPEN"),
+    });
+    expect(asks.map((ask) => [ask.number, ask.prs.map((pr) => pr.number), ask.mergedAt])).toEqual([[60, [61, 62], daysAgo(1)]]);
+  });
+
+  it("ATT-24, ATT-22: the PRs under an issue asked about keep their branch, so a session on one finds its row once it's closed", () => {
+    const [ask] = classifyCloseAsks({ ...search({ merged: [{ ...merged(61, 1, "Part of #60"), headRefName: "export-csv", mergedBy: { login: "dave" } }] }), referenced: referenced(60, "OPEN") });
+    const closed = { ...item(`${REPO}#60`, "done", { kind: "issue", closedAt: daysAgo(0), children: ask.prs }) };
+    expect(closedBranches({ history: [closed] }).get(`${REPO}\0export-csv`)).toBe(`${REPO}#61`);
+    expect(ask.prs[0].mergedBy).toBe("dave");
+  });
+
+  it("ATT-24: doesn't ask while anyone's PR is open for it, once it's closed, or about an issue a PR only mentioned beside the one it closed", () => {
+    const asks = classifyCloseAsks({
+      ...search({
+        closed: [{ number: 57, title: "Done", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
+        merged: [merged(63, 1, "Part of #59"), merged(64, 1, "Closes #58"), merged(65, 1, "Fixes #57, see #56")],
+      }),
+      referenced: { ...referenced(59, "OPEN", 1), ...referenced(58, "CLOSED"), ...referenced(56, "OPEN") },
+    });
+    expect(asks).toEqual([]);
+  });
+});
+
 describe("history", () => {
   it("HIS-01: lists closed issues with the PRs that closed them, and lone merged PRs", () => {
     const items = classifyHistory(search({
@@ -1132,7 +1169,7 @@ describe("GitHub requests", () => {
     const shown = new Set([...attention.items, ...classifyHistory(data), ...changes.notes, ...changes.history].map((item) => item.section));
     expect([...shown].sort()).toEqual(Object.keys(SECTIONS).filter((id) => id !== "wrap").sort());
     expect(doing(attention).length).toBeGreaterThan(5);
-    expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 7]);
+    expect([attention.assigned.length, attention.unclaimed.length]).toEqual([3, 7]);
   });
 });
 

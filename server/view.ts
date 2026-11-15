@@ -1,7 +1,8 @@
-import { type Attention, type AttentionView, baseItem, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type Chip, type CloseAsk, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { KeptRow } from "../shared/archive";
 import type { NewIssueInfo } from "../shared/new-issue";
+import { keySet } from "../shared/names";
 import { workChip, workKind } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
 import { historySince } from "./queries";
@@ -19,6 +20,8 @@ export interface ViewMeta {
   pending: number;
   newIssue: NewIssueInfo;
   kept?: KeptRow[];
+  // History's asks, less those kept open or just closed [ATT-24].
+  closeAsks?: CloseAsk[];
 }
 
 // What a tap on GitHub changed, shown until a fetch can show it for itself [FRESH-02].
@@ -151,6 +154,21 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
       .map((id) => ({ id, title: SECTIONS[id].title, items: shown.filter((item) => item.section === id) }))
       .filter((section) => section.items.length > 0);
   const doing = sections("doing");
+  const activeKeys = (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]);
+  // Not done while a PR is open for it: one of mine grouped under it in the live feed (a mention on the issue alone doesn't
+  // count), anyone's Next up knows of, or what the live refresh found when it looked again; and not once it closed since.
+  // Only what merged within History's weeks counts, as History shows it, until it's fetched again [ATT-24, HIS-01].
+  const off = keySet([
+    ...(attention?.items ?? []).filter((item) => item.kind === "issue" && item.children.length > 0).map((item) => item.key),
+    ...[...(attention?.assigned ?? []), ...(attention?.unclaimed ?? [])].filter((issue) => issue.openPrs.length > 0).map((issue) => issue.key),
+    ...(attention?.askOff ?? []),
+  ]);
+  const closeAsks = (meta.closeAsks ?? [])
+    .filter((ask) => !off.has(ask.key.toLowerCase()) && Date.parse(ask.mergedAt) >= Date.parse(since))
+    .map((ask) => ({ ...ask, prs: ask.prs.filter((pr) => Date.parse(pr.mergedAt ?? ask.mergedAt) >= Date.parse(since)) }));
+  // Next up keeps an issue it asks about, saying its PRs merged [ATT-24].
+  const asked = keySet(closeAsks.map((ask) => ask.key));
+  const marked = (issues: NextUpIssue[]) => issues.map((issue) => (asked.has(issue.key.toLowerCase()) ? { ...issue, prsMerged: true as const } : issue));
   return {
     ...meta,
     login: attention?.login ?? null,
@@ -161,9 +179,10 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
     history: shown.filter((item) => SECTIONS[item.section].tab === "history"),
     // Dismissed or not, these are still open; Wrap up must not call their sessions finished [ATT-22].
     ownClosed: attention?.ownClosed ?? [],
-    activeKeys: (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]),
-    assigned: attention?.assigned ?? [],
-    unclaimed: attention?.unclaimed ?? [],
+    activeKeys,
+    closeAsks,
+    assigned: marked(attention?.assigned ?? []),
+    unclaimed: marked(attention?.unclaimed ?? []),
     unclaimedFrom: attention?.unclaimedFrom ?? "config",
     projects: attention?.projects ?? [],
     dismissedCount: items.filter((item) => isDismissed(item, dismissed)).length,

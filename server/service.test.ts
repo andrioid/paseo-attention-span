@@ -40,6 +40,7 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
     changes: vi.fn<GitHub["changes"]>(async (ledger) => ledger),
     history: vi.fn<GitHub["history"]>(history ?? (async (_config, at) => fixture(at).data)),
     issueFields: vi.fn<GitHub["issueFields"]>(async () => []),
+    issues: vi.fn<GitHub["issues"]>(async () => ({})),
   } satisfies GitHub;
   const store = {
     moveOldFiles: async () => {},
@@ -179,7 +180,7 @@ describe("History's weeks", () => {
         closed: { nodes: [issue].filter((node) => Date.parse(node.closedAt) >= since("closed")) },
       } satisfies HistoryResult;
     }) as Gh["graphql"],
-    graphqlResult: vi.fn() as never,
+    graphqlResult: (async () => ({ data: {}, errors: [], failures: [] })) as never,
   };
   const shown = (view: AttentionView) => historyWeeks(view.history, []).weeks.map((week) => week.done.map((item) => [item.number, item.children.map((child) => child.number)]));
 
@@ -410,5 +411,110 @@ describe("kept worktrees", () => {
     await h.service.forgetKept("w1");
     finish();
     expect((await archiving).view.kept).toEqual([]);
+  });
+});
+
+describe("asking to close an issue", () => {
+  const repository = { nameWithOwner: REPO };
+  const ISSUE = `${REPO}#900`;
+  const merged = (number: number, mergedAt: string) => ({ number, title: `Step ${number}`, url: `u${number}`, body: `Part of #900`, mergedAt, repository, closingIssuesReferences: { nodes: [] } });
+  const open = { number: 900, title: "Export to CSV", url: "u900", state: "OPEN", repository, closedByPullRequestsReferences: { nodes: [] as { state: string }[] } };
+  // gh answering History's search with my merged PRs, and the lookup of the issue they refer to as `issue` says.
+  const gh = (prs: ReturnType<typeof merged>[], issue = open): Gh => ({
+    graphql: (async () => ({ viewer: { login: "me", id: "U_me" }, merged: { nodes: prs }, reviewed: { nodes: [] }, closed: { nodes: [] } }) satisfies HistoryResult) as Gh["graphql"],
+    graphqlResult: (async (query: string) => ({ data: query.includes(`number: ${issue.number}`) ? { i0: { issueOrPullRequest: issue } } : {}, errors: [], failures: [] })) as never,
+  });
+  const asked = (view: AttentionView) => (view.closeAsks ?? []).map((ask) => [ask.key, ask.prs.map((pr) => pr.number)]);
+
+  it("ATT-24: asks once my PRs under an open issue have merged; Keep open lasts until another merges", async () => {
+    const prs = [merged(901, "2026-11-12T10:00:00Z")];
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh(prs)).history(config, now, timeZone));
+    await start();
+    expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+    expect(asked(await service.keepOpen(ISSUE, true))).toEqual([]);
+    // Nothing new: still kept open after History is fetched again.
+    expect(asked(await service.get("history"))).toEqual([]);
+    prs.push(merged(902, "2026-11-13T10:00:00Z"));
+    expect(asked(await service.get("history"))).toEqual([[ISSUE, [901, 902]]]);
+  });
+
+  it("ATT-24, ATT-14: Close takes the issue, with its PRs, to History until it's fetched; Undo asks again", async () => {
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")])).history(config, now, timeZone));
+    await start();
+    const closed = await service.act(ISSUE, async () => {}, { kind: "finished" });
+    expect(asked(closed)).toEqual([]);
+    expect(closed.history.find((item) => item.key === ISSUE)?.children.map((child) => child.number)).toEqual([901]);
+    expect(asked(await service.act(ISSUE, async () => {}, null))).toEqual([[ISSUE, [901]]]);
+  });
+
+  it("ATT-24: Keep open outlasts a fetch that doesn't ask, as while someone's PR is open for it", async () => {
+    const issue = structuredClone(open);
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.keepOpen(ISSUE, true);
+    issue.closedByPullRequestsReferences.nodes = [{ state: "OPEN" }];
+    expect(asked(await service.get("history"))).toEqual([]);
+    // Their PR closed unmerged: nothing of mine merged since, so it's still kept open.
+    issue.closedByPullRequestsReferences.nodes = [];
+    expect(asked(await service.get("history"))).toEqual([]);
+  });
+
+  it("ATT-24, HIS-01: an issue closed when asked stays in History with its PRs under it, though History's search can't find it", async () => {
+    const issue = structuredClone(open);
+    const { service, start, advance } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.act(ISSUE, async () => {}, { kind: "finished" });
+    issue.state = "CLOSED";
+    // GitHub caught up: History is fetched again, and the close is no longer pending.
+    await advance(SETTLE_MS + 1);
+    const view = await service.get(undefined, true);
+    expect([view.pending, asked(view)]).toEqual([0, []]);
+    expect(view.history.filter((item) => [ISSUE, `${REPO}#901`].includes(item.key)).map((item) => [item.key, item.children.map((child) => child.number)])).toEqual([[ISSUE, [901]]]);
+  });
+
+  it("ATT-24: an issue closed when asked and reopened on GitHub leaves History and asks again", async () => {
+    const issue = structuredClone(open);
+    const { service, start, advance } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.act(ISSUE, async () => {}, { kind: "finished" });
+    issue.state = "CLOSED";
+    await advance(SETTLE_MS + 1);
+    issue.state = "OPEN";
+    const view = await service.get("history");
+    expect([view.history.some((item) => item.key === ISSUE), asked(view)]).toEqual([false, [[ISSUE, [901]]]]);
+  });
+
+  it("ATT-24: Undo after the close settled fetches History, which asks again", async () => {
+    const issue = structuredClone(open);
+    const { service, github, start, advance } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.act(ISSUE, async () => {}, { kind: "finished" });
+    issue.state = "CLOSED";
+    await advance(SETTLE_MS + 1);
+    const fetched = github.history.mock.calls.length;
+    issue.state = "OPEN";
+    await service.act(ISSUE, async () => {}, null);
+    await advance(SETTLE_MS + 1);
+    expect(github.history.mock.calls.length).toBeGreaterThan(fetched);
+    expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+  });
+
+  it("ATT-24, GH-01: the live refresh looks the asked issue up again: a PR opened for it since stops the question", async () => {
+    const { service, github, start } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")])).history(config, now, timeZone));
+    await start();
+    expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+    github.issues.mockResolvedValue({ [ISSUE]: { ...open, closedByPullRequestsReferences: { nodes: [{ state: "OPEN" }] } } });
+    expect(asked(await service.get("live"))).toEqual([]);
+    expect(github.issues).toHaveBeenLastCalledWith([{ repo: REPO, number: 900 }]);
+  });
+
+  it("ATT-24: closing an issue assigned to me keeps my merged PRs under it", async () => {
+    // #152 is assigned to me in the fixture's live feed.
+    const assigned = { ...structuredClone(open), number: 152, title: "Customer statements as PDF" };
+    const pr = { ...merged(901, "2026-11-12T10:00:00Z"), body: "Part of #152" };
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([pr], assigned)).history(config, now, timeZone));
+    await start();
+    const closed = await service.act(`${REPO}#152`, async () => {}, { kind: "finished" });
+    expect(closed.history.find((item) => item.key === `${REPO}#152`)?.children.map((child) => child.number)).toEqual([901]);
   });
 });

@@ -132,3 +132,32 @@ describe("unread changes", () => {
     expect(unreadChanges(notes, wrap).map((item) => item.key)).toEqual(["acme/shop#188"]);
   });
 });
+
+describe("asking to close an issue", () => {
+  const pr = (number: number, hours: number) => ({ key: `acme/shop#${number}`, number, title: `Step ${number}`, url: "u", draft: false, chips: [], attention: false, mergedAt: hoursAgo(hours) });
+  const ask = { key: "acme/shop#12", repo: "acme/shop", number: 12, title: "Export to CSV", url: "u", prs: [pr(34, 5), pr(35, 2)], mergedAt: hoursAgo(2) };
+  // History lists the merged PRs alone while their issue is open.
+  const merged = [item("acme/shop#34", "done", 5), item("acme/shop#35", "done", 2)];
+  const describe = (rows: WrapItem[]) => rows.map((row) => [row.number, row.wrap.ask ?? false, row.wrap.finish, row.wrap.sessions.map((s) => s.id)]);
+
+  it("ATT-24: asks with or without a session; the merged PRs' session joins the issue's row instead of making its own", () => {
+    expect(describe(wrapItems({ ...view(merged), closeAsks: [ask] }, [], now))).toEqual([[12, true, "#34 and #35 merged 2h ago", []]]);
+    const rows = wrapItems({ ...view(merged), closeAsks: [ask] }, [session("a", "acme/shop#35")], now);
+    expect(describe(rows)).toEqual([[12, true, "#34 and #35 merged 2h ago", ["a"]]]);
+    // Archive all clean leaves it: the question comes first.
+    expect(rows.filter(cleanSingle)).toEqual([]);
+    // A busy session doesn't keep the question away, nor join it.
+    expect(describe(wrapItems({ ...view(merged), closeAsks: [ask] }, [session("a", "acme/shop#35", { status: "running" })], now))).toEqual([[12, true, "#34 and #35 merged 2h ago", []]]);
+  });
+
+  it("ATT-24, ATT-22: once closed, the issue's session is the usual row to archive", () => {
+    const closed = { ...item("acme/shop#12", "done", 0, ask.prs), kind: "issue" as const };
+    expect(describe(wrapItems(view([closed, ...merged]), [session("a", "acme/shop#35")], now))).toEqual([[12, false, "closed 0m ago", ["a"]]]);
+  });
+
+  it("ATT-24, HIS-07: a note on the work stays unread while the question has no session to archive", () => {
+    const note = { ...item("acme/shop#35", "changed", 2), change: change("merged", "acme/shop#35") };
+    const rows = wrapItems({ ...view(merged), closeAsks: [ask] }, [], now);
+    expect(unreadChanges([note], rows)).toEqual([note]);
+  });
+});

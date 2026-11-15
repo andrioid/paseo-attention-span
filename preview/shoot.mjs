@@ -243,6 +243,17 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await modalShot("doing-wrap-multi");
       await closeModal();
     },
+    // "Close #152?": × keeps it open, with Undo, which brings the question back [ATT-24]. Close isn't pressed, since it
+    // would call GitHub.
+    "wrap-ask": async () => {
+      await tab("Doing");
+      await page.getByRole("button", { name: "Keep #152 open" }).click();
+      await page.getByText("Kept #152 open").waitFor({ timeout: 10000 });
+      await bandShot("doing-wrap-kept-open", "Kept #152 open", "Waiting for your reply");
+      await page.getByRole("button", { name: "Undo" }).first().click();
+      await page.getByRole("button", { name: "Keep #152 open" }).waitFor({ timeout: 10000 });
+      await settled();
+    },
     hints: async () => {
       await tab("Doing");
       const face = page.getByLabel(/^Waiting on bob since/).first();
@@ -532,6 +543,10 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     // height [ATT-18]. Then a quiet day: every other tab empty shows its own scene [HIS-08, WAI-04, NXT-13].
     clear: async () => {
       await tab("Doing");
+      // Keep open answers "Close #152?", leaving its PR's clean session to Archive all clean [ATT-24].
+      await page.getByRole("button", { name: "Keep #152 open" }).click();
+      await page.getByText("Kept #152 open").waitFor({ timeout: 10000 });
+      await settled();
       // Archive all clean takes the clean ones, then the dirty and multi rows ask first [ATT-22].
       const archiveAll = page.getByRole("button", { name: /^Archive all clean/ });
       if (await archiveAll.isVisible().catch(() => false)) {

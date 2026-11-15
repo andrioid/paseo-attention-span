@@ -128,7 +128,7 @@ export function builders(now: Date) {
     };
   }
 
-  function search(parts: Partial<{ [K in Exclude<keyof SearchResult, "viewer">]: SearchResult[K]["nodes"] }>): SearchResult {
+  function search(parts: Partial<{ [K in Exclude<keyof SearchResult, "viewer" | "referenced">]: SearchResult[K]["nodes"] }>): SearchResult {
     const nodes = <K extends keyof typeof parts>(key: K) => ({ nodes: parts[key] ?? [] });
     return {
       viewer: { login: "me", id: "U_me" },
@@ -275,6 +275,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
     assigned: [
       { ...pickable(150, fields("🏔 P1 High", "🐇 Small (0.5-2d)", "🔙 Backend"), 20, "Bug", "Orders export times out for big shops"), ...onBoard(TODO_BOARD, "In progress") },
       { ...pickable(151, fields("🏕P2 Medium", "🐟 Tiny (< 4h)", "🔙 Backend"), 5, "Bug", "Price list import skips quoted rows", ISSUES_REPO), ...onBoard(TODO_BOARD, "Todo") },
+      // Its PRs, #194 and #195, merged into a feature branch, so GitHub left it open: Wrap up asks to close it [ATT-24].
+      { ...pickable(152, fields("🏕P2 Medium", "🐇 Small (0.5-2d)", "🖌 Frontend"), 12, "Feature", "Customer statements as PDF"), ...onBoard(TODO_BOARD, "In progress") },
     ],
     // Found by the preview config's Next up sources [NXT-09].
     unclaimed: [
@@ -304,6 +306,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       merged(179, "Move invoices to the new queue", 1),
       merged(173, "Speed up the order list", 9, 174),
       merged(175, "Remove the old importer", 16),
+      { ...merged(194, "Statement layout", 1), body: "First of two for #152" },
+      { ...merged(195, "Statement PDF download", 3 / 24), body: "Second of two for #152" },
     ],
     reviewed: [
       { number: 190, title: "Add the VAT export", url: `https://github.com/${REPO}/pull/190`, mergedAt: daysAgo(1), mergedBy: { login: "alice" }, repository, author: alice, labels: labels("feature") },
@@ -321,8 +325,10 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       { id: "I_188", number: 188, title: "Export fails on empty months", url: `https://github.com/${REPO}/issues/188`, closedAt: daysAgo(6 / 24), stateReason: "COMPLETED", repository, timelineItems: { nodes: [{ actor: { login: "alice" } }] } },
     ],
   });
+  // The open issue #194 and #195 refer to, looked up after History's search [ATT-24].
+  const statements = { number: 152, title: "Customer statements as PDF", url: `https://github.com/${REPO}/issues/152`, state: "OPEN", repository, closedByPullRequestsReferences: { nodes: [] } };
   return {
-    data,
+    data: { ...data, referenced: { [key(152)]: statements } },
     details: {
       behind: { [key(103)]: 1, [key(106)]: 12, [key(108)]: 139, [key(110)]: 2307, [key(114)]: 3, [key(115)]: 40 },
       fieldOptions: { acme: { Priority: ["🌋 P0 Urgent", "🏔 P1 High", "🏕P2 Medium", "🏝 P3 Low"] } },
@@ -339,7 +345,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
 function fixtureNow(now: Date, quiet: boolean): ReturnType<typeof fixture> {
   const { data, details } = fixture(now);
   if (!quiet) return { data, details };
-  const empty = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, key === "viewer" ? value : { nodes: [] }]));
+  const empty = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, key === "viewer" ? value : key === "referenced" ? {} : { nodes: [] }]));
   return { data: empty as unknown as SearchResult, details };
 }
 
@@ -432,6 +438,8 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   // Its sheet counts lines and names the terminals archiving closes, as Paseo's own sheet would.
   agent("agent-186", `${REPO}#186`, "fix", "idle", 40, false, { ...sessionWorkspace("split-invoice-pdf", true, 1, true, 2)!, dirtyLines: { added: 12, deleted: 3 }, terminals: ["dev", "shell"] }, "Split invoice PDF"),
   agent("agent-190", `${REPO}#190`, "review", "idle", 60, false, sessionWorkspace("add-vat-export", false, 0), "Review PR 190: Add the VAT export"),
+  // On a PR under an issue Wrap up asks to close: it joins that row [ATT-24].
+  agent("agent-195", `${REPO}#195`, "fix", "idle", 10, false, sessionWorkspace("statement-pdf-download", false, 0), "Statement PDF download"),
   // With a review sub-agent it started, archived along with it.
   { ...agent("agent-172", `${REPO}#172`, "fix", "idle", 240, false, sessionWorkspace("fix-vat-credit-notes", false, 0), "Fix VAT on credit notes"), subAgents: { count: 1, working: false } },
   agent("agent-172b", `${REPO}#172`, "address", "idle", 250, false, sessionWorkspace("credit-note-tests", undefined, undefined), "Credit note tests"),
@@ -490,6 +498,8 @@ export function fixturePort(store: Store, dir: string): Port {
       changes: async (ledger, _data, now) => ({ ...ledger, events: quiet() ? [] : fixtureChanges(now), gotIt: fixtureGotIt(now) }),
       history: async (_config, now) => fixtureNow(now, quiet()).data,
       issueFields: async () => FIXTURE_ISSUE_FIELDS,
+      // Asked issues are as History found them [ATT-24].
+      issues: async () => (quiet() ? {} : (fixture(new Date()).data.referenced ?? {})),
     },
     // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
     paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },

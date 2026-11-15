@@ -68,3 +68,15 @@ export function toLookUp(prs: (Node & { body?: string; closingIssuesReferences: 
   for (const pr of prs) for (const ref of mentionedRefs(pr.body, pr.repository.nameWithOwner)) if (!known.has(refKey(ref))) wanted.set(refKey(ref), ref);
   return [...wanted.values()].slice(0, max);
 }
+
+// The issues my merged PRs refer to that History doesn't know closed, at most `max`, to ask whether they're still open
+// [ATT-24]. My merged PRs themselves are known to be PRs.
+export function mergedToLookUp(merged: { number: number; body?: string; repository: { nameWithOwner: string }; closingIssuesReferences: { nodes: Node[] } }[], closed: Node[], max = 100): IssueRef[] {
+  const known = new Set([...merged, ...closed].map(nodeKey));
+  const wanted = new Map<string, IssueRef>();
+  for (const pr of merged) {
+    const linked = pr.closingIssuesReferences.nodes.map((node) => ({ repo: node.repository.nameWithOwner, number: node.number }));
+    for (const ref of [...linked, ...mentionedRefs(pr.body, pr.repository.nameWithOwner)]) if (!known.has(refKey(ref))) wanted.set(refKey(ref), ref);
+  }
+  return [...wanted.values()].slice(0, max);
+}
