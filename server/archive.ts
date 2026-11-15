@@ -1,7 +1,7 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { isIdle } from "../shared/attention";
+import { isIdle, isWorking } from "../shared/attention";
 import { type ArchiveResult, type KeptWorktree, type UnsavedSession, unsavedOf } from "../shared/archive";
 import { subAgentsOf } from "../shared/linked-sessions";
 import { listAll } from "./archived";
@@ -108,11 +108,10 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
       return workspace && !own ? [sessionOf(workspace, { agentId: `worktree:${id}`, title: nameOf(workspace), worktreeOnly: true })] : [];
     }),
   ];
-  // A session and its sub-agents: one still working stops the archive, whichever it is.
-  const working = (all: ListedAgent[]) => {
-    const ours = [...all.filter((agent) => wanted.includes(agent.id)), ...subAgentsOf(all, wanted)];
-    return ours.find((agent) => !agent.archivedAt && !isIdle(agent));
-  };
+  // A session, or one of its sub-agents, still working stops the archive. A session that needs me counts as working; a
+  // sub-agent only while it runs, as a finished one stays flagged for attention nobody gives it.
+  const working = (all: ListedAgent[]) =>
+    all.find((agent) => wanted.includes(agent.id) && !agent.archivedAt && !isIdle(agent)) ?? subAgentsOf(all, wanted).find((agent) => !agent.archivedAt && isWorking(agent));
   const busy = working(agentList);
   if (busy) return { ok: false, reason: "working", message: `${busy.title ?? "A session"} is still working` };
   const unsaved = async () => {

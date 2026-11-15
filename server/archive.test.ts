@@ -24,7 +24,7 @@ interface FakeWorkspace {
 // Terminals are "id" in w1, or "id@w2" in another workspace.
 // An agent's `parent` is the session that started it, as Paseo labels it. Lists come `pageSize` agents a page, archived ones
 // only when asked for, and an agent archived here is listed as archived from then on.
-type FakeAgent = { id: string; workspaceId?: string; status?: string; title?: string; parent?: string; archivedAt?: string };
+type FakeAgent = { id: string; workspaceId?: string; status?: string; title?: string; parent?: string; archivedAt?: string; requiresAttention?: boolean };
 function paseoFor(agents: FakeAgent[], workspaces: FakeWorkspace[], terminals: string[] = [], pageSize = 100) {
   const archivedAgents: string[] = [];
   const archivedWorkspaces: string[] = [];
@@ -233,6 +233,18 @@ describe("archive safety", () => {
         : ref(id)) as typeof ref;
     await expect(archiveSessions(paseo, ["a1"], false)).rejects.toThrow("Couldn't archive Review PR 46: busy");
     expect(archivedAgents).toEqual([]);
+  });
+
+  it("ATT-22: a finished sub-agent still flagged for attention doesn't stop the archive", async () => {
+    const { paseo, archivedAgents } = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "review", workspaceId: "w1", parent: "a1", requiresAttention: true },
+      ],
+      [worktree({ workspaceDirectory: clone() })],
+    );
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [] });
+    expect(archivedAgents.sort()).toEqual(["a1", "review"]);
   });
 
   it("ATT-22: a sub-agent still working stops the archive, naming it", async () => {
