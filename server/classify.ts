@@ -472,7 +472,7 @@ export function classifyHistory(data: HistoryResult): Item[] {
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
     const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
     const head = pr.headRefName ? { headRefName: pr.headRefName } : {};
-    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy(pr), ...head });
+    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy(pr), ...head, mergedAt: pr.mergedAt });
     else {
       const item = plain(pr, "pr", "done");
       items.push(kinded({ ...item, target: { ...item.target, ...head }, closedAt: pr.mergedAt, ...mergedBy(pr) }, pr));

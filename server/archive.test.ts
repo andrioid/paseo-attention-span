@@ -248,7 +248,7 @@ describe("archive safety", () => {
   });
 
   it("ATT-22: a sub-agent starting, or idle but waiting on a permission, stops the archive", async () => {
-    for (const busy of [{ status: "initializing" }, { status: "idle", requiresAttention: true, attentionReason: "permission" }]) {
+    for (const busy of [{ status: "initializing" }, { status: "idle", requiresAttention: true, attentionReason: "permission" }, { status: "idle", requiresAttention: true }]) {
       const { paseo, archivedAgents } = paseoFor(
         [
           { id: "a1", workspaceId: "w1" },
@@ -256,7 +256,7 @@ describe("archive safety", () => {
         ],
         [worktree()],
       );
-      expect(await archiveSessions(paseo, ["a1"], true)).toEqual({ ok: false, reason: "working", message: "Review PR 46 is still working" });
+      expect(await archiveSessions(paseo, ["a1"], true)).toMatchObject({ ok: false, reason: "working", message: expect.stringMatching(/^Review PR 46 is (still working|waiting on a permission)$/) });
       expect(archivedAgents).toEqual([]);
     }
   });

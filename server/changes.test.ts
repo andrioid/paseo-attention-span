@@ -328,6 +328,8 @@ describe("issues closed and PRs reopened by others", () => {
     const mine = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "me" } }] } });
     const theirs = endedPr("P2", { number: 10, merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "alice" } }] } });
     expect(ownClosed(data({ ended: [mine, theirs, endedPr("P3", {})] }), "me").map((item) => [item.key, item.closedUnmerged])).toEqual([["acme/shop#9", true]]);
+    // Its branch comes along, for a session left on it [ATT-22].
+    expect(ownClosed(data({ ended: [{ ...mine, headRefName: "spike" }] }), "me")[0].target.headRefName).toBe("spike");
   });
 
   it("ATT-22: an archive acknowledges exactly the events on its work at that moment", () => {

@@ -1,5 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { keySet } from "../shared/names";
+import { SESSION_LABELS } from "../shared/item-sessions";
 import { everyPage } from "../shared/paging";
 
 // A session Attention Span started, archived in Paseo itself: once no session it started is left open on any part of the
@@ -13,7 +14,7 @@ type ListedAgent = Awaited<ReturnType<Paseo["agents"]["list"]>>["entries"][numbe
 type ListOptions = NonNullable<Parameters<Paseo["agents"]["list"]>[0]>;
 
 // The markers and item labels of sessions Attention Span started, under its current and earlier names [ATT-07, SES-03].
-const MARKERS = ["attention-span", "github-attention", "github-inbox"];
+const MARKERS = SESSION_LABELS;
 const ITEM_LABELS = MARKERS.map((marker) => `${marker}-item`);
 // Agents another agent started belong to that agent's session.
 const PARENT_AGENT_LABEL = "paseo.parent-agent-id";

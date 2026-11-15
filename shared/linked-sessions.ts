@@ -56,17 +56,24 @@ const branchKey = (repo: string, branch: string) => `${repo.toLowerCase()}\0${br
 
 // My merged and closed PRs by repo and branch, the latest close winning when a branch was used twice: where a session on
 // a worktree finds its item once Paseo no longer links the worktree to the PR [ATT-22, SES-08].
-export function closedBranches(view: Partial<Pick<AttentionView, "history" | "ownClosed">>): Map<string, string> {
+// A branch an open PR of mine is on maps to nothing: Paseo links that PR itself, and a session there is the open PR's work.
+export function closedBranches(view: Partial<Pick<AttentionView, "history" | "ownClosed" | "doing" | "waiting">>): Map<string, string> {
   const found: { key: string; repo: string; branch: string; at: string }[] = [];
   for (const item of [...(view.history ?? []), ...(view.ownClosed ?? [])]) {
     if (item.section !== "done" || !item.closedAt) continue;
     if (item.kind === "pr" && item.target.headRefName) found.push({ key: item.key, repo: item.repo, branch: item.target.headRefName, at: item.closedAt });
     for (const child of item.children) {
-      if (child.headRefName) found.push({ key: child.key, repo: child.key.split("#")[0], branch: child.headRefName, at: item.closedAt });
+      if (child.headRefName) found.push({ key: child.key, repo: child.key.split("#")[0], branch: child.headRefName, at: child.mergedAt ?? item.closedAt });
     }
   }
+  const open = new Set(
+    [...(view.doing ?? []).flatMap((section) => section.items), ...(view.waiting ?? []).flatMap((group) => group.items)].flatMap((item) => [
+      ...(item.target.headRefName ? [branchKey(item.target.repo, item.target.headRefName)] : []),
+      ...(item.target.stack ?? []).flatMap((pr) => (pr.head ? [branchKey(item.target.repo, pr.head)] : [])),
+    ]),
+  );
   found.sort((a, b) => a.at.localeCompare(b.at));
-  return new Map(found.map(({ key, repo, branch }) => [branchKey(repo, branch), key]));
+  return new Map(found.map(({ key, repo, branch }) => [branchKey(repo, branch), key] as const).filter(([branch]) => !open.has(branch)));
 }
 
 // Unlabelled agents, keyed to the PR Paseo linked their workspace to, or else to the item of the Attention Span session

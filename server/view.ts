@@ -54,8 +54,12 @@ export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanne
   const kind = "kind" in source ? source.kind : "issue";
   // Labels come with the next History fetch; until then the issue type and title prefix tell what kind of work it was [HIS-04].
   const work = workKind({ type: "type" in source ? source.type : undefined, title });
+  const base = baseItem({ key, section: "done", kind, repo, number, title, url });
+  // A PR keeps its branch, so a session left on it finds its Wrap up row before History is fetched again [ATT-22].
+  const head = "target" in source && source.target.headRefName ? { headRefName: source.target.headRefName } : {};
   return {
-    ...baseItem({ key, section: "done", kind, repo, number, title, url }),
+    ...base,
+    target: { ...base.target, ...head },
     chips: [...(work ? [workChip(work)] : []), ...(notPlanned ? [{ text: "not planned", tone: "neutral" as const }] : [])],
     ...(work ? { work } : {}),
     ...(notPlanned ? { notPlanned: true as const } : {}),

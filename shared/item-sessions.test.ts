@@ -39,8 +39,12 @@ describe("the sessions on items", () => {
     ];
     const linked = [worktree("w1", "fix-1", { githubRuntime: { pullRequest: { url: "https://github.com/acme/shop/pull/5" } } })];
     expect(sessionsFrom([], all, linked)).toMatchObject([{ id: "me", subAgents: { count: 2, working: false } }]);
-    const permission = [...all.slice(0, 2), sub("nested", "review", { requiresAttention: true, attentionReason: "permission" })];
-    expect(sessionsFrom([], permission, linked)).toMatchObject([{ id: "me", subAgents: { count: 2, working: true } }]);
+    for (const attentionReason of ["permission", null, "something new"]) {
+      const flagged = [...all.slice(0, 2), sub("nested", "review", { requiresAttention: true, attentionReason })];
+      expect(sessionsFrom([], flagged, linked)).toMatchObject([{ id: "me", subAgents: { count: 2, working: true } }]);
+    }
+    const failed = [...all.slice(0, 2), sub("nested", "review", { requiresAttention: true, attentionReason: "error" })];
+    expect(sessionsFrom([], failed, linked)).toMatchObject([{ id: "me", subAgents: { count: 2, working: false } }]);
   });
 
   it("ATT-22, SES-08: a worktree Paseo no longer links finds my merged or closed PR by its branch, the latest close winning", () => {
@@ -63,14 +67,36 @@ describe("the sessions on items", () => {
     expect(keys(sessionsFrom(labelled, [...labelled, agent("a", "w1")], [worktree("w1", "fix-1")], branches))).toEqual(["s:acme/shop#3", "a:acme/shop#3"]);
   });
 
-  it("ATT-22: a merged PR under its closed issue is found by its branch too; others' PRs I reviewed aren't", () => {
+  it("ATT-22, SES-08: a branch an open PR of mine is on maps to nothing, and neither does a worktree two items share", () => {
+    const open = item("acme/shop#20", "changes");
+    const view = {
+      history: [merged("acme/shop#5", "fix-1", "2026-11-01"), merged("acme/shop#6", "fix-3", "2026-11-01")],
+      doing: [{ id: "changes" as const, title: "Changes", items: [{ ...open, target: { ...open.target, headRefName: "fix-1" } }] }],
+    };
+    const branches = closedBranches(view);
+    expect(keys(sessionsFrom([], [agent("a", "w1")], [worktree("w1", "fix-1")], branches))).toEqual([]);
+    const two = [started("s", "acme/shop#3", "w2"), started("t", "acme/shop#4", "w2")];
+    expect(keys(sessionsFrom(two, [...two, agent("a", "w2")], [worktree("w2", "fix-3")], branches))).toEqual(["s:acme/shop#3", "t:acme/shop#4"]);
+  });
+
+  it("ATT-22: the worktree's remote, https or ssh, any case, names the repo; another host names none", () => {
+    const branches = closedBranches({ history: [merged("acme/shop#5", "fix-1", "2026-11-01")] });
+    const on = (remoteUrl: string) => worktree("w1", "fix-1", { gitRuntime: { currentBranch: "fix-1", remoteUrl } });
+    for (const remote of ["https://github.com/Acme/Shop.git", "https://github.com/acme/shop/", "git@github.com:acme/shop"]) {
+      expect(keys(sessionsFrom([], [agent("a", "w1")], [on(remote)], branches))).toEqual(["a:acme/shop#5"]);
+    }
+    expect(keys(sessionsFrom([], [agent("a", "w1")], [on("git@gitlab.com:acme/shop.git")], branches))).toEqual([]);
+  });
+
+  it("ATT-22: a merged PR under its closed issue is found by its branch too, by its own merge time; others' PRs I reviewed aren't", () => {
     const issue = item("acme/shop#40", "done", {
       kind: "issue",
       closedAt: "2026-11-05",
-      children: [{ key: "acme/shop#41", number: 41, title: "PR", url: "u", draft: false, chips: [], attention: false, headRefName: "issue-40" }],
+      children: [{ key: "acme/shop#41", number: 41, title: "PR", url: "u", draft: false, chips: [], attention: false, headRefName: "issue-40", mergedAt: "2026-11-01" }],
     });
     const reviewed = { ...merged("acme/shop#50", "theirs", "2026-11-05"), section: "reviewed" as const };
-    const branches = closedBranches({ history: [issue, reviewed] });
-    expect(keys(sessionsFrom([], [agent("a", "w1"), agent("b", "w2")], [worktree("w1", "issue-40"), worktree("w2", "theirs")], branches))).toEqual(["a:acme/shop#41"]);
+    // #42 reused the branch and merged on Nov 3: later than #41's merge, though the issue closed after both.
+    const branches = closedBranches({ history: [issue, reviewed, merged("acme/shop#42", "issue-40", "2026-11-03")] });
+    expect(keys(sessionsFrom([], [agent("a", "w1"), agent("b", "w2")], [worktree("w1", "issue-40"), worktree("w2", "theirs")], branches))).toEqual(["a:acme/shop#42"]);
   });
 });
