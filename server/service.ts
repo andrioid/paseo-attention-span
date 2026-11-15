@@ -10,7 +10,7 @@ import { classify, classifyCloseAsks, classifyHistory } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning } from "./projects";
 import type { Port } from "./port";
 import { historySince, isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
-import type { Details, LiveResult } from "./github-types";
+import type { Details, LiveResult, ReferencedIssue } from "./github-types";
 import { State } from "./store";
 import { applyPending, buildView, doneItem, type Effect, isPending, type Pending, SETTLE_MS } from "./view";
 import { keySet, uniqueKeys } from "../shared/names";
@@ -414,7 +414,23 @@ export class AttentionService {
     const { data, details } = await this.searchLive(now, unclaimed.searches);
     this.state.changes = await this.port.github.changes(this.state.changes, data, now, this.config, () => this.state.changes.gotIt);
     const own = ownClosed(data, data.viewer.login);
-    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from, ...(own.length ? { ownClosed: own } : {}) };
+    const askOff = await this.askOff();
+    return { ...classify({ data, details, config: this.config, now }), unclaimedFrom: unclaimed.from, ...(own.length ? { ownClosed: own } : {}), ...(askOff.length ? { askOff } : {}) };
+  }
+
+  // History is fetched daily, so the issues it asks about are looked up again with each live refresh: one closed since,
+  // or with anyone's PR open for it, stops asking until History says otherwise [ATT-24, GH-01]. One that can't be looked
+  // up keeps asking.
+  private async askOff(): Promise<string[]> {
+    const asks = this.state.history?.asks ?? [];
+    if (asks.length === 0) return [];
+    const found = await this.port.github.issues(asks.map((ask) => ({ repo: ask.repo, number: ask.number }))).catch(() => ({}) as Record<string, ReferencedIssue>);
+    return asks
+      .filter((ask) => {
+        const issue = Object.entries(found).find(([key]) => key.toLowerCase() === ask.key.toLowerCase())?.[1];
+        return issue && (issue.state !== "OPEN" || (issue.closedByPullRequestsReferences?.nodes ?? []).some((pr) => pr.state === "OPEN"));
+      })
+      .map((ask) => ask.key);
   }
 
   // The account gh is signed in as, for My repos [NXT-04]. Asked once, unless the last fetch already says.

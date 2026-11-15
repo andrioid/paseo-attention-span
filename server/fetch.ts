@@ -30,7 +30,7 @@ import {
   searchVariables,
   type UnclaimedSearch,
 } from "./queries";
-import { mergedToLookUp, toLookUp } from "./references";
+import { type IssueRef, mergedToLookUp, toLookUp } from "./references";
 
 // What the service asks GitHub, one request shape each [GH-01]. Previews answer from made-up data instead (fixture.ts).
 
@@ -58,6 +58,8 @@ export interface GitHub {
   changes(ledger: ChangeLedger, data: LiveResult, now: Date, config: AttentionConfig, gotIt: () => string[]): Promise<ChangeLedger>;
   // From the oldest week's Monday in the device's `timeZone` [HIS-01].
   history(config: AttentionConfig, now: Date, timeZone: string): Promise<HistoryResult>;
+  // The issues Wrap up asks to close, looked up again on the live refresh: closed since, or a PR opened for them [ATT-24].
+  issues(refs: IssueRef[]): Promise<Record<string, ReferencedIssue>>;
   // The single-select fields of these orgs, merged by name [NXT-04].
   issueFields(owners: string[]): Promise<IssueField[]>;
 }
@@ -79,6 +81,7 @@ export function gitHub(gh: Gh): GitHub {
     changes: (ledger, data, now, config, gotIt) => trackChanges(gh, ledger, data, now, config, gotIt),
     history: (config, now, timeZone) => searchHistory(gh, config, now, timeZone),
     issueFields: (owners) => issueFields(gh, owners),
+    issues: (refs) => lookUpIssues(gh, refs),
   };
 }
 
@@ -186,12 +189,18 @@ async function searchHistory(gh: Gh, config: AttentionConfig, now: Date, timeZon
   // Search answers {} for what isn't a PR or issue.
   const refs = mergedToLookUp(data.merged.nodes.filter((pr) => pr?.repository), data.closed.nodes.filter((issue) => issue?.repository));
   if (refs.length === 0) return data;
-  const found = await lookupBatches<(typeof refs)[number], { issueOrPullRequest: Partial<ReferencedIssue> | null }>(gh, refs, "i", referencedIssuesQuery, {
+  return { ...data, referenced: await lookUpIssues(gh, refs) };
+}
+
+// Issues by reference, a batch per request: whether each is open, and the open PRs GitHub links to it [ATT-24, GH-01].
+// What a failed request asked about is left out, so it's taken as unknown, never as closed or free.
+async function lookUpIssues(gh: Gh, refs: IssueRef[]): Promise<Record<string, ReferencedIssue>> {
+  if (refs.length === 0) return {};
+  const found = await lookupBatches<IssueRef, { issueOrPullRequest: Partial<ReferencedIssue> | null }>(gh, refs, "i", referencedIssuesQuery, {
     size: REFERENCED_BATCH,
     problem: (message) => console.error("Couldn't check the issues my merged PRs refer to:", message),
   });
-  const referenced = Object.fromEntries([...found].flatMap(([, node]) => (node?.issueOrPullRequest?.repository ? [[prKey(node.issueOrPullRequest as ReferencedIssue), node.issueOrPullRequest as ReferencedIssue]] : [])));
-  return { ...data, referenced };
+  return Object.fromEntries([...found].flatMap(([, node]) => (node?.issueOrPullRequest?.repository ? [[prKey(node.issueOrPullRequest as ReferencedIssue), node.issueOrPullRequest as ReferencedIssue]] : [])));
 }
 
 // My PRs' merge state, a few per request in parallel, as GitHub only works it out for a few at a time; search's answer

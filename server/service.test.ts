@@ -40,6 +40,7 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
     changes: vi.fn<GitHub["changes"]>(async (ledger) => ledger),
     history: vi.fn<GitHub["history"]>(history ?? (async (_config, at) => fixture(at).data)),
     issueFields: vi.fn<GitHub["issueFields"]>(async () => []),
+    issues: vi.fn<GitHub["issues"]>(async () => ({})),
   } satisfies GitHub;
   const store = {
     moveOldFiles: async () => {},
@@ -496,6 +497,15 @@ describe("asking to close an issue", () => {
     await advance(SETTLE_MS + 1);
     expect(github.history.mock.calls.length).toBeGreaterThan(fetched);
     expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+  });
+
+  it("ATT-24, GH-01: the live refresh looks the asked issue up again: a PR opened for it since stops the question", async () => {
+    const { service, github, start } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")])).history(config, now, timeZone));
+    await start();
+    expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+    github.issues.mockResolvedValue({ [ISSUE]: { ...open, closedByPullRequestsReferences: { nodes: [{ state: "OPEN" }] } } });
+    expect(asked(await service.get("live"))).toEqual([]);
+    expect(github.issues).toHaveBeenLastCalledWith([{ repo: REPO, number: 900 }]);
   });
 
   it("ATT-24: closing an issue assigned to me keeps my merged PRs under it", async () => {

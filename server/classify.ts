@@ -504,6 +504,7 @@ export function classifyCloseAsks(data: HistoryResult): CloseAsk[] {
   const referenced = new Map(Object.entries(data.referenced ?? {}));
   // Closed issues count as issues too, so a PR that worked on one isn't put under another it mentions.
   const closed = new Set(compact(data.closed.nodes).map(prKey));
+  const me = data.viewer?.login.toLowerCase();
   const asks = new Map<string, CloseAsk>();
   for (const pr of compact(data.merged.nodes)) {
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
@@ -511,7 +512,13 @@ export function classifyCloseAsks(data: HistoryResult): CloseAsk[] {
     const issue = key ? referenced.get(key) : undefined;
     if (!key || !issue || issue.state !== "OPEN" || (issue.closedByPullRequestsReferences?.nodes ?? []).some((other) => other.state === "OPEN")) continue;
     const ask = asks.get(key) ?? { key, repo: issue.repository.nameWithOwner, number: issue.number, title: issue.title, url: issue.url, prs: [], mergedAt: pr.mergedAt };
-    ask.prs.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, mergedAt: pr.mergedAt });
+    // Its branch, so a session on it still finds its row once the issue is closed; who merged it, as History says [ATT-22, HIS-05].
+    const by = pr.mergedBy?.login;
+    ask.prs.push({
+      key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, mergedAt: pr.mergedAt,
+      ...(pr.headRefName ? { headRefName: pr.headRefName } : {}),
+      ...(by && me && by.toLowerCase() !== me ? { mergedBy: by } : {}),
+    });
     if (pr.mergedAt > ask.mergedAt) ask.mergedAt = pr.mergedAt;
     asks.set(key, ask);
   }

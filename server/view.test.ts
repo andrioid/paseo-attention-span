@@ -185,11 +185,14 @@ describe("History's weeks", () => {
 });
 
 describe("asking to close an issue", () => {
-  it("ATT-24: doesn't ask while a PR of mine is open under the issue", () => {
+  it("ATT-24: doesn't ask while a PR is open for the issue, mine or anyone's, or once the live refresh found it closed; a mention alone doesn't stop it", () => {
     const ask = { key: "acme/shop#12", repo: "acme/shop", number: 12, title: "Export", url: "u", prs: [], mergedAt: "2026-11-01T00:00:00Z" };
-    const open = buildView(attention([item("ACME/shop#12", "ci", { kind: "issue" })]), [], {}, { ...meta, closeAsks: [ask] });
-    const done = buildView(attention([]), [], {}, { ...meta, closeAsks: [ask] });
-    expect([open.closeAsks, done.closeAsks?.map((a) => a.number)]).toEqual([[], [12]]);
+    const asks = (live: Attention) => buildView(live, [], {}, { ...meta, closeAsks: [ask] }).closeAsks?.map((a) => a.number);
+    const pr = { key: "acme/shop#40", number: 40, title: "Step", url: "u", draft: false, chips: [], attention: false };
+    expect(asks(attention([item("ACME/shop#12", "ci", { kind: "issue", children: [pr] })]))).toEqual([]);
+    expect(asks({ ...attention([]), unclaimed: [issue("acme/shop#12", { openPrs: [{ number: 41, url: "u", author: "alice" }] })] })).toEqual([]);
+    expect(asks({ ...attention([]), askOff: ["acme/shop#12"] })).toEqual([]);
+    expect(asks(attention([item("acme/shop#12", "reply", { kind: "issue" })]))).toEqual([12]);
   });
 
   it("ATT-24, HIS-01: only what merged within History's weeks asks, as History shows it", () => {

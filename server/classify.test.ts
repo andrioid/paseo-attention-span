@@ -6,6 +6,7 @@ import { changeItems, EMPTY_LEDGER } from "./changes";
 import { classify, classifyCloseAsks, classifyHistory } from "./classify";
 import { alice, bob, bot, builders, fixture, fixtureChanges, fixtureGotIt, me, REPO } from "./fixture";
 import type { Details } from "./github-types";
+import { item } from "../shared/test-builders";
 import {
   detailsQuery,
   HISTORY_SEARCHES,
@@ -759,6 +760,13 @@ describe("asking to close an issue", () => {
       referenced: referenced(60, "OPEN"),
     });
     expect(asks.map((ask) => [ask.number, ask.prs.map((pr) => pr.number), ask.mergedAt])).toEqual([[60, [61, 62], daysAgo(1)]]);
+  });
+
+  it("ATT-24, ATT-22: the PRs under an issue asked about keep their branch, so a session on one finds its row once it's closed", () => {
+    const [ask] = classifyCloseAsks({ ...search({ merged: [{ ...merged(61, 1, "Part of #60"), headRefName: "export-csv", mergedBy: { login: "dave" } }] }), referenced: referenced(60, "OPEN") });
+    const closed = { ...item(`${REPO}#60`, "done", { kind: "issue", closedAt: daysAgo(0), children: ask.prs }) };
+    expect(closedBranches({ history: [closed] }).get(`${REPO}\0export-csv`)).toBe(`${REPO}#61`);
+    expect(ask.prs[0].mergedBy).toBe("dave");
   });
 
   it("ATT-24: doesn't ask while anyone's PR is open for it, once it's closed, or about an issue a PR only mentioned beside the one it closed", () => {

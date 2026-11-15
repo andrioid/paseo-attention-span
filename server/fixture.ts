@@ -498,6 +498,8 @@ export function fixturePort(store: Store, dir: string): Port {
       changes: async (ledger, _data, now) => ({ ...ledger, events: quiet() ? [] : fixtureChanges(now), gotIt: fixtureGotIt(now) }),
       history: async (_config, now) => fixtureNow(now, quiet()).data,
       issueFields: async () => FIXTURE_ISSUE_FIELDS,
+      // Asked issues are as History found them [ATT-24].
+      issues: async () => (quiet() ? {} : (fixture(new Date()).data.referenced ?? {})),
     },
     // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
     paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },

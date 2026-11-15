@@ -407,6 +407,8 @@ export interface Attention {
   // My PRs that ended lately, closed by me unmerged or merged: finished work for Wrap up, never shown in History; a merged
   // one stands in until History has it [ATT-22, FRESH-03].
   ownClosed?: Item[];
+  // Issues Wrap up asks to close that the live refresh found closed since, or with a PR open for them [ATT-24].
+  askOff?: string[];
 }
 
 export interface Section {

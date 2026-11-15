@@ -155,11 +155,16 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
       .filter((section) => section.items.length > 0);
   const doing = sections("doing");
   const activeKeys = (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]);
-  const active = keySet(activeKeys);
-  // An issue with a PR of mine open under it isn't done: that PR's in the live feed, which History's asks can't know [ATT-24].
-  // Only what merged within History's weeks counts, as History shows it, until it's fetched again [HIS-01].
+  // Not done while a PR is open for it: one of mine grouped under it in the live feed (a mention on the issue alone doesn't
+  // count), anyone's Next up knows of, or what the live refresh found when it looked again; and not once it closed since.
+  // Only what merged within History's weeks counts, as History shows it, until it's fetched again [ATT-24, HIS-01].
+  const off = keySet([
+    ...(attention?.items ?? []).filter((item) => item.kind === "issue" && item.children.length > 0).map((item) => item.key),
+    ...[...(attention?.assigned ?? []), ...(attention?.unclaimed ?? [])].filter((issue) => issue.openPrs.length > 0).map((issue) => issue.key),
+    ...(attention?.askOff ?? []),
+  ]);
   const closeAsks = (meta.closeAsks ?? [])
-    .filter((ask) => !active.has(ask.key.toLowerCase()) && Date.parse(ask.mergedAt) >= Date.parse(since))
+    .filter((ask) => !off.has(ask.key.toLowerCase()) && Date.parse(ask.mergedAt) >= Date.parse(since))
     .map((ask) => ({ ...ask, prs: ask.prs.filter((pr) => Date.parse(pr.mergedAt ?? ask.mergedAt) >= Date.parse(since)) }));
   // Next up keeps an issue it asks about, saying its PRs merged [ATT-24].
   const asked = keySet(closeAsks.map((ask) => ask.key));
