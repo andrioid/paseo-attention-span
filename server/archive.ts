@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { isIdle } from "../shared/attention";
 import { type ArchiveResult, type KeptWorktree, type UnsavedSession, unsavedOf } from "../shared/archive";
 import { subAgentsOf } from "../shared/linked-sessions";
+import { listAll } from "./archived";
 
 // Archiving finished work's sessions, safely [ATT-22]. Paseo's SDK has no restore, so an archive has no Undo here; instead
 // nothing with unsaved work or open terminals leaves without a confirmation. A session's sub-agents go with it. A worktree
@@ -25,7 +26,7 @@ export interface ArchiveSession {
 }
 
 type Paseo = PluginHandlerContext["paseo"];
-type AgentEntries = Awaited<ReturnType<Paseo["agents"]["list"]>>["entries"];
+type ListedAgent = Awaited<ReturnType<Paseo["agents"]["list"]>>["entries"][number]["agent"];
 type ListedWorkspace = Awaited<ReturnType<Paseo["workspaces"]["list"]>>["entries"][number];
 
 const base = (session: ArchiveSession): UnsavedSession => ({ agentId: session.agentId, title: session.title, ...(session.branch ? { branch: session.branch } : {}) });
@@ -76,8 +77,10 @@ async function unsavedWork(session: ArchiveSession, workspace: ListedWorkspace |
 // [ATT-22]. `worktrees` are kept worktrees tried again on their own. `confirm` is the sheet that named unsaved work and open
 // terminals; `seen` are the terminals it named, the only ones archiving may close.
 export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm: boolean, seen: string[] = [], worktrees: string[] = []): Promise<ArchiveResult> {
-  const [agentList, workspaceList] = await Promise.all([paseo.agents.list(), paseo.workspaces.list()]);
-  const agents = new Map(agentList.entries.map(({ agent }) => [agent.id, agent]));
+  // Every agent, archived ones too, on every page: a sub-agent under an archived one, or a session on a later page, counts.
+  const everyAgent = () => listAll(paseo, { filter: { includeArchived: true } });
+  const [agentList, workspaceList] = await Promise.all([everyAgent(), paseo.workspaces.list()]);
+  const agents = new Map(agentList.map((agent) => [agent.id, agent]));
   const workspaces = new Map<string, ListedWorkspace>(workspaceList.entries.map((workspace) => [workspace.id, workspace]));
   const wanted = [...new Set(agentIds)];
   const sessionOf = (workspace: ListedWorkspace, fields: Pick<ArchiveSession, "agentId" | "title"> & { worktreeOnly?: true }): ArchiveSession => {
@@ -106,12 +109,11 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
     }),
   ];
   // A session and its sub-agents: one still working stops the archive, whichever it is.
-  const working = (entries: AgentEntries) => {
-    const all = entries.map(({ agent }) => agent);
+  const working = (all: ListedAgent[]) => {
     const ours = [...all.filter((agent) => wanted.includes(agent.id)), ...subAgentsOf(all, wanted)];
     return ours.find((agent) => !agent.archivedAt && !isIdle(agent));
   };
-  const busy = working(agentList.entries);
+  const busy = working(agentList);
   if (busy) return { ok: false, reason: "working", message: `${busy.title ?? "A session"} is still working` };
   const unsaved = async () => {
     const dirty = new Map<string, UnsavedSession>();
@@ -125,13 +127,10 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
 
   // The checks above can take a while: look again right before archiving, so a session that started working, or a session
   // that moved into one of these worktrees meanwhile, is seen [ATT-22].
-  const latest = await paseo.agents.list();
-  const resumed = working(latest.entries);
+  const latest = await everyAgent();
+  const resumed = working(latest);
   if (resumed) return { ok: false, reason: "working", message: `${resumed.title ?? "A session"} is working again` };
-  const subAgents = subAgentsOf(
-    latest.entries.map(({ agent }) => agent),
-    wanted,
-  );
+  const subAgents = subAgentsOf(latest, wanted);
   const ours = new Set([...wanted, ...subAgents.map((agent) => agent.id)]);
 
   // Which worktrees go: Paseo's, with no unarchived session in them but these and their sub-agents. One that holds another
@@ -150,7 +149,7 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
   for (const workspaceId of new Set(sessions.flatMap((session) => (session.workspaceId ? [session.workspaceId] : [])))) {
     const workspace = workspaces.get(workspaceId);
     if (!workspace || workspace.workspaceKind !== "worktree") continue;
-    const other = latest.entries.find(({ agent }) => agent.workspaceId === workspaceId && !agent.archivedAt && !ours.has(agent.id))?.agent;
+    const other = latest.find((agent) => agent.workspaceId === workspaceId && !agent.archivedAt && !ours.has(agent.id));
     if (other) {
       keep(workspace, { reason: "session", detail: other.title ?? "another session", agentId: other.id });
       continue;
@@ -176,9 +175,20 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
     };
   }
 
-  // Archive the sub-agents, then the sessions; an already archived one counts as done, as does a sub-agent Paseo archived
-  // with its parent meanwhile.
-  for (const agent of subAgents.reverse()) await paseo.agents.ref(agent.id).archive().catch(() => {});
+  // Archive the sub-agents, deepest first, then the sessions; an already archived one counts as done. A sub-agent that
+  // wouldn't go and is still open stops the archive before its session goes, so nothing is acknowledged with it left open.
+  const failed: { agent: ListedAgent; message: string }[] = [];
+  for (const agent of [...subAgents].reverse()) {
+    await paseo.agents
+      .ref(agent.id)
+      .archive()
+      .catch((error: Error) => failed.push({ agent, message: error.message }));
+  }
+  if (failed.length) {
+    const open = new Set((await everyAgent()).filter((agent) => !agent.archivedAt).map((agent) => agent.id));
+    const stuck = failed.find(({ agent }) => open.has(agent.id));
+    if (stuck) throw new Error(`Couldn't archive ${stuck.agent.title ?? "a sub-agent"}: ${stuck.message}`);
+  }
   for (const session of sessions) {
     if (session.worktreeOnly || agents.get(session.agentId)?.archivedAt) continue;
     await paseo.agents.ref(session.agentId).archive();

@@ -22,18 +22,33 @@ interface FakeWorkspace {
 
 // Paseo's agents, workspaces and terminals, as far as archiving uses them, recording what it archived.
 // Terminals are "id" in w1, or "id@w2" in another workspace.
-// An agent's `parent` is the session that started it, as Paseo labels it.
-function paseoFor(agents: { id: string; workspaceId?: string; status?: string; title?: string; parent?: string }[], workspaces: FakeWorkspace[], terminals: string[] = []) {
+// An agent's `parent` is the session that started it, as Paseo labels it. Lists come `pageSize` agents a page, archived ones
+// only when asked for, and an agent archived here is listed as archived from then on.
+type FakeAgent = { id: string; workspaceId?: string; status?: string; title?: string; parent?: string; archivedAt?: string };
+function paseoFor(agents: FakeAgent[], workspaces: FakeWorkspace[], terminals: string[] = [], pageSize = 100) {
   const archivedAgents: string[] = [];
   const archivedWorkspaces: string[] = [];
   const api = {
     agents: {
-      list: async () => ({
-        entries: agents.map(({ parent, ...agent }) => ({
-          agent: { status: "idle", requiresAttention: false, title: "Session", ...agent, labels: parent ? { "paseo.parent-agent-id": parent } : {} },
-        })),
+      list: async (options?: { filter?: { includeArchived?: boolean }; page?: { cursor?: string } }) => {
+        const listed = agents.filter((agent) => options?.filter?.includeArchived || !agent.archivedAt);
+        const start = Number(options?.page?.cursor ?? 0);
+        const more = start + pageSize < listed.length;
+        return {
+          entries: listed.slice(start, start + pageSize).map(({ parent, ...agent }) => ({
+            agent: { status: "idle", requiresAttention: false, title: "Session", archivedAt: null, ...agent, labels: parent ? { "paseo.parent-agent-id": parent } : {} },
+          })),
+          pageInfo: { hasMore: more, nextCursor: more ? String(start + pageSize) : null },
+        };
+      },
+      ref: (id: string) => ({
+        archive: async () => {
+          archivedAgents.push(id);
+          const agent = agents.find((other) => other.id === id);
+          if (agent) agent.archivedAt = "now";
+          return { archivedAt: "now" };
+        },
       }),
-      ref: (id: string) => ({ archive: async () => (archivedAgents.push(id), { archivedAt: "now" }) }),
     },
     workspaces: {
       list: async () => ({ entries: workspaces.map((workspace) => ({ gitRuntime: { isDirty: false, aheadOfOrigin: 0, currentBranch: "b" }, ...workspace })) }),
@@ -169,6 +184,55 @@ describe("archive safety", () => {
     expect(archivedAgents.sort()).toEqual(["a1", "elsewhere", "nested", "review"]);
     // A sub-agent in another workspace is archived, and that workspace stays.
     expect(archivedWorkspaces).toEqual(["w1"]);
+  });
+
+  it("ATT-22: every page of agents counts: another session on a later page keeps the worktree", async () => {
+    const { paseo, archivedWorkspaces } = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "x", workspaceId: "w9" },
+        { id: "a2", workspaceId: "w1", title: "Fix flaky test" },
+      ],
+      [worktree()],
+      [],
+      1,
+    );
+    expect(await archiveSessions(paseo, ["a1"], false)).toMatchObject({ ok: true, kept: [{ reason: "session", agentId: "a2" }] });
+    expect(archivedWorkspaces).toEqual([]);
+  });
+
+  it("ATT-22: an open sub-agent under an archived one is still found, and still working stops the archive", async () => {
+    const { paseo, archivedAgents } = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "review", workspaceId: "w1", parent: "a1", archivedAt: "earlier" },
+        { id: "check", workspaceId: "w1", parent: "review", status: "running", title: "Run checks" },
+      ],
+      [worktree()],
+    );
+    expect(await archiveSessions(paseo, ["a1"], true)).toEqual({ ok: false, reason: "working", message: "Run checks is still working" });
+    expect(archivedAgents).toEqual([]);
+  });
+
+  it("ATT-22: a sub-agent that won't archive and stays open stops the archive before its session goes", async () => {
+    const { paseo, archivedAgents } = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "review", workspaceId: "w2", parent: "a1", title: "Review PR 46" },
+      ],
+      [worktree({ workspaceDirectory: clone() })],
+    );
+    const ref = paseo.agents.ref;
+    paseo.agents.ref = ((id: string) =>
+      id === "review"
+        ? {
+            archive: async () => {
+              throw new Error("busy");
+            },
+          }
+        : ref(id)) as typeof ref;
+    await expect(archiveSessions(paseo, ["a1"], false)).rejects.toThrow("Couldn't archive Review PR 46: busy");
+    expect(archivedAgents).toEqual([]);
   });
 
   it("ATT-22: a sub-agent still working stops the archive, naming it", async () => {

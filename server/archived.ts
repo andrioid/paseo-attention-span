@@ -1,5 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { keySet } from "../shared/names";
+import { everyPage } from "../shared/paging";
 
 // A session Attention Span started, archived in Paseo itself: once no session it started is left open on any part of the
 // item's stack or issue group, what others did to that work up to the archive is acknowledged, so it doesn't come back as
@@ -54,15 +55,8 @@ function stillOpen(keys: string[], open: Pick<ListedAgent, "labels" | "archivedA
 }
 
 // Every page of a list; a failed page fails the whole list, so it's never mistaken for an empty one.
-async function listAll(paseo: Paseo, options: ListOptions): Promise<ListedAgent[]> {
-  const agents: ListedAgent[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const result = await paseo.agents.list({ ...options, page: { limit: 200, ...(cursor ? { cursor } : {}) } });
-    agents.push(...result.entries.map((entry) => entry.agent));
-    if (!result.pageInfo.hasMore || !result.pageInfo.nextCursor) return agents;
-    cursor = result.pageInfo.nextCursor;
-  }
+export async function listAll(paseo: Paseo, options: ListOptions): Promise<ListedAgent[]> {
+  return (await everyPage((page) => paseo.agents.list({ ...options, page }))).map((entry) => entry.agent);
 }
 
 // The archived session as Paseo has it now: its own snapshot, or else the list with archived sessions in it.

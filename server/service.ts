@@ -39,6 +39,8 @@ interface Feed {
 // Owns the cache and the background refresh of each feed [FRESH-01, PRIV-01].
 export class AttentionService {
   private state: State = State.parse({});
+  // Workspaces Paseo said were archived; an archive that keeps one of them after the fact adds no row for it [ATT-22].
+  private archivedWorkspaces = new Set<string>();
   private config: AttentionConfig = AttentionConfig.parse({});
   private configError: string | null = null;
   private feeds: Record<FeedId, Feed> = {
@@ -178,8 +180,10 @@ export class AttentionService {
     return this.view();
   }
 
-  // A kept worktree archived anywhere, Paseo's sidebar included, takes its row with it [ATT-22].
+  // A kept worktree archived anywhere, Paseo's sidebar included, takes its row with it [ATT-22]. Remembered, so an archive
+  // still running that keeps it afterwards doesn't bring the row back.
   async forgetKept(workspaceId: string): Promise<void> {
+    this.archivedWorkspaces.add(workspaceId);
     if (!this.state.kept.some((kept) => kept.workspaceId === workspaceId)) return;
     this.state.kept = this.state.kept.filter((kept) => kept.workspaceId !== workspaceId);
     await this.save();
@@ -189,7 +193,7 @@ export class AttentionService {
     const at = new Date(this.port.now()).toISOString();
     for (const found of kept) {
       const row = rowOf(found);
-      if (!row) continue;
+      if (!row || this.archivedWorkspaces.has(found.workspaceId)) continue;
       const { sessionIds, ...worktree } = found;
       const { itemKey, title, repo, number, kind } = row;
       this.state.kept = [...this.state.kept.filter((other) => other.workspaceId !== worktree.workspaceId), { ...worktree, itemKey, title, repo, number, kind, at }];

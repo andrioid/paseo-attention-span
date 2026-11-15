@@ -359,5 +359,17 @@ describe("kept worktrees", () => {
     await h.service.archive(paseo, [target], false);
     expect((await h.service.dismissKept("w1")).kept).toEqual([]);
   });
+
+  it("ATT-22: a worktree Paseo archived while an archive still ran gets no kept row afterwards", async () => {
+    const h = harness();
+    let finish!: () => void;
+    h.paseo.archive = () => new Promise((resolve) => (finish = () => resolve({ ok: true, kept: [kept] })));
+    await h.start();
+    const archiving = h.service.archive(paseo, [target], false);
+    await settle();
+    await h.service.forgetKept("w1");
+    finish();
+    expect((await archiving).view.kept).toEqual([]);
+  });
 });
 

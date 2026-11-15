@@ -2,6 +2,7 @@ import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type AgentSummary, checkoutPr, isIdle, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
 import { linkedSessions, subAgentsOf } from "../shared/linked-sessions";
+import { everyPage } from "../shared/paging";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 import * as rpc from "../shared/rpc";
@@ -62,13 +63,14 @@ function sessionWorkspace(workspace: (Awaited<ReturnType<Paseo["workspaces"]["li
 // started outside it in a workspace that belongs to an item [SES-08].
 export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
   const labels = [LABEL, ...OLD_LABELS];
+  // Every page, so a session or sub-agent past the first isn't missed [ATT-22].
   const [lists, all, workspaces] = await Promise.all([
-    Promise.all(labels.map((label) => paseo.agents.list({ filter: { labels: { [label]: "1" } } }))),
-    paseo.agents.list(),
+    Promise.all(labels.map((label) => everyPage((page) => paseo.agents.list({ filter: { labels: { [label]: "1" } }, page })))),
+    everyPage((page) => paseo.agents.list({ page })),
     paseo.workspaces.list(),
   ]);
   const byId = new Map<string, AgentSummary>();
-  for (const { agent } of lists.flatMap((list) => list.entries)) {
+  for (const { agent } of lists.flat()) {
     const itemKey = labels.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
     if (!itemKey || agent.archivedAt) continue;
     byId.set(agent.id, {
@@ -83,9 +85,9 @@ export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
     });
   }
   const labelled = [...byId.values()];
-  const unlabelled = all.entries.map((entry) => entry.agent).filter((agent) => !labels.some((label) => agent.labels?.[label]));
+  const unlabelled = all.map((entry) => entry.agent).filter((agent) => !labels.some((label) => agent.labels?.[label]));
   const byWorkspace = new Map(workspaces.entries.map((workspace) => [workspace.id, sessionWorkspace(workspace)]));
-  const everyone = all.entries.map((entry) => entry.agent);
+  const everyone = all.map((entry) => entry.agent);
   return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)].map((agent) => {
     const workspace = agent.workspaceId ? byWorkspace.get(agent.workspaceId) : undefined;
     // Its sub-agents go with it when it's archived, and one still working keeps its Wrap up row out [ATT-22].

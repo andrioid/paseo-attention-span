@@ -121,11 +121,11 @@ export interface KeptWorktree {
 // A kept worktree as Wrap up shows it, with the row it came from; in state.json until the worktree goes or it's dismissed.
 export type KeptRow = Omit<KeptWorktree, "sessionIds"> & Pick<Item, "repo" | "number" | "title" | "kind"> & { itemKey: string; at: string };
 
-// "Sessions archived · worktree kept: Fix flaky test is still in it" [ATT-22].
+// Why it stayed, short: the archive mark and the row's button say the rest. "Fix flaky test still in it" [ATT-22].
 export function keptText(kept: Pick<KeptWorktree, "reason" | "detail">): string {
-  if (kept.reason === "session") return `Sessions archived · worktree kept: ${kept.detail} is still in it`;
-  if (kept.reason === "terminal") return `Sessions archived · worktree kept: ${kept.detail} opened while archiving`;
-  return `Sessions archived · Paseo couldn't remove the worktree: ${kept.detail}`;
+  if (kept.reason === "session") return `${kept.detail} still in it`;
+  if (kept.reason === "terminal") return `${kept.detail} opened meanwhile`;
+  return `Paseo: ${kept.detail}`;
 }
 
 // What archiving answers. A refusal keeps the row and says why, or names the unsaved work and open terminals to confirm,

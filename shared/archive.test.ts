@@ -28,8 +28,8 @@ describe("unsaved work", () => {
   });
 
   it("ATT-22: a kept worktree's row says why it stayed", () => {
-    expect(keptText({ reason: "session", detail: "Fix flaky test" })).toBe("Sessions archived · worktree kept: Fix flaky test is still in it");
-    expect(keptText({ reason: "terminal", detail: "dev" })).toBe("Sessions archived · worktree kept: dev opened while archiving");
-    expect(keptText({ reason: "refused", detail: "busy" })).toBe("Sessions archived · Paseo couldn't remove the worktree: busy");
+    expect(keptText({ reason: "session", detail: "Fix flaky test" })).toBe("Fix flaky test still in it");
+    expect(keptText({ reason: "terminal", detail: "dev" })).toBe("dev opened meanwhile");
+    expect(keptText({ reason: "refused", detail: "worktree is locked" })).toBe("Paseo: worktree is locked");
   });
 });
