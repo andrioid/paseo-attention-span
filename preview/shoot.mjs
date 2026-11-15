@@ -68,6 +68,8 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
   // The top of the page, at most a desktop monitor tall.
   const fold = () => ({ x: 0, y: 0, width: layout.viewport.width, height: Math.min(layout.viewport.height, MAX_HEIGHT) });
   const page = await browser.newPage({ viewport: layout.viewport, isMobile: layout.isMobile, hasTouch: layout.isMobile, colorScheme });
+  // The fixture answers at once, so what isn't there within 10 seconds won't come: fail then, not after Playwright's 30.
+  page.setDefaultTimeout(10000);
   let unsettled = 0;
   const settled = async () => {
     if (await settledIn(page)) unsettled++;

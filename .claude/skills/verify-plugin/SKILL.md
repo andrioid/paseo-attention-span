@@ -27,7 +27,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    ```
    - **Iterate on the shot you're changing, by its name** (the file name without `.png`, from the table below). Only the scenarios that take it run, and only the shots you named are written. `node preview/shots.mjs list` lists every name; an unknown name fails at once and suggests near ones.
    - **Run everything once, when the work is done** and before asking the user to look, then `npm run screenshots` if the UI changed.
-   - `preview/run.sh` builds the image (cached after the first time), clears `preview/out/`, and runs the container.
+   - `preview/run.sh` builds the image (cached after the first time), clears `preview/out/`, and runs one container per layout, two at a time: everything takes about 4 minutes, one shot about 15 seconds. Each container has its own daemon, so nothing one layout changes reaches another. A layout's full output is `preview/out/<layout>.log`.
    - Each scenario prints its time, then each layout `ok <layout> in …s` or `failed <layout> <scenario>: <reason>`. After a failure the layout starts over and runs its remaining scenarios, so one failure doesn't hide another.
    - On failure it saves `<layout>-<scenario>-failure.png` and prints the container daemon's log tail.
 

@@ -36,6 +36,17 @@ export const SCENARIOS = [
 
 const SHOTS = SCENARIOS.flatMap((scenario) => scenario.shots);
 
+// Edits from one name to another, for suggesting the name meant by a typo.
+const distance = (a, b) => {
+  let row = [...Array(b.length + 1).keys()];
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+};
+
 /**
  * What a selection asks for, as `{ layouts, shots }`: `shots` maps each layout to the shots it takes, or null for all of
  * them. Throws, saying why, for a name that
@@ -62,7 +73,7 @@ export const select = (selection = "") => {
       continue;
     }
     if (!SHOTS.includes(shot)) {
-      const near = SHOTS.filter((name) => name.includes(shot) || shot.includes(name)).slice(0, 6);
+      const near = SHOTS.filter((name) => name.includes(shot) || distance(name, shot) <= 2).slice(0, 6);
       throw new Error(`No shot or layout called "${part}".${near.length ? ` Did you mean ${near.join(", ")}?` : ""} List them with: node preview/shots.mjs list`);
     }
     const desktopOnly = SCENARIOS.find((scenario) => scenario.shots.includes(shot)).desktop;
