@@ -6,10 +6,10 @@ import type { AgentSummary } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import { FEEDBACK_REPO, type FeedbackContext, type FeedbackKind, feedbackItemKey, feedbackPrompt } from "../shared/feedback";
 import * as rpc from "../shared/rpc";
-import { ActionSheet, Modal, type SheetEntry } from "./sheet";
+import { ActionSheet, Dialog, type SheetEntry } from "./sheet";
 import { sessionEntry } from "./session-menu";
 import { ITEM_LABEL, KIND_LABEL, LABEL, resolveAgentConfig } from "./sessions";
-import { Button, KeepStyles, TablerIcon, useStyles } from "./ui";
+import { Button, TablerIcon, useStyles } from "./ui";
 
 // Feedback to the Attention Span project from the bottom of every tab [FB-01].
 // Problem and Idea start an agent that asks until it's clear and posts only once I approve; Like opens the repo to star it.
@@ -117,29 +117,25 @@ export function FeedbackAsk({
   }
 
   return (
-    <Modal title={KINDS[kind].label} open onOpenChange={(open) => (open ? null : onClose())}>
-      <Modal.Content>
-        <KeepStyles styles={styles}>
-          <View style={{ gap: 10 }}>
-            <Text style={styles.muted}>{KINDS[kind].ask}</Text>
-            <TextInput
-              style={[styles.input, { minHeight: 110 }]}
-              value={message}
-              onChangeText={setMessage}
-              placeholder={KINDS[kind].placeholder}
-              multiline
-              textAlignVertical="top"
-              autoFocus
-            />
-            <Text style={styles.muted}>An agent asks what else it needs and shows you the post before anything goes to GitHub.</Text>
-            <View style={styles.wrap}>
-              <Button label={starting ? "Starting…" : "Start"} icon="agent" variant="solid" disabled={starting || !message.trim()} onPress={() => void start()} />
-              <Button label="Back" onPress={onBack} />
-            </View>
-          </View>
-        </KeepStyles>
-      </Modal.Content>
-    </Modal>
+    <Dialog title={KINDS[kind].label} onClose={onClose}>
+      <View style={{ gap: 10 }}>
+        <Text style={styles.muted}>{KINDS[kind].ask}</Text>
+        <TextInput
+          style={[styles.input, { minHeight: 110 }]}
+          value={message}
+          onChangeText={setMessage}
+          placeholder={KINDS[kind].placeholder}
+          multiline
+          textAlignVertical="top"
+          autoFocus
+        />
+        <Text style={styles.muted}>An agent asks what else it needs and shows you the post before anything goes to GitHub.</Text>
+        <View style={styles.wrap}>
+          <Button label={starting ? "Starting…" : "Start"} icon="agent" variant="solid" disabled={starting || !message.trim()} onPress={() => void start()} />
+          <Button label="Back" onPress={onBack} />
+        </View>
+      </View>
+    </Dialog>
   );
 }
 

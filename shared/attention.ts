@@ -1,4 +1,6 @@
+import { z } from "zod";
 import type { OthersChange } from "./changes";
+import { keySet, uniqueKeys } from "./names";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
 import type { WorkKind } from "./work";
 
@@ -6,7 +8,8 @@ import type { WorkKind } from "./work";
 export type TabId = "history" | "doing" | "waiting" | "next";
 
 // Each tab's data comes from one feed, fetched from GitHub on its own schedule. History changes only when I finish something.
-export type FeedId = "live" | "history";
+export const FeedId = z.enum(["live", "history"]);
+export type FeedId = z.infer<typeof FeedId>;
 export const TAB_FEED: Record<TabId, FeedId> = { history: "history", doing: "live", waiting: "live", next: "live" };
 
 // Within a tab, top to bottom. The order is also the priority: an item appears once, under the first section whose rule
@@ -62,7 +65,8 @@ export type ActionId =
   | "got_it";
 
 // What History's filter can add to each week, both off at first [HIS-07].
-export type HistoryFilter = "reviewed" | "changed";
+export const HistoryFilter = z.enum(["reviewed", "changed"]);
+export type HistoryFilter = z.infer<typeof HistoryFilter>;
 
 // A short state label on a row [ATT-05]; tone picks its color.
 export interface Chip {
@@ -148,7 +152,8 @@ export interface ReviewerChoices {
 }
 
 // GitHub's reasons for closing an issue that Next up offers [NXT-11].
-export type IssueCloseReason = "completed" | "not_planned";
+export const IssueCloseReason = z.enum(["completed", "not_planned"]);
+export type IssueCloseReason = z.infer<typeof IssueCloseReason>;
 
 // What a session or GitHub action works on.
 export interface Target {
@@ -244,6 +249,11 @@ export interface Item {
   wrap?: WrapInfo;
 }
 
+// An item with nothing on it yet: no chips, actions or sub-rows, and no one else's activity unless given. Callers add the rest.
+export function baseItem({ key, section, kind, repo, number, title, url }: Pick<Item, "key" | "section" | "kind" | "repo" | "number" | "title" | "url">, othersActivityAt = "1970-01-01T00:00:00Z"): Item {
+  return { key, section, kind, draft: false, repo, number, title, url, chips: [], actions: [], children: [], target: { kind, repo, number, title, url }, othersActivityAt };
+}
+
 // A Wrap up row's sessions: all idle, or it wouldn't be there [ATT-22].
 export interface WrapInfo {
   sessions: AgentSummary[];
@@ -265,16 +275,6 @@ export type WrapItem = Item & { section: "wrap"; wrap: WrapInfo };
 export function memberKeys(item: Pick<Item, "key" | "children"> & { change?: Pick<OthersChange, "key"> }): string[] {
   return uniqueKeys([item.key, ...(item.change ? [item.change.key] : []), ...item.children.map((child) => child.key)]);
 }
-
-// Each key once, ignoring case, in the first spelling seen.
-export function uniqueKeys(keys: string[]): string[] {
-  const unique = new Map<string, string>();
-  for (const key of keys) if (!unique.has(key.toLowerCase())) unique.set(key.toLowerCase(), key);
-  return [...unique.values()];
-}
-
-// Keys for comparing: GitHub's owner and repo names ignore case.
-export const keySet = (keys: Iterable<string>): Set<string> => new Set([...keys].map((key) => key.toLowerCase()));
 
 // Each open stack's and issue group's member keys, lower case, under every member, and when it was last seen open; so a
 // member that merges still knows its open siblings [ATT-04, ATT-22].
@@ -414,9 +414,12 @@ export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "c
   return matchSessions(agents, [item.key, ...item.children.map((child) => child.key)]);
 }
 
+// A session working on its turn, or starting up [ATT-07].
+export const isWorking = (agent: { status: string }): boolean => agent.status === "running" || agent.status === "initializing";
+
 // A session is idle when it isn't working and doesn't need me; Wrap up and archiving both ask [ATT-22].
 export function isIdle(agent: { status: string; requiresAttention?: boolean }): boolean {
-  return !agent.requiresAttention && agent.status !== "running" && agent.status !== "initializing";
+  return !agent.requiresAttention && !isWorking(agent);
 }
 
 export function matchSessions(agents: AgentSummary[], keys: string[]): AgentSummary[] {
@@ -432,7 +435,7 @@ export function liftActive(items: Item[], agents: AgentSummary[]): Item[] {
   const rank = (item: Item) => {
     const agent = itemSessions(agents, item)[0];
     if (agent?.requiresAttention) return 0;
-    return agent?.status === "running" || agent?.status === "initializing" ? 1 : 2;
+    return agent && isWorking(agent) ? 1 : 2;
   };
   return items.map((item) => ({ item, rank: rank(item) })).sort((a, b) => a.rank - b.rank).map(({ item }) => item);
 }

@@ -1,6 +1,8 @@
-import { type AgentSummary, type AttentionView, isIdle, type Item, keySet, matchSessions, memberKeys, type RememberedGroups, type SessionWorkspace, type WrapItem } from "./attention";
+import { type AgentSummary, type AttentionView, isIdle, type Item, matchSessions, memberKeys, type RememberedGroups, type WrapItem } from "./attention";
+import { type UnsavedSession, unsavedOf } from "./archive";
 import { ago } from "./format";
 import { changeText } from "./changes";
+import { keySet } from "./names";
 
 // Wrap up: finished or out-of-my-hands work whose unarchived Paseo sessions are all idle [ATT-22]. Pure, so the rules are
 // testable. It's assembled on the client, which already polls Paseo's sessions for the screen and the sidebar's count; the
@@ -8,27 +10,19 @@ import { changeText } from "./changes";
 
 export type SessionCleanliness = "clean" | "dirty" | "unknown";
 
-// What archiving would lose in a session's worktree, from Paseo's snapshot: clean only when it says both that nothing is
-// uncommitted and that nothing is ahead. The server asks git again before archiving [ATT-22].
-export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
+// What archiving a session would lose, from Paseo's reading of its worktree; the server asks git again before archiving.
+// Previews count the files [ATT-22].
+export function sessionUnsaved(agent: AgentSummary): UnsavedSession | null {
   const workspace = agent.workspace;
-  if (!workspace) return "unknown";
-  if (workspace.dirty === true || (workspace.ahead ?? 0) > 0) return "dirty";
-  if (workspace.dirty === false && workspace.ahead === 0) return "clean";
-  return "unknown";
+  return unsavedOf({ agentId: agent.id, title: agent.title }, workspace && { ...workspace, files: workspace.dirtyFiles });
 }
 
-// "uncommitted changes and 1 unpushed commit on branch": what the multi-session sheet says about a session, from Paseo's
-// snapshot, which doesn't count files.
-export function unsavedText(agent: AgentSummary): string {
-  const workspace: SessionWorkspace | undefined = agent.workspace;
-  if (sessionCleanliness(agent) === "unknown") return "Couldn't check for unsaved changes";
-  const parts: string[] = [];
-  if (workspace?.dirty) parts.push("uncommitted changes");
-  const ahead = workspace?.ahead ?? 0;
-  if (ahead > 0) parts.push(`${ahead} unpushed commit${ahead === 1 ? "" : "s"}`);
-  const what = parts.join(" and ") || "unsaved changes";
-  return workspace?.branch ? `${what} on ${workspace.branch}` : what;
+// Dirty as soon as Paseo says something is unsaved, even when it couldn't tell the other half; unknown only when it knows
+// of nothing unsaved but can't say it's clean.
+export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
+  const unsaved = sessionUnsaved(agent);
+  if (!unsaved) return "clean";
+  return unsaved.files || unsaved.uncommitted || unsaved.commits ? "dirty" : "unknown";
 }
 
 // A row with one session, clean: Archive session archives it at once, whatever happened on GitHub [ATT-22].
@@ -37,7 +31,7 @@ export function cleanSingle(item: WrapItem): boolean {
 }
 
 // What finishing looked like, in the same words the cards use [HIS-05, HIS-07].
-function finishText(item: Item, now: Date): string {
+export function finishText(item: Item, now: Date): string {
   if (item.change) return changeText(item.change, now);
   const at = item.closedAt ?? item.othersActivityAt;
   const age = `${ago(at, now)} ago`;

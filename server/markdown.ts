@@ -1,3 +1,5 @@
+import { sameName } from "../shared/names";
+
 // GitHub Markdown for the screen: whole comments to render in the 👍 picker, and plain text for quotes cut anywhere.
 
 const FENCE = /^\s*(```|~~~)/;
@@ -103,7 +105,7 @@ export function taggedIn(html: string | undefined): { login: string; team: boole
     const team = /^\/orgs\/([^/]+)\/teams\/([^/]+)\/?$/.exec(path);
     const user = /^\/([^/]+)\/?$/.exec(path);
     const login = kind === "team" && team ? `${team[1]}/${team[2]}` : kind === "user" && user ? user[1] : undefined;
-    if (login && !tags.some((tag) => tag.login.toLowerCase() === login.toLowerCase())) tags.push({ login, team: kind === "team" });
+    if (login && !tags.some((tag) => sameName(tag.login, login))) tags.push({ login, team: kind === "team" });
   }
   return tags;
 }

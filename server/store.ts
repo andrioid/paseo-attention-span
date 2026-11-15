@@ -3,18 +3,17 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { type Attention, type HistoryFilter, type Item, type RememberedGroups, type SectionId, SECTIONS } from "../shared/attention";
-import { AttentionConfig, FIELD_ROLES, type FieldRole, sameField } from "../shared/config";
+import { AttentionConfig, FIELD_ROLES, type FieldRole } from "../shared/config";
 import type { OthersChange } from "../shared/changes";
 import { type ChangeLedger, EMPTY_LEDGER } from "./changes";
 import type { Pending } from "./view";
+import { sameName } from "../shared/names";
 
-// Local files in ~/.config/paseo-attention-span/ [PRIV-01].
+// Local files in ~/.config/paseo-attention-span/ [PRIV-01], or a folder chosen by environment variable.
 const CHOSEN_DIR = process.env.PASEO_ATTENTION_SPAN_DIR ?? process.env.PASEO_GITHUB_ATTENTION_DIR;
 export const DIR = CHOSEN_DIR ?? join(homedir(), ".config", "paseo-attention-span");
-// Where they lived while the plugin was called "GitHub attention".
-const OLD_DIR = join(homedir(), ".config", "paseo-github-attention");
-const CONFIG = join(DIR, "config.json");
-const STATE = join(DIR, "state.json");
+// Where they lived while the plugin was called "GitHub attention"; a chosen folder has none.
+export const OLD_DIR = CHOSEN_DIR ? undefined : join(homedir(), ".config", "paseo-github-attention");
 
 const knownSections = (items: unknown): boolean => Array.isArray(items) && items.every((item) => Object.hasOwn(SECTIONS, (item as Item)?.section));
 
@@ -31,6 +30,8 @@ export const State = z.object({
   projectFilter: z.array(z.string()).default([]),
   // Reviewed and Changed by others shown in each of History's weeks; none means finished only [HIS-07].
   historyFilter: z.array(z.enum(["reviewed", "changed"])).default([]).catch([] as HistoryFilter[]),
+  // The device's IANA time zone, which History's weeks follow; the last device to send one wins. UTC until then [HIS-01].
+  timeZone: z.string().nullable().default(null).catch(null),
   // The update notice put off with Not now, by the version it offered [UPD-01].
   skippedUpdate: z.string().nullable().default(null).catch(null),
   // What others did to my work, kept until Got it or an archive and for History [HIS-06, HIS-07, ATT-22].
@@ -66,12 +67,6 @@ export const State = z.object({
 });
 export type State = z.infer<typeof State>;
 
-// Moves the old folder over once, unless a folder is chosen by environment variable.
-export async function moveOldFiles(): Promise<void> {
-  if (CHOSEN_DIR || (await exists(DIR)) || !(await exists(OLD_DIR))) return;
-  await rename(OLD_DIR, DIR);
-}
-
 async function exists(path: string): Promise<boolean> {
   return stat(path).then(
     () => true,
@@ -88,81 +83,95 @@ async function readJson(path: string): Promise<unknown> {
   }
 }
 
-export async function loadConfig(): Promise<AttentionConfig> {
-  const parsed = AttentionConfig.safeParse(await readJson(CONFIG));
-  if (!parsed.success) throw new Error(`${CONFIG} is invalid: ${parsed.error.message}`);
-  return parsed.data;
-}
+// The files in `dir`. `oldDir` is moved over once, before `dir` exists.
+export function createStore(dir: string, oldDir?: string) {
+  const config = join(dir, "config.json");
+  const state = join(dir, "state.json");
 
-// Where an issue repo's code lives, chosen on the screen [SES-07].
-export function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionConfig> {
-  return updateConfig((file) => {
-    const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
-    const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => issues.toLowerCase() !== issueRepo.toLowerCase()));
-    return { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
-  });
-}
+  async function moveOldFiles(): Promise<void> {
+    if (!oldDir || (await exists(dir)) || !(await exists(oldDir))) return;
+    await rename(oldDir, dir);
+  }
 
-// The orgs and repos chosen in settings [SRC-02].
-export function saveCoverage(orgs: string[], repos: string[]): Promise<AttentionConfig> {
-  return updateConfig((file) => ({ ...file, orgs, repos }));
-}
+  async function loadConfig(): Promise<AttentionConfig> {
+    const parsed = AttentionConfig.safeParse(await readJson(config));
+    if (!parsed.success) throw new Error(`${config} is invalid: ${parsed.error.message}`);
+    return parsed.data;
+  }
 
-// Where Next up looks, chosen in settings [NXT-04]. The fields and the rest of nextUp are kept.
-export function saveNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<AttentionConfig> {
-  return updateConfig((file) => {
-    const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
-    return { ...file, nextUp: { ...nextUp, ...sources } };
-  });
-}
+  // Where an issue repo's code lives, chosen on the screen [SES-07].
+  function saveCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionConfig> {
+    return updateConfig((file) => {
+      const existing = file.codeRepos && typeof file.codeRepos === "object" ? (file.codeRepos as Record<string, unknown>) : {};
+      const codeRepos = Object.fromEntries(Object.entries(existing).filter(([issues]) => !sameName(issues, issueRepo)));
+      return { ...file, codeRepos: { ...codeRepos, [issueRepo]: codeRepo } };
+    });
+  }
 
-// Which org issue fields Next up uses, from settings [NXT-04]: null turns one off, a role left out is kept as it is.
-// A field kept as it was keeps its order.
-export function saveNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<AttentionConfig> {
-  return updateConfig((file) => {
-    const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
-    const chosen = Object.fromEntries(
-      FIELD_ROLES.filter((role) => fields[role] !== undefined).map((role) => {
-        const before = nextUp[role] as { field?: unknown } | null | undefined;
-        const field = fields[role]!;
-        return [role, field === null ? null : before && typeof before.field === "string" && sameField(before.field, field) ? { ...before, field } : { field }];
-      }),
-    );
-    return { ...file, nextUp: { ...nextUp, ...chosen } };
-  });
-}
+  // The orgs and repos chosen in settings [SRC-02].
+  function saveCoverage(orgs: string[], repos: string[]): Promise<AttentionConfig> {
+    return updateConfig((file) => ({ ...file, orgs, repos }));
+  }
 
-// Whether replies on others' threads count without a tag, from settings [ATT-17].
-export function saveFollowThreads(followThreads: boolean): Promise<AttentionConfig> {
-  return updateConfig((file) => ({ ...file, followThreads }));
-}
+  // Where Next up looks, chosen in settings [NXT-04]. The fields and the rest of nextUp are kept.
+  function saveNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<AttentionConfig> {
+    return updateConfig((file) => {
+      const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
+      return { ...file, nextUp: { ...nextUp, ...sources } };
+    });
+  }
 
-// What the screen writes changes only its own keys; everything else in the file is kept as it is.
-// A file that doesn't read or parse is left alone.
-async function updateConfig(change: (file: Record<string, unknown>) => Record<string, unknown>): Promise<AttentionConfig> {
-  const raw = await readJson(CONFIG);
-  const current = AttentionConfig.safeParse(raw);
-  if (!current.success) throw new Error(`${CONFIG} is invalid: ${current.error.message}`);
-  const next = change(raw as Record<string, unknown>);
-  const parsed = AttentionConfig.safeParse(next);
-  if (!parsed.success) throw new Error(`${CONFIG} is invalid: ${parsed.error.message}`);
-  await writeAtomically(CONFIG, `${JSON.stringify(next, null, 2)}\n`);
-  return parsed.data;
-}
+  // Which org issue fields Next up uses, from settings [NXT-04]: null turns one off, a role left out is kept as it is.
+  // A field kept as it was keeps its order.
+  function saveNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<AttentionConfig> {
+    return updateConfig((file) => {
+      const nextUp = file.nextUp && typeof file.nextUp === "object" ? (file.nextUp as Record<string, unknown>) : {};
+      const chosen = Object.fromEntries(
+        FIELD_ROLES.filter((role) => fields[role] !== undefined).map((role) => {
+          const before = nextUp[role] as { field?: unknown } | null | undefined;
+          const field = fields[role]!;
+          return [role, field === null ? null : before && typeof before.field === "string" && sameName(before.field, field) ? { ...before, field } : { field }];
+        }),
+      );
+      return { ...file, nextUp: { ...nextUp, ...chosen } };
+    });
+  }
 
-async function writeAtomically(path: string, content: string): Promise<void> {
-  await mkdir(DIR, { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, content);
-  await rename(temporary, path);
-}
+  // Whether replies on others' threads count without a tag, from settings [ATT-17].
+  function saveFollowThreads(followThreads: boolean): Promise<AttentionConfig> {
+    return updateConfig((file) => ({ ...file, followThreads }));
+  }
 
-export async function loadState(): Promise<State> {
-  const parsed = State.safeParse(await readJson(STATE).catch(() => ({})));
-  // A cache that no longer parses (e.g. after an update) is simply dropped.
-  return parsed.success ? parsed.data : State.parse({});
-}
+  // What the screen writes changes only its own keys; everything else in the file is kept as it is.
+  // A file that doesn't read or parse is left alone.
+  async function updateConfig(change: (file: Record<string, unknown>) => Record<string, unknown>): Promise<AttentionConfig> {
+    const raw = await readJson(config);
+    const current = AttentionConfig.safeParse(raw);
+    if (!current.success) throw new Error(`${config} is invalid: ${current.error.message}`);
+    const next = change(raw as Record<string, unknown>);
+    const parsed = AttentionConfig.safeParse(next);
+    if (!parsed.success) throw new Error(`${config} is invalid: ${parsed.error.message}`);
+    await writeAtomically(config, `${JSON.stringify(next, null, 2)}\n`);
+    return parsed.data;
+  }
 
-export async function saveState(state: State): Promise<void> {
-  await writeAtomically(STATE, JSON.stringify(state, null, 2));
+  async function writeAtomically(path: string, content: string): Promise<void> {
+    await mkdir(dir, { recursive: true });
+    const temporary = `${path}.${process.pid}.tmp`;
+    await writeFile(temporary, content);
+    await rename(temporary, path);
+  }
+
+  async function loadState(): Promise<State> {
+    const parsed = State.safeParse(await readJson(state).catch(() => ({})));
+    // A cache that no longer parses (e.g. after an update) is simply dropped.
+    return parsed.success ? parsed.data : State.parse({});
+  }
+
+  async function saveState(saved: State): Promise<void> {
+    await writeAtomically(state, JSON.stringify(saved, null, 2));
+  }
+
+  return { moveOldFiles, loadConfig, saveCodeRepo, saveCoverage, saveNextUpSources, saveNextUpFields, saveFollowThreads, loadState, saveState };
 }
+export type Store = ReturnType<typeof createStore>;

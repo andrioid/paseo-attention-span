@@ -2,7 +2,6 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { type UpdateNotice, updateNotice } from "../shared/update";
 import { ourInstall } from "./feedback";
-import { FIXTURE } from "./gh";
 
 const run = promisify(execFile);
 
@@ -11,7 +10,15 @@ const EVERY_MS = 12 * 60 * 60 * 1000;
 // A check that failed (offline, an older Paseo) is tried again sooner.
 const RETRY_MS = 60 * 60 * 1000;
 
-// Previews have nothing to update; PASEO_ATTENTION_SPAN_FIXTURE_UPDATE=1 makes one up to show the notice.
+// How updates reach Paseo: asking what `paseo plugin update` would install, and installing it. `install` reports a failure
+// through `failed`; a success restarts this process.
+export interface UpdatePaseo {
+  check(): Promise<UpdateNotice | null>;
+  install(notice: UpdateNotice, failed: (error: string) => void): void;
+}
+
+// Previews have nothing to update; PASEO_ATTENTION_SPAN_FIXTURE_UPDATE=1 makes one up to show the notice, and Update shows
+// how a failure looks.
 const FIXTURE_UPDATE: UpdateNotice = {
   id: "attention-span",
   current: "0.4.3",
@@ -25,6 +32,11 @@ const FIXTURE_UPDATE: UpdateNotice = {
 // Asks Paseo itself, so the answer is what `paseo plugin update` would install: a registry install's
 // reviewed pin, npm's latest, or a Git remote's HEAD. Directory installs are never updated, so they say nothing.
 export class UpdateCheck {
+  constructor(
+    private readonly paseo: UpdatePaseo,
+    private readonly now: () => number = Date.now,
+  ) {}
+
   private last: { at: number; ttl: number; notice: UpdateNotice | null } | null = null;
   private inFlight: Promise<UpdateNotice | null> | null = null;
   // Why the last Update failed. A successful one restarts this process, so nothing needs remembering then.
@@ -36,13 +48,13 @@ export class UpdateCheck {
   }
 
   private cached(): Promise<UpdateNotice | null> {
-    if (this.last && Date.now() - this.last.at < this.last.ttl) return Promise.resolve(this.last.notice);
-    this.inFlight ??= check()
+    if (this.last && this.now() - this.last.at < this.last.ttl) return Promise.resolve(this.last.notice);
+    this.inFlight ??= this.paseo.check()
       .then(
-        (notice) => (this.last = { at: Date.now(), ttl: EVERY_MS, notice }),
+        (notice) => (this.last = { at: this.now(), ttl: EVERY_MS, notice }),
         (error) => {
           console.error("Checking for an Attention Span update failed:", (error as Error).message);
-          return (this.last = { at: Date.now(), ttl: RETRY_MS, notice: null });
+          return (this.last = { at: this.now(), ttl: RETRY_MS, notice: null });
         },
       )
       .then((last) => last.notice)
@@ -57,27 +69,36 @@ export class UpdateCheck {
     const notice = await this.cached();
     if (!notice || notice.latest !== latest) throw new Error(`${latest} isn't the update on offer any more. Check again.`);
     this.failed = null;
-    // Previews show how a failed update looks.
-    if (FIXTURE) return void (this.failed = { latest, error: "Previews don't update." });
+    this.paseo.install(notice, (error) => (this.failed = { latest, error }));
+  }
+}
+
+export const fixtureUpdates: UpdatePaseo = {
+  check: async () => (process.env.PASEO_ATTENTION_SPAN_FIXTURE_UPDATE === "1" ? FIXTURE_UPDATE : null),
+  install: (_, failed) => failed("Previews don't update."),
+};
+
+export const paseoUpdates: UpdatePaseo = {
+  check,
+  install(notice, failed) {
     const cli = process.env.PASEO_CLI || "paseo";
     const child = spawn(cli, ["plugin", "update", notice.id, ...notice.args, "--json", ...home()], { detached: true, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     child.stdout.on("data", (chunk) => (output += chunk));
     child.stderr.on("data", (chunk) => (output += chunk));
-    child.on("error", (error) => (this.failed = { latest, error: error.message }));
+    child.on("error", (error) => failed(error.message));
     child.on("close", (code) => {
       const error = failure(notice.id, output, code);
       if (error) {
         console.error("Updating Attention Span failed:", error);
-        this.failed = { latest, error };
+        failed(error);
       }
     });
     child.unref();
-  }
-}
+  },
+};
 
 async function check(): Promise<UpdateNotice | null> {
-  if (FIXTURE) return process.env.PASEO_ATTENTION_SPAN_FIXTURE_UPDATE === "1" ? FIXTURE_UPDATE : null;
   const ours = ourInstall();
   if (!ours) return null;
   // Paseo gives its plugins the path of its CLI and its home, so this asks the daemon the plugin runs in.

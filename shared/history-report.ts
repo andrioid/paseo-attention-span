@@ -28,7 +28,8 @@ export function weekOf(iso: string): Date {
 const newestFirst = (a: Item, b: Item) => b.closedAt!.localeCompare(a.closedAt!);
 
 // The weeks with anything shown, newest first, and whether any week holds anything at all, even only what the filter
-// hides: then the Filter button stays, so it can be turned on. Unread notes aren't in weeks; they sit above them.
+// hides: then the Filter button stays, so it can be turned on. Unread notes aren't in weeks; they sit above them. The server
+// sends only History's weeks, in the device's time zone [HIS-01].
 export function historyWeeks(items: Item[], filter: HistoryFilter[]): { weeks: HistoryWeek[]; anything: boolean } {
   const byWeek = new Map<number, Item[]>();
   for (const item of items) {

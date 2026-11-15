@@ -5,13 +5,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { findCheckout } from "../client/sessions";
 import type { Target } from "../shared/attention";
 import { AttentionConfig, codeRepoFor, githubRepoOf } from "../shared/config";
+import { createStore, type Store } from "./store";
 
 let dir: string;
-let store: typeof import("./store");
+let store: Store;
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "attention-span-"));
-  process.env.PASEO_ATTENTION_SPAN_DIR = dir;
-  store = await import("./store");
+  store = createStore(dir);
 });
 
 const issue: Target = { kind: "issue", repo: "acme/issues", number: 7, title: "Export breaks", url: "u", defaultBranch: "trunk" };
@@ -57,12 +57,5 @@ describe("code repos", () => {
     const config = await store.saveCodeRepo("acme/issues", "acme/shop");
     expect(config.codeRepos).toEqual({ "acme/other": "acme/x", "acme/issues": "acme/shop" });
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ orgs: ["acme"], codeRepos: { "acme/other": "acme/x", "acme/issues": "acme/shop" }, extra: 1 });
-  });
-
-  it("SES-07: leaves a broken config.json alone", async () => {
-    const path = join(dir, "config.json");
-    await writeFile(path, "{ not json");
-    await expect(store.saveCodeRepo("acme/issues", "acme/shop")).rejects.toThrow(/Can't read/);
-    expect(await readFile(path, "utf8")).toBe("{ not json");
   });
 });

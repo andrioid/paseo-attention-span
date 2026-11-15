@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sameName } from "./names";
 
 // Session types, each with its own prompt template and profile lookup.
 export const SessionKind = z.enum(["review", "fix", "address", "rebase", "refresh", "start"]);
@@ -84,11 +85,6 @@ export function nextUpField({ nextUp }: Pick<AttentionConfig, "nextUp">, role: F
   return chosen === undefined ? { field: DEFAULT_FIELD[role] } : (chosen ?? undefined);
 }
 
-// Org issue field names compare without case, as people type them in config.json.
-export function sameField(a: string | undefined, b: string | undefined): boolean {
-  return !!a && !!b && a.toLowerCase() === b.toLowerCase();
-}
-
 // "owner/name" of a Paseo project with a GitHub remote, from its project key.
 export function githubRepoOf(projectKey: string | null | undefined): string | null {
   return /^remote:github\.com\/(.+)$/i.exec(projectKey ?? "")?.[1] ?? null;
@@ -96,6 +92,6 @@ export function githubRepoOf(projectKey: string | null | undefined): string | nu
 
 // The repository whose checkout a session on an issue from `repo` works in [SES-07].
 export function codeRepoFor(config: Pick<AttentionConfig, "codeRepos">, repo: string): string {
-  const mapped = Object.entries(config.codeRepos).find(([issues]) => issues.toLowerCase() === repo.toLowerCase());
+  const mapped = Object.entries(config.codeRepos).find(([issues]) => sameName(issues, repo));
   return mapped?.[1] ?? repo;
 }

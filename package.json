@@ -21,6 +21,7 @@
     "server/",
     "shared/",
     "!**/*.test.ts",
+    "!shared/test-builders.ts",
     "assets/",
     "requirements.yaml",
     "docs/architecture.md",

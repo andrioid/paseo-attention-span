@@ -1,7 +1,7 @@
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { copyText, Icon, useToast } from "@getpaseo/plugin/client/ui";
 import { createContext, type ReactNode, type RefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type StyleProp, Text, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, Easing, Image, Platform, Pressable, type PressableProps, type StyleProp, Text, View, type ViewStyle } from "react-native";
 import type { Chip } from "../shared/attention";
 import { HINT_GAP, type HintPlacement, hintPlacement } from "../shared/hint";
 import { ICONS, type IconName } from "./icons";
@@ -341,6 +341,22 @@ export function Button({
   );
 }
 
+// Filter, with how many ticks are on [NXT-03, HIS-07].
+export function FilterButton({ count, onPress }: { count: number; onPress: () => void }) {
+  return <Button label={count ? `Filter · ${count}` : "Filter"} accessibilityLabel={count ? `Filter, ${count} on` : "Filter"} icon="filter" variant={count ? "calm" : "ghost"} onPress={onPress} />;
+}
+
+// A tick box, then what it's for: filters and pickers. Mixed is a project with some of its statuses ticked [NXT-12].
+export function CheckRow({ checked, label, children, ...pressable }: { checked: boolean | "mixed"; label: string; children: ReactNode } & Omit<PressableProps, "children">) {
+  const styles = useStyles();
+  return (
+    <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled: !!pressable.disabled }} aria-checked={checked} accessibilityLabel={label} {...pressable}>
+      <TablerIcon name={checked === "mixed" ? "squareMinus" : checked ? "squareCheck" : "square"} size={18} color={checked ? styles.action : styles.c.foregroundMuted} />
+      {children}
+    </Pressable>
+  );
+}
+
 // Sentence case, with the count as quiet text.
 // The icon may be a picture instead, like the avatar of whom Waiting's work waits on.
 export function SectionHeader({ icon, title, count, action }: { icon: IconName | ReactNode; title: string; count: number; action?: ReactNode }) {
@@ -357,19 +373,12 @@ export function SectionHeader({ icon, title, count, action }: { icon: IconName |
   );
 }
 
-// A group that opens in place, like a week's reviews in History: a chevron, its name and count. Each opens on its own, so
-// they don't read as a choice between them [HIS-02, HIS-06].
-export function Disclosure({ label, count, open, onPress }: { label: string; count: number; open: boolean; onPress: () => void }) {
-  const styles = useStyles();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}, ${count}`} accessibilityState={{ expanded: open }} onPress={onPress} hitSlop={6} style={[styles.row, { gap: 6, paddingVertical: 4 }]}>
-      <TablerIcon name={open ? "chevronDown" : "chevronRight"} size={14} />
-      <Text style={{ color: styles.c.foreground, fontSize: 13, fontWeight: "600" }}>
-        {label}
-        <Text style={{ color: styles.c.foregroundMuted, fontWeight: "400" }}> · {count}</Text>
-      </Text>
-    </Pressable>
-  );
+// A theme colour, see-through, so a badge reads on any surface; colours that aren't #rrggbb fall back to none.
+export function tint(color: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{6})/i.exec(color)?.[1];
+  if (!hex) return "transparent";
+  const [r, g, b] = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // Copy text and say so, since an icon-only button gives no other sign it worked.

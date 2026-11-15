@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import { workChip, workKind } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
@@ -51,22 +51,12 @@ export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanne
   // Labels come with the next History fetch; until then the issue type and title prefix tell what kind of work it was [HIS-04].
   const work = workKind({ type: "type" in source ? source.type : undefined, title });
   return {
-    key,
-    section: "done",
-    kind,
-    draft: false,
-    repo,
-    number,
-    title,
-    url,
+    ...baseItem({ key, section: "done", kind, repo, number, title, url }),
     chips: [...(work ? [workChip(work)] : []), ...(notPlanned ? [{ text: "not planned", tone: "neutral" as const }] : [])],
     ...(work ? { work } : {}),
     ...(notPlanned ? { notPlanned: true as const } : {}),
-    actions: [],
     // Not planned issues list their PRs on their own, as classifyHistory does [HIS-03].
     children: "children" in source && !notPlanned ? source.children.map((child) => ({ ...child, draft: false, chips: [], attention: false })) : [],
-    target: { kind, repo, number, title, url },
-    othersActivityAt: "1970-01-01T00:00:00Z",
     closedAt,
   };
 }
@@ -100,7 +90,7 @@ export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean 
 // Waiting by who it waits on, so I know whom to nudge: whoever blocks the most first, ties by the longest wait, then bots, who
 // can't be nudged, and last the work no person holds up. Each one's work oldest first; the screen lifts work with an active
 // session. My PRs in Doing that wait on whom I asked are here too, so nudging them is one list [WAI-01, WAI-03, PRS-15].
-export function waitingGroups(items: Item[]): WaitingGroup[] {
+function waitingGroups(items: Item[]): WaitingGroup[] {
   const oldest = (list: Item[]) => list.map((item) => item.wait?.since ?? "").sort()[0] ?? "";
   const people = new Map<string, WaitingGroup>();
   const nobody: Item[] = [];
@@ -130,7 +120,10 @@ export function waitingGroups(items: Item[]): WaitingGroup[] {
 // Waiting's work: its own sections, and my PRs in Doing while they wait on someone I asked [WAI-01, PRS-15].
 const inWaiting = (item: Item) => SECTIONS[item.section].tab === "waiting" || (SECTIONS[item.section].tab === "doing" && !!item.wait && !!item.waitingOn?.length);
 
-export function buildView(attention: Attention | null, history: Item[], dismissed: State["dismissed"], meta: ViewMeta, ledger: ChangeLedger = EMPTY_LEDGER, now = new Date()): AttentionView {
+export function buildView(attention: Attention | null, fetched: Item[], dismissed: State["dismissed"], meta: ViewMeta, ledger: ChangeLedger = EMPTY_LEDGER, now = new Date(), timeZone = "UTC"): AttentionView {
+  // History's weeks in the device's time zone; what a fetch from before a new week began has that's older is left out [HIS-01].
+  const since = historySince(now, meta.config.historyWeeks, timeZone);
+  const history = fetched.filter((item) => !item.closedAt || Date.parse(item.closedAt) >= Date.parse(since));
   const items = [...(attention?.items ?? []), ...history];
   // A PR that left my hands isn't my finished work, even once its new owner merges it [HIS-06].
   const handed = handedKeys(ledger);
@@ -139,7 +132,7 @@ export function buildView(attention: Attention | null, history: Item[], dismisse
     .map((item) => (item.section === "done" && item.children.some((child) => handed.has(child.key)) ? { ...item, children: item.children.filter((child) => !handed.has(child.key)) } : item));
   // Notes on what others did, what was cleared into a week, and finished work a live refresh saw first; never dismissed,
   // only cleared with Got it or an archive [HIS-06, HIS-07, ATT-22].
-  const changes = changeItems(ledger, now, meta.config.mentionDays, historySince(now, meta.config.historyWeeks));
+  const changes = changeItems(ledger, now, meta.config.mentionDays, since);
   // History's daily fetch has the richer item; one seen live fills in until then, so a merge or close shows in its week now.
   const knownDone = new Set(visible.filter((item) => SECTIONS[item.section].tab === "history" && item.section === "done").flatMap((item) => [item.key, ...item.children.map((child) => child.key)]));
   const liveFinished = changes.finished.filter((item) => !knownDone.has(item.key));

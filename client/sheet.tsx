@@ -4,11 +4,92 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef } from "react";
 import { Animated, Platform, Pressable, Text, View } from "react-native";
 import { type Chip, type ItemDetails, ownStack, type Target } from "../shared/attention";
+import type { FilterGroup, FilterOption } from "../shared/next-up-filter";
+import { githubColor } from "./entity";
 import type { IconName } from "./icons";
-import { Button, Hint, HintArea, KeepStyles, LINE_HEIGHT, REST_MS, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
+import { Button, CheckRow, Hint, HintArea, KeepStyles, LINE_HEIGHT, REST_MS, Signal, Skeleton, TablerIcon, toneColor, useCopy, useHover, useStyles } from "./ui";
 
-// Every dialog and sheet in the plugin is Paseo's Modal.
-export { Modal };
+// Every dialog and sheet in the plugin is Paseo's Modal: a bottom sheet on phones, a dialog on desktop.
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const styles = useStyles();
+  return (
+    <Modal title={title} open onOpenChange={(open) => (open ? null : onClose())}>
+      <Modal.Content>
+        <KeepStyles styles={styles}>{children}</KeepStyles>
+      </Modal.Content>
+    </Modal>
+  );
+}
+
+// A filter's ticks in groups, applied right away: Next up's sources, projects and scopes, and what History's weeks show
+// [NXT-03, NXT-09, HIS-07].
+export function FilterSheet<K extends string>({
+  groups,
+  onToggle,
+  onClear,
+  onClose,
+}: {
+  groups: (Omit<FilterGroup, "kind"> & { kind: K })[];
+  onToggle: (kind: K, id: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const styles = useStyles();
+  const any = groups.some((group) => group.active.length > 0);
+  return (
+    <Dialog title="Filter" onClose={onClose}>
+      {groups.map((group) => (
+        <View key={group.title} style={{ gap: 6 }}>
+          <Text style={styles.muted}>{group.title}</Text>
+          <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
+            {group.options.map((option, index) => (
+              <FilterRow
+                key={`${option.id}:${option.strong ? "project" : "leaf"}`}
+                option={option}
+                state={option.state ?? (group.active.includes(option.id) ? "on" : "off")}
+                first={index === 0}
+                onPress={() => onToggle(group.kind, option.id)}
+              />
+            ))}
+          </View>
+        </View>
+      ))}
+      <View style={[styles.row, { justifyContent: "flex-end" }]}>
+        <Button label="Clear" variant="ghost" disabled={!any} onPress={onClear} />
+        <Button label="Done" variant="solid" onPress={onClose} />
+      </View>
+    </Dialog>
+  );
+}
+
+function FilterRow({ option, state, first, onPress }: { option: FilterOption; state: "on" | "partial" | "off"; first: boolean; onPress: () => void }) {
+  const styles = useStyles();
+  const { hovered, hover } = useHover();
+  const color = githubColor(styles, option.color);
+  return (
+    <CheckRow
+      checked={state === "partial" ? "mixed" : state === "on"}
+      label={option.label}
+      disabled={option.disabled}
+      onPress={onPress}
+      {...hover}
+      style={({ pressed }) => [
+        styles.row,
+        { paddingVertical: 10, paddingRight: 12, paddingLeft: option.indent ? 40 : 12, backgroundColor: !option.disabled && (pressed || hovered) ? styles.c.border : "transparent" },
+        first ? null : { borderTopWidth: 1, borderTopColor: styles.c.surface1 },
+        option.disabled ? { opacity: 0.65 } : null,
+      ]}
+    >
+      {option.indent ? (
+        <View
+          style={{ width: 8, height: 8, borderRadius: 4, ...(option.color ? { backgroundColor: color ?? styles.c.foregroundMuted } : { borderWidth: 1.5, borderColor: styles.c.foregroundMuted }) }}
+        />
+      ) : null}
+      <Text style={[styles.text, { flex: 1 }, option.strong ? { fontWeight: "600" } : null, option.dim ? { opacity: 0.45 } : null]}>{option.label}</Text>
+      {option.note ? <Text style={styles.muted}>{option.note}</Text> : null}
+    </CheckRow>
+  );
+}
 
 // Tapping a card opens its sheet at once: what the card knows, every action saying what it will do, then what's fetched.
 // Fetched details go last, so the actions don't move when they arrive. A bottom sheet on phones, a dialog on desktop [ATT-06].
@@ -46,18 +127,14 @@ export function ActionSheet({ title, top, entries, bottom, onClose }: { title: s
   const work = entries.filter((entry) => !entry.housekeeping);
   const housekeeping = entries.filter((entry) => entry.housekeeping);
   return (
-    <Modal title={title} open onOpenChange={(open) => (open ? null : onClose())}>
-      <Modal.Content>
-        <KeepStyles styles={styles}>
-          <HintArea style={{ gap: 10 }}>{top}</HintArea>
-          <View style={{ gap: 10 }}>
-            <EntryGroup entries={work} />
-            <EntryGroup entries={housekeeping} />
-          </View>
-          <View style={{ gap: 10 }}>{bottom}</View>
-        </KeepStyles>
-      </Modal.Content>
-    </Modal>
+    <Dialog title={title} onClose={onClose}>
+      <HintArea style={{ gap: 10 }}>{top}</HintArea>
+      <View style={{ gap: 10 }}>
+        <EntryGroup entries={work} />
+        <EntryGroup entries={housekeeping} />
+      </View>
+      <View style={{ gap: 10 }}>{bottom}</View>
+    </Dialog>
   );
 }
 

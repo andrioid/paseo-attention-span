@@ -2,7 +2,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { isIdle } from "../shared/attention";
-import type { ArchiveResult, UnsavedSession } from "../shared/archive";
+import { type ArchiveResult, type UnsavedSession, unsavedOf } from "../shared/archive";
 
 // Archiving finished work's sessions, safely [ATT-22]. Paseo's SDK has no restore, so an archive has no Undo here; instead
 // nothing with unsaved work leaves without a confirmation. A worktree goes only when nothing else lives in it. Which
@@ -25,14 +25,6 @@ type ListedAgent = Awaited<ReturnType<Paseo["agents"]["list"]>>["entries"][numbe
 type ListedWorkspace = Awaited<ReturnType<Paseo["workspaces"]["list"]>>["entries"][number];
 
 const base = (session: ArchiveSession): UnsavedSession => ({ agentId: session.agentId, title: session.title, ...(session.branch ? { branch: session.branch } : {}) });
-
-// What Paseo's snapshot says archiving would lose: clean only when it says both that nothing is uncommitted and that nothing
-// is ahead; either one unknown is unknown [ATT-22]. The fallback when there's no directory to ask git.
-export function unsaved(session: ArchiveSession): UnsavedSession | null {
-  if (session.dirty === false && session.ahead === 0) return null;
-  if (session.dirty === null || session.ahead === null) return { ...base(session), unknown: true };
-  return { ...base(session), ...(session.ahead ? { commits: session.ahead } : {}) };
-}
 
 // How many files are uncommitted and commits unpushed, from git itself, since Paseo's snapshot counts neither and can lag.
 // Commits are those ahead of the upstream, or, with no upstream, those no remote has. Clean needs both answers: one git
@@ -58,7 +50,7 @@ export async function gitUnsaved(session: ArchiveSession, directory: string): Pr
 // What archiving would lose in a session: git's answer where there's a directory to ask, else Paseo's. Null when clean.
 async function unsavedWork(session: ArchiveSession, workspace: ListedWorkspace | undefined): Promise<UnsavedSession | null> {
   const directory = workspace?.workspaceDirectory ?? workspace?.projectRootPath;
-  if (!directory) return unsaved(session);
+  if (!directory) return unsavedOf(session, session);
   const found = await gitUnsaved(session, directory);
   return found.unknown || found.files || found.commits ? found : null;
 }

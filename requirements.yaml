@@ -57,7 +57,7 @@ functional:
       PRS-03: see my pull requests that are ready to merge; so that finished work ships.
       PRS-04: merge a ready pull request once its checks pass against its current base; so that what merges was tested against what it merges into.
       PRS-05: see my drafts after everything that isn't a draft; so that I finish or close my drafts before picking up new work.
-      PRS-06: see only my own drafts as work items; so that other people's unfinished work stays out of my list.
+      PRS-06: see other people's drafts only where they ask something of me, like a review or a mention; so that their unfinished work stays out of my list otherwise.
       PRS-07: refresh or close a draft that has gone stale; so that old drafts don't linger.
       PRS-08: have my pull requests that are assigned to someone else left out; so that pull requests I've handed over don't count as mine.
       PRS-09: rerun the failed checks of a pull request without an agent, after seeing which failed and whether they were rerun before; so that flaky checks don't cost a session.

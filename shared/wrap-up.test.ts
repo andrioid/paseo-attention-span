@@ -1,32 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { type AgentSummary, isIdle, type Item, type Section, type WrapItem } from "./attention";
-import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, unreadChanges, unsavedText, wrapItems } from "./wrap-up";
+import { agent, item as base, change, clock } from "./test-builders";
+import { cleanSingle, doingCount, rememberGroups, sessionCleanliness, unreadChanges, wrapItems } from "./wrap-up";
 
-const now = new Date("2026-11-13T12:00:00Z");
-const hoursAgo = (hours: number) => new Date(now.getTime() - hours * 3_600_000).toISOString();
-
-function item(key: string, section: Item["section"], hours: number, children: Item["children"] = []): Item {
-  return {
-    key,
-    section,
-    kind: "pr",
-    draft: false,
-    repo: "acme/shop",
-    number: Number(key.split("#")[1] ?? 1),
-    title: key,
-    url: `https://github.com/${key.replace("#", "/pull/")}`,
-    chips: [],
-    actions: [],
-    children,
-    target: { kind: "pr", repo: "acme/shop", number: 1, title: key, url: "u" },
-    othersActivityAt: hoursAgo(hours),
-    closedAt: hoursAgo(hours),
-  };
-}
-
-function session(id: string, itemKey: string, overrides: Partial<AgentSummary> = {}, workspace: AgentSummary["workspace"] = { kind: "worktree", name: "wt", dirty: false, ahead: 0 }): AgentSummary {
-  return { id, itemKey, status: "idle", requiresAttention: false, title: id, workspaceId: `ws-${id}`, lastActivityAt: hoursAgo(1), workspace, ...overrides };
-}
+const { now, hoursAgo } = clock(new Date("2026-11-13T12:00:00Z"));
+const item = (key: string, section: Item["section"], hours: number, children: Item["children"] = []) =>
+  base(key, section, { othersActivityAt: hoursAgo(hours), closedAt: hoursAgo(hours), children });
+const clean = { kind: "worktree" as const, name: "wt", dirty: false, ahead: 0 };
+const session = (id: string, itemKey: string, fields: Partial<AgentSummary> = {}) =>
+  agent(id, itemKey, { title: id, workspaceId: `ws-${id}`, lastActivityAt: hoursAgo(1), workspace: clean, ...fields });
 
 // A Wrap up row on one item, with these sessions.
 const wrapRow = (key: string, sessions: AgentSummary[]): WrapItem => ({ ...item(key, "wrap", 2), section: "wrap", wrap: { itemKey: key, keys: [key], finish: "merged 2h ago", sessions } });
@@ -91,41 +73,38 @@ describe("Wrap up membership", () => {
     const review = { ...item("acme/shop#190", "reviewed", 1), kind: "issue" as const };
     const rows = wrapItems(view([review]), [session("a", "acme/shop#190")], now);
     expect(rows[0].wrap?.review).toBe(true);
-    const handover = { ...item("acme/shop#186", "handed_off", 5), change: { id: "h", kind: "took_over" as const, subjectId: "P186", subject: "pr" as const, key: "acme/shop#186", repo: "acme/shop", number: 186, title: "Split", url: "u", actor: "phil", to: "phil", at: hoursAgo(5) } };
+    const handover = { ...item("acme/shop#186", "handed_off", 5), change: change("took_over", "acme/shop#186", { actor: "phil", to: "phil", at: hoursAgo(5) }) };
     expect(wrapItems(view([handover]), [session("a", "acme/shop#186")], now)[0].wrap?.finish).toBe("phil took over 5h ago");
   });
 
   it("ATT-22: a reopened PR isn't cleanup", () => {
-    const reopened = { ...item("acme/shop#181", "changed", 1), change: { id: "r", kind: "reopened" as const, subjectId: "P181", subject: "pr" as const, key: "acme/shop#181", repo: "acme/shop", number: 181, title: "Paginate", url: "u", actor: "bob", at: hoursAgo(1) } };
+    const reopened = { ...item("acme/shop#181", "changed", 1), change: change("reopened", "acme/shop#181", { actor: "bob", at: hoursAgo(1) }) };
     expect(wrapItems(view([reopened]), [session("a", "acme/shop#181")], now)).toEqual([]);
   });
 });
 
-describe("unsaved work", () => {
-  it("ATT-22: clean, dirty and unknown worktrees read as they are", () => {
-    expect(sessionCleanliness(session("a", "x"))).toBe("clean");
-    expect(sessionCleanliness(session("a", "x", {}, { kind: "worktree", name: "wt", dirty: true, ahead: 0 }))).toBe("dirty");
-    expect(sessionCleanliness(session("a", "x", {}, { kind: "worktree", name: "wt", dirty: true, ahead: 2 }))).toBe("dirty");
-    expect(sessionCleanliness(session("a", "x", {}, { kind: "worktree", name: "wt" }))).toBe("unknown");
-    expect(sessionCleanliness(session("a", "x", { workspace: undefined }))).toBe("unknown");
-    expect(unsavedText(session("a", "x", {}, { kind: "worktree", name: "wt", dirty: true, ahead: 1, branch: "split-invoice-pdf" }))).toBe(
-      "uncommitted changes and 1 unpushed commit on split-invoice-pdf",
-    );
-    expect(unsavedText(session("a", "x", { workspace: undefined }))).toBe("Couldn't check for unsaved changes");
-  });
-
-  it("ATT-22: only one clean session makes a row ready for Archive all clean", () => {
+describe("Archive all clean", () => {
+  it("ATT-22: takes a row only with one session that's clean by Paseo's reading", () => {
     expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1")]))).toBe(true);
     expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1"), session("b", "acme/shop#1")]))).toBe(false);
-    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", {}, { kind: "worktree", name: "wt", dirty: true, ahead: 0 })]))).toBe(false);
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { ...clean, dirty: true } })]))).toBe(false);
     // Paseo saying nothing about commits ahead isn't clean.
-    expect(sessionCleanliness(session("a", "x", {}, { kind: "worktree", name: "wt", dirty: false }))).toBe("unknown");
+    expect(cleanSingle(wrapRow("acme/shop#1", [session("a", "acme/shop#1", { workspace: { kind: "worktree", name: "wt", dirty: false } })]))).toBe(false);
+  });
+
+  it("ATT-22: a session Paseo calls dirty is dirty, even when it can't say what's ahead; knowing of nothing unsaved but not clean is unknown", () => {
+    const reading = (workspace: AgentSummary["workspace"]) => sessionCleanliness(session("a", "x", { workspace }));
+    expect(reading(clean)).toBe("clean");
+    expect(reading({ kind: "worktree", name: "wt", dirty: true })).toBe("dirty");
+    expect(reading({ kind: "worktree", name: "wt", ahead: 2 })).toBe("dirty");
+    expect(reading({ kind: "worktree", name: "wt", dirty: false })).toBe("unknown");
+    expect(reading(undefined)).toBe("unknown");
   });
 });
 
 describe("unread changes", () => {
   it("HIS-07: a note about work in Wrap up waits there; busy work and reopened PRs stay unread", () => {
-    const note = (key: string) => ({ ...item(key, "changed", 1), change: { id: key, kind: "merged" as const, subjectId: key, subject: "pr" as const, key, repo: "acme/shop", number: 1, title: key, url: "u", at: hoursAgo(1) } });
+    const note = (key: string) => ({ ...item(key, "changed", 1), change: change("merged", key, { at: hoursAgo(1) }) });
     const wrap = [wrapRow("acme/shop#183", [session("a", "acme/shop#183")])];
     const notes = [note("acme/shop#183"), note("acme/shop#188")];
     expect(unreadChanges(notes, wrap).map((item) => item.key)).toEqual(["acme/shop#188"]);

@@ -1,4 +1,5 @@
 import { ago } from "./format";
+import type { IssueCloseReason } from "./attention";
 
 // What someone else did to my work without asking me: merged or closed my PR, closed an issue assigned to me, reopened a PR
 // of mine that was closed, took work over or handed it on, or unassigned me from an issue [HIS-07]. Others' pushes and my
@@ -29,7 +30,7 @@ export interface OthersChange {
   // The new assignee, for took_over and handed.
   to?: string;
   // An issue closed as completed or not planned, for issue_closed [HIS-07].
-  reason?: "completed" | "not_planned";
+  reason?: IssueCloseReason;
   // A cleared handover whose work came back to me: it stays in its week, but my later work on it is mine again [HIS-06].
   returned?: true;
   at: string;

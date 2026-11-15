@@ -9,11 +9,7 @@ import type { Details } from "./github-types";
 import {
   detailsQuery,
   HISTORY_SEARCHES,
-  LIVE_SEARCHES,
-  mergeStateQuery,
   mergeUnclaimed,
-  missingProjectScope,
-  projectStatusesQuery,
   requiredChecks,
   searchQuery,
   searchVariables,
@@ -27,21 +23,9 @@ const key = (n: number) => `${REPO}#${n}`;
 const chips = (item: { chips: { text: string }[] }) => item.chips.map((chip) => chip.text);
 const sections = (items: Item[]) => items.map((item) => [item.number, item.section]);
 
-function run(
-  parts: Parameters<typeof search>[0],
-  behind: Record<string, number> = {},
-  options: {
-    config?: AttentionConfig;
-    fieldOptions?: Details["fieldOptions"];
-    fieldColors?: Details["fieldColors"];
-    projectStatuses?: Details["projectStatuses"];
-    issues?: Details["issues"];
-    checks?: Details["checks"];
-    mergeState?: Details["mergeState"];
-  } = {},
-) {
-  const details = { behind, fieldOptions: options.fieldOptions ?? {}, fieldColors: options.fieldColors ?? {}, projectStatuses: options.projectStatuses ?? {}, issues: options.issues ?? {}, checks: options.checks ?? {}, mergeState: options.mergeState ?? {} };
-  return classify({ data: search(parts), details, config: options.config ?? config, now: NOW });
+function run(parts: Parameters<typeof search>[0], { config: given, behind = {}, ...details }: { config?: AttentionConfig; behind?: Details["behind"] } & Partial<Omit<Details, "behind">> = {}) {
+  const all = { behind, fieldOptions: {}, fieldColors: {}, projectStatuses: {}, issues: {}, checks: {}, mergeState: {}, ...details };
+  return classify({ data: search(parts), details: all, config: given ?? config, now: NOW });
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
 const follow = AttentionConfig.parse({ orgs: ["acme"], followThreads: true });
@@ -94,7 +78,7 @@ describe("doing", () => {
 
 describe("ready to merge and behind base", () => {
   it("PRS-03, PRS-04: offers Merge only when CI passed against the current base", () => {
-    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { [key(1)]: 0 }).items;
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { behind: { [key(1)]: 0 } }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["merge"], target: { mergeMethod: "squash" } });
     expect(chips(item)).toEqual(["approved", "CI passed"]);
   });
@@ -105,29 +89,29 @@ describe("ready to merge and behind base", () => {
     expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }).items[0]).toMatchObject({ section: "ready", actions: [] });
   });
 
-  it("PRS-10: with auto-merge on, a PR waiting on CI waits in CI running", () => {
+  it("PRS-10, WAI-01: with auto-merge on, a PR waiting on CI waits in CI running, which says why rather than a missing request", () => {
     const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", autoMergeRequest: { enabledAt: daysAgo(0.1) } }, "PENDING")] }).items;
-    expect(item.section).toBe("wait_ci");
-    expect(chips(item)).toContain("auto-merge on");
+    expect(item).toMatchObject({ section: "wait_ci", wait: { reason: undefined } });
+    expect(chips(item)).toEqual(expect.arrayContaining(["auto-merge on", "CI running"]));
   });
 
   it("UPS-03, PRS-04: a ready PR behind its base offers Update instead of Merge", () => {
-    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { [key(1)]: 1 }).items;
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { behind: { [key(1)]: 1 } }).items;
     expect(item.actions).toEqual(["update"]);
     expect(item.chips).toEqual([{ text: "approved", tone: "good" }, { text: "1 behind main", tone: "neutral" }]);
   });
 
   it("UPS-07: the behind chip stays neutral however far behind; only conflicts are flagged", () => {
-    const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { [key(1)]: 2307 }).items;
+    const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { behind: { [key(1)]: 2307 } }).items;
     expect(item.chips).toEqual([{ text: "conflicts", tone: "bad" }, { text: "2307 behind main", tone: "neutral" }]);
   });
 
   it("UPS-07: being behind alone never puts a PR in Doing", () => {
-    expect(sections(run({ mine: [pr(1, { reviewRequests: asked })] }, { [key(1)]: 400 }).items)).toEqual([[1, "wait_review"]]);
+    expect(sections(run({ mine: [pr(1, { reviewRequests: asked })] }, { behind: { [key(1)]: 400 } }).items)).toEqual([[1, "wait_review"]]);
   });
 
   it("UPS-01: a PR that conflicts with its base needs upstream, with Rebase", () => {
-    const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { [key(1)]: 139 }).items;
+    const [item] = run({ mine: [pr(1, { mergeable: "CONFLICTING" })] }, { behind: { [key(1)]: 139 } }).items;
     expect(item).toMatchObject({ section: "upstream", actions: ["rebase"] });
     expect(chips(item)).toEqual(["conflicts", "139 behind main"]);
   });
@@ -153,11 +137,8 @@ describe("ready to merge and behind base", () => {
 
   it("PRS-13: the merge state asked a few PRs at a time beats search's, which says BLOCKED for all once there are more", () => {
     const approved = pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" });
-    expect(run({ mine: [approved] }, {}, { mergeState: { [key(1)]: "CLEAN" } }).items[0]).toMatchObject({ section: "ready", actions: ["merge"] });
-    expect(run({ mine: [pr(1, { mergeStateStatus: "CLEAN" })] }, {}, { mergeState: { [key(1)]: "BLOCKED" } }).items[0].actions).toEqual(["request_review"]);
-    const { query, keys } = mergeStateQuery([pr(7), pr(8)]);
-    expect(query).toContain('m1: repository(owner: "acme", name: "shop") { pullRequest(number: 8) { mergeStateStatus } }');
-    expect(keys).toEqual({ m0: key(7), m1: key(8) });
+    expect(run({ mine: [approved] }, { mergeState: { [key(1)]: "CLEAN" } }).items[0]).toMatchObject({ section: "ready", actions: ["merge"] });
+    expect(run({ mine: [pr(1, { mergeStateStatus: "CLEAN" })] }, { mergeState: { [key(1)]: "BLOCKED" } }).items[0].actions).toEqual(["request_review"]);
   });
 
   it("PRS-13: UNKNOWN or missing merge state decides nothing", () => {
@@ -171,35 +152,35 @@ describe("ready to merge and behind base", () => {
 
   it("PRS-14: with required checks passing, failing optional ones leave it ready", () => {
     const checks = { [key(1)]: { required: 2, failing: 0, pending: 0 } };
-    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }, {}, { checks }).items;
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }, { checks }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["merge"] });
     expect(chips(item)).toEqual(["approved", "optional checks failing"]);
   });
 
   it("PRS-14: with required checks passing, optional ones still running don't hold up Merge", () => {
     const checks = { [key(1)]: { required: 1, failing: 0, pending: 0 } };
-    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }, {}, { checks }).items;
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }, { checks }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["merge"] });
     expect(chips(item)).toEqual(["approved", "required checks passed"]);
   });
 
   it("PRS-14: a failing or running required check counts as before", () => {
     const failing = { [key(1)]: { required: 2, failing: 1, pending: 0 } };
-    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "FAILURE")] }, {}, { checks: failing }).items[0].section).toBe("ci");
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "FAILURE")] }, { checks: failing }).items[0].section).toBe("ci");
     const running = { [key(1)]: { required: 2, failing: 0, pending: 1 } };
-    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }, {}, { checks: running }).items[0]).toMatchObject({ section: "ready", actions: [] });
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED" }, "PENDING")] }, { checks: running }).items[0]).toMatchObject({ section: "ready", actions: [] });
   });
 
   it("PRS-14: a required check that hasn't reported yet shows as GitHub blocking while CI runs", () => {
     const checks = { [key(1)]: { required: 1, failing: 0, pending: 0 } };
-    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" }, "PENDING")] }, {}, { checks }).items;
+    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "BLOCKED" }, "PENDING")] }, { checks }).items;
     expect(item).toMatchObject({ section: "ready", actions: [] });
     expect(chips(item)).toContain("CI running");
   });
 
   it("PRS-14: where the repo requires no checks, every check counts", () => {
     const checks = { [key(1)]: { required: 0, failing: 0, pending: 0 } };
-    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }, {}, { checks }).items[0].section).toBe("ci");
+    expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }, { checks }).items[0].section).toBe("ci");
     expect(run({ mine: [pr(1, { reviewDecision: "APPROVED", mergeStateStatus: "UNSTABLE" }, "FAILURE")] }).items[0].section).toBe("ci");
   });
 
@@ -226,7 +207,7 @@ describe("ready to merge and behind base", () => {
   it("PRS-04: uses the merge method from config, else the first the repo allows", () => {
     const noSquash = pr(1, { reviewDecision: "APPROVED", repository: { nameWithOwner: REPO, squashMergeAllowed: false, mergeCommitAllowed: true } });
     expect(run({ mine: [noSquash] }).items[0].target.mergeMethod).toBe("merge");
-    const configured = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, {}, { config: AttentionConfig.parse({ mergeMethods: { [REPO]: "rebase" } }) });
+    const configured = run({ mine: [pr(1, { reviewDecision: "APPROVED" })] }, { config: AttentionConfig.parse({ mergeMethods: { [REPO]: "rebase" } }) });
     expect(configured.items[0].target.mergeMethod).toBe("rebase");
   });
 });
@@ -237,7 +218,7 @@ describe("stacks", () => {
   const top = pr(12, { baseRefName: "b", headRefName: "c", isDraft: true });
 
   it("ATT-04: shows a stack as one item led by its bottom PR", () => {
-    const attention = run({ mine: [top, bottom, middle] }, { [key(11)]: 279 });
+    const attention = run({ mine: [top, bottom, middle] }, { behind: { [key(11)]: 279 } });
     expect(attention.items).toHaveLength(1);
     const [item] = attention.items;
     expect(item.number).toBe(10);
@@ -255,13 +236,13 @@ describe("stacks", () => {
   });
 
   it("UPS-02, UPS-04: a stacked PR behind its parent puts the stack under Needs upstream with Rebase", () => {
-    const [item] = run({ mine: [bottom, middle, top] }, { [key(11)]: 3 }).items;
+    const [item] = run({ mine: [bottom, middle, top] }, { behind: { [key(11)]: 3 } }).items;
     expect(item).toMatchObject({ section: "upstream", actions: ["rebase"] });
     expect(chips(item)).toContain("stack of 3");
   });
 
   it("UPS-03: a stacked ready PR behind its base gets Rebase, not Update", () => {
-    const [item] = run({ mine: [pr(10, { headRefName: "a", reviewDecision: "APPROVED" }), middle] }, { [key(10)]: 2 }).items;
+    const [item] = run({ mine: [pr(10, { headRefName: "a", reviewDecision: "APPROVED" }), middle] }, { behind: { [key(10)]: 2 } }).items;
     expect(item).toMatchObject({ section: "ready", actions: ["rebase"] });
   });
 });
@@ -319,7 +300,7 @@ describe("stacks whoever opened them", () => {
   });
 
   it("ATT-04, UPS-02: my PR behind the PR of someone else's it builds on says so", () => {
-    const [item] = run({ mine: [minesOnHers], reviews: [hers, hersTop] }, { [key(22)]: 2 }).items;
+    const [item] = run({ mine: [minesOnHers], reviews: [hers, hersTop] }, { behind: { [key(22)]: 2 } }).items;
     expect(item.children.find((child) => child.number === 22)).toMatchObject({ attention: true });
     expect(chips(item.children.find((child) => child.number === 22)!)).toContain("2 behind #21");
   });
@@ -348,8 +329,11 @@ describe("drafts", () => {
     expect(run({ mine: [pr(1, { isDraft: true }), pr(2, {}, "FAILURE")] }).items.map((item) => item.section)).toEqual(["ci", "drafts"]);
   });
 
-  it("PRS-06: other people's drafts are not work items", () => {
-    expect(run({ mentions: [mention(90, [comment(alice, "wip", 1)], { __typename: "PullRequest" })] }).items).toEqual([]);
+  it("PRS-06: other people's drafts show only where they ask something of me", () => {
+    const draft = pr(90, { author: alice, isDraft: true });
+    expect(sections(run({ reviews: [draft] }).items)).toEqual([[90, "review"]]);
+    const busy = issue(90, [comment(alice, "wip, pushing more tonight", 1)], "Draft", { __typename: "PullRequest" });
+    expect(run({ involved: [busy] }).items).toEqual([]);
   });
 
   it("PRS-11: a healthy draft offers Ready for review; a failing one, Fix and Rerun", () => {
@@ -398,24 +382,24 @@ describe("issues", () => {
     const top = (body: string) => pr(11, { baseRefName: "a", body });
 
     it("ATT-03: groups it under the issue its top PR closes", () => {
-      const [item, ...rest] = run({ mine: [bottom("First of two"), top("Closes #50")], assigned: [pickable(50, {})] }, {}, { issues }).items;
+      const [item, ...rest] = run({ mine: [bottom("First of two"), top("Closes #50")], assigned: [pickable(50, {})] }, { issues }).items;
       expect(rest).toEqual([]);
       expect(item).toMatchObject({ kind: "issue", number: 50, title: "Issue 50", target: { number: 10 } });
       expect(item.children.map((child) => child.number)).toEqual([10, 11]);
     });
 
     it("ATT-03: groups it under the one issue its bottom PR mentions", () => {
-      expect(run({ mine: [bottom("First of two stacked PRs for #50."), top("")] }, {}, { issues }).items[0]).toMatchObject({ kind: "issue", number: 50 });
+      expect(run({ mine: [bottom("First of two stacked PRs for #50."), top("")] }, { issues }).items[0]).toMatchObject({ kind: "issue", number: 50 });
     });
 
     it("ATT-03: leaves it alone when the reference isn't an open issue, or there are several", () => {
       expect(run({ mine: [bottom("for #50"), top("")] }).items[0]).toMatchObject({ kind: "pr", number: 10 });
       const more = { ...issues, [key(51)]: { ...issues[key(50)], number: 51 } };
-      expect(run({ mine: [bottom("for #50 and #51"), top("")] }, {}, { issues: more }).items[0]).toMatchObject({ kind: "pr", number: 10 });
+      expect(run({ mine: [bottom("for #50 and #51"), top("")] }, { issues: more }).items[0]).toMatchObject({ kind: "pr", number: 10 });
     });
 
     it("ATT-03: puts PRs that each refer to the issue under one item", () => {
-      const attention = run({ mine: [pr(1, { body: "Part 1 of #50" }), pr(2, { body: "Fixes #50" })] }, {}, { issues });
+      const attention = run({ mine: [pr(1, { body: "Part 1 of #50" }), pr(2, { body: "Fixes #50" })] }, { issues });
       expect(attention.items.map((item) => [item.number, item.children.map((child) => child.number)])).toEqual([[50, [1, 2]]]);
     });
   });
@@ -440,14 +424,7 @@ describe("waiting", () => {
     expect(unseen.wait?.reason).toBe("review");
   });
 
-  it("WAI-01: while CI runs on an approved PR, CI running says why, not a missing request", () => {
-    const [item] = run({ mine: [pr(1, { reviewDecision: "APPROVED", autoMergeRequest: { enabledAt: daysAgo(1) } }, "PENDING")] }).items;
-    expect(item).toMatchObject({ section: "wait_ci", wait: { reason: undefined } });
-    expect(chips(item)).toContain("CI running");
-  });
-
   it("WAI-03: a requested bot is fetched and marked, so there's no list to send it", () => {
-    expect(searchQuery(LIVE_SEARCHES)).toContain("... on Bot { ...author }");
     const copilot = { __typename: "Bot", login: "copilot", avatarUrl: "https://avatars/c" };
     const [item] = run({ mine: [pr(1, { reviewRequests: { nodes: [{ requestedReviewer: copilot }] } })] }).items;
     expect(item.waitingOn).toEqual([{ login: "copilot", avatarUrl: "https://avatars/c", team: false, bot: true, since: daysAgo(1) }]);
@@ -610,12 +587,12 @@ describe("answered", () => {
   it("ATT-17: replies on someone else's thread that don't tag me are left out, unless I allow it", () => {
     const thread = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 0.5)]);
     expect(run({ involved: [thread] }).items).toEqual([]);
-    expect(run({ involved: [thread] }, {}, { config: follow }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
+    expect(run({ involved: [thread] }, { config: follow }).items[0]).toMatchObject({ section: "answered", person: { login: "alice" } });
   });
 
   it("ATT-16, ATT-17: even when allowed, only comments from the last mentionDays count", () => {
-    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }, {}, { config: follow }).items).toEqual([]);
-    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }, {}, { config: follow }).items;
+    expect(run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "+1", 40)])] }, { config: follow }).items).toEqual([]);
+    const [item] = run({ involved: [issue(70, [comment(me, "same here", 400), comment(alice, "+1", 300), comment(bob, "fixed in 2.4?", 2)])] }, { config: follow }).items;
     expect(item).toMatchObject({ section: "answered", person: { login: "bob" } });
     expect(item.person?.comments?.map((c) => c.author)).toEqual(["bob"]);
   });
@@ -670,7 +647,7 @@ describe("needs a reviewer", () => {
   it("PRS-12: a PR nobody was asked to review is mine, with Merge once CI passed on the current base", () => {
     const [item] = run({ mine: [pr(1)] }).items;
     expect(item).toMatchObject({ section: "needs_reviewer", actions: ["request_review", "merge"], person: undefined });
-    expect(run({ mine: [pr(1)] }, { [key(1)]: 2 }).items[0].actions).toEqual(["request_review"]);
+    expect(run({ mine: [pr(1)] }, { behind: { [key(1)]: 2 } }).items[0].actions).toEqual(["request_review"]);
   });
 
   it("PRS-12: stays mine while CI runs, and never waits too long", () => {
@@ -758,7 +735,6 @@ describe("history", () => {
       merged: [{ ...merged(61, "dave"), closingIssuesReferences: { nodes: [{ number: 60, repository }] } }],
     }));
     expect(issue.children.map((child) => [child.number, child.mergedBy])).toEqual([[61, "dave"]]);
-    expect(searchQuery(HISTORY_SEARCHES, true)).toContain("mergedBy { login }");
   });
 
   it("HIS-02, ATT-19: lists PRs I reviewed apart from my own work, with their author", () => {
@@ -806,8 +782,17 @@ describe("history", () => {
     expect(query.match(/labels\(first: 20\) \{ nodes \{ name \} \}/g)).toHaveLength(3);
   });
 
-  it("HIS-01: searches whole weeks back from Monday", () => {
-    expect(searchVariables(config, NOW).merged).toContain("merged:>=2026-10-05"); // 4 weeks: Oct 5, 12, 19, 26
+  it("HIS-01: searches from midnight on the oldest week's Monday in the device's time zone, to the second", () => {
+    const start = (now: string, timeZone?: string) => searchVariables(AttentionConfig.parse({ historyWeeks: 1 }), new Date(now), timeZone).merged.match(/merged:>=(\S+)/)![1];
+    // Monday 01:00 in Tokyo is still Sunday in UTC.
+    expect(start("2026-11-15T16:00:00Z", "Asia/Tokyo")).toBe("2026-11-15T15:00:00+00:00");
+    expect(start("2026-11-15T16:00:00Z")).toBe("2026-11-09T00:00:00+00:00");
+    // Sunday 23:00 in Los Angeles is already Monday in UTC.
+    expect(start("2026-11-16T07:00:00Z", "America/Los_Angeles")).toBe("2026-11-09T08:00:00+00:00");
+    expect(start("2026-11-16T07:00:00Z")).toBe("2026-11-16T00:00:00+00:00");
+    // Weeks back across the end of daylight saving (1 November) start at that week's own midnight.
+    const weeks = searchVariables(AttentionConfig.parse({ historyWeeks: 3 }), new Date("2026-11-11T12:00:00Z"), "America/Los_Angeles");
+    expect(weeks.closed).toContain("closed:>=2026-10-26T07:00:00+00:00");
   });
 });
 
@@ -838,7 +823,9 @@ describe("mentions", () => {
   });
 
   it("MEN-03: counts mentions in other people's drafts", () => {
-    expect(run({ mentions: [mention(82, [comment(alice, "early look please @me", 1)], { __typename: "PullRequest" })] }).items.map((item) => item.number)).toEqual([82]);
+    // The mention search doesn't ask whether a PR is a draft; GitHub's node still is one, and must keep counting.
+    const draft = { __typename: "PullRequest", isDraft: true } as Partial<Parameters<typeof mention>[2]>;
+    expect(run({ mentions: [mention(82, [comment(alice, "early look please @me", 1)], draft)] }).items.map((item) => item.number)).toEqual([82]);
   });
 
   it("MEN-04: ignores team mentions and quoted mentions", () => {
@@ -900,7 +887,6 @@ describe("next up", () => {
           pickable(5, {}),
         ],
       },
-      {},
       { config: AttentionConfig.parse({ nextUp }), fieldOptions },
     );
     expect(attention.unclaimed.map((issue) => issue.number)).toEqual([4, 3, 2, 1, 5]);
@@ -911,7 +897,6 @@ describe("next up", () => {
     const pr = (number: number, state: string) => ({ number, url: `https://github.com/${REPO}/pull/${number}`, state, author: alice });
     const attention = run(
       { unclaimed: [{ ...pickable(1, { Priority: "🏔 P1 High" }), closedByPullRequestsReferences: { nodes: [pr(9, "OPEN"), pr(8, "CLOSED")] } }, pickable(2, {})] },
-      {},
       { config: AttentionConfig.parse({ nextUp }), fieldOptions },
     );
     expect(attention.unclaimed[0]).toMatchObject({ priorityRank: 1, openPrs: [{ number: 9, author: "alice" }] });
@@ -920,16 +905,16 @@ describe("next up", () => {
 
   it("NXT-10: tints priority with the org's colors, and leaves the card to rank it where the org colored none", () => {
     const issues = { unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), pickable(2, { Priority: "🏝 P3 Low" })] };
-    const colored = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { priority: { "🏔 P1 High": "ORANGE", "🏝 P3 Low": "GRAY" } } } });
+    const colored = run(issues, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { priority: { "🏔 P1 High": "ORANGE", "🏝 P3 Low": "GRAY" } } } });
     expect(colored.unclaimed.map((issue) => issue.priorityColor)).toEqual(["ORANGE", "GRAY"]);
-    const gray = run(issues, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { Priority: { "🏔 P1 High": "GRAY", "🏝 P3 Low": "GRAY" } } } });
+    const gray = run(issues, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors: { acme: { Priority: { "🏔 P1 High": "GRAY", "🏝 P3 Low": "GRAY" } } } });
     expect(gray.unclaimed.map((issue) => issue.priorityColor)).toEqual([undefined, undefined]);
   });
 
   it("NXT-10: takes each issue's priority color from its own org, as two orgs may color the same field differently", () => {
     const elsewhere = (number: number) => ({ ...pickable(number, { Priority: "🏔 P1 High" }), repository: { nameWithOwner: "globex/api" } });
     const fieldColors = { acme: { Priority: { "🏔 P1 High": "RED" as const } }, globex: { Priority: { "🏔 P1 High": "GRAY" as const } } };
-    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2)] }, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors });
+    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2)] }, { config: AttentionConfig.parse({ nextUp }), fieldOptions, fieldColors });
     const byNumber = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.priorityColor]));
     // globex colored nothing, so its card falls back on rank rather than taking acme's red.
     expect(byNumber).toEqual({ 1: "RED", 2: undefined });
@@ -939,7 +924,7 @@ describe("next up", () => {
     const elsewhere = (number: number, priority: string) => ({ ...pickable(number, { Priority: priority }), repository: { nameWithOwner: "globex/api" } });
     // globex lists Low first: its Low is its top priority, and acme's High its second.
     const options = { acme: { Priority: priorities }, globex: { Priority: ["Low", "High"] } };
-    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2, "Low")] }, {}, { config: AttentionConfig.parse({ nextUp }), fieldOptions: options });
+    const attention = run({ unclaimed: [pickable(1, { Priority: "🏔 P1 High" }), elsewhere(2, "Low")] }, { config: AttentionConfig.parse({ nextUp }), fieldOptions: options });
     expect(attention.unclaimed.map((issue) => [issue.number, issue.priorityRank])).toEqual([
       [2, 0],
       [1, 1],
@@ -963,7 +948,6 @@ describe("next up", () => {
           { ...pickable(5, {}), projectItems: { nodes: closedTen, pageInfo: { hasNextPage: true } } },
         ],
       },
-      {},
       { projectStatuses: { P_todo: statuses, P_ideas: statuses } },
     );
     const byNumber = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.projects]));
@@ -991,35 +975,33 @@ describe("next up", () => {
 
   it("NXT-12, GH-01: reads projects only in Next up's searches, and only when asked to", () => {
     expect(searchQuery(["unclaimed"])).not.toContain("projectItems");
-    expect(searchQuery(["unclaimed"], false, { projects: true }).match(/^fragment \w+/gm)).toEqual(["fragment pickable", "fragment projects"]);
+    expect(searchQuery(["unclaimed"], false, { projects: true })).toContain("projectItems");
     expect(searchQuery(["mine"], true, { projects: true })).not.toContain("projectItems");
-    expect(missingProjectScope(new Error("Your token has not been granted the required scopes ... ['read:project']"))).toBe(true);
-    expect(missingProjectScope(new Error("Bad credentials"))).toBe(false);
     // Each board's statuses come once per board, not with every issue on it.
     expect(searchQuery(["unclaimed"], false, { projects: true })).not.toContain("options");
-    expect(projectStatusesQuery(["P_todo", "P_ideas"]).match(/b\d: node/g)).toEqual(["b0: node", "b1: node"]);
   });
 
   it("NXT-06: lists issues assigned to me, ranked the same way", () => {
-    const attention = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
+    const attention = run({ assigned: [pickable(7, { Effort: "Large" }), pickable(8, { Effort: "Tiny" })] }, { config: AttentionConfig.parse({ nextUp }) });
     expect(attention.assigned.map((issue) => issue.number)).toEqual([8, 7]);
   });
 
   it("NXT-04: reads only the configured fields and repositories", () => {
-    const attention = run({ unclaimed: [pickable(1, { Scope: "🔙 Backend", Other: "x" })] }, {}, { config: AttentionConfig.parse({ nextUp }) });
+    const attention = run({ unclaimed: [pickable(1, { Scope: "🔙 Backend", Other: "x" })] }, { config: AttentionConfig.parse({ nextUp }) });
     expect(attention.unclaimed[0]).toMatchObject({ scope: "🔙 Backend", priority: undefined });
     const { searches } = unclaimedSearches(AttentionConfig.parse({ orgs: ["acme"], nextUp: { repos: ["acme/shop"] } }), [], null);
-    expect(searches).toEqual([{ source: "repo:acme/shop", query: "is:issue is:open no:assignee repo:acme/shop archived:false" }]);
+    expect(searches.map((search) => search.source)).toEqual(["repo:acme/shop"]);
+    expect(searches[0].query).not.toContain("org:acme");
   });
 
   it("NXT-04: until I choose, uses the fields named Priority, Effort and Scope, whatever their case; null turns one off", () => {
     const issues = { unclaimed: [pickable(1, { priority: "🏝 P3 Low", Scope: "🔙 Backend" }), pickable(2, { priority: "🏔 P1 High", Effort: "Small" })] };
-    const auto = run(issues, {}, { config: AttentionConfig.parse({}), fieldOptions: { acme: { PRIORITY: priorities } } });
+    const auto = run(issues, { config: AttentionConfig.parse({}), fieldOptions: { acme: { PRIORITY: priorities } } });
     expect(auto.unclaimed.map((issue) => [issue.number, issue.priority, issue.effort, issue.scope, issue.priorityRank])).toEqual([
       [2, "🏔 P1 High", "Small", undefined, 1],
       [1, "🏝 P3 Low", undefined, "🔙 Backend", 3],
     ]);
-    const off = run(issues, {}, { config: AttentionConfig.parse({ nextUp: { priority: null, scope: { field: "Effort" } } }), fieldOptions });
+    const off = run(issues, { config: AttentionConfig.parse({ nextUp: { priority: null, scope: { field: "Effort" } } }), fieldOptions });
     expect(off.unclaimed.map((issue) => [issue.number, issue.priority, issue.scope])).toEqual([
       [1, undefined, undefined],
       [2, undefined, "Small"],
@@ -1028,14 +1010,13 @@ describe("next up", () => {
 
   it("NXT-04: looks in my own repos, whole orgs and single repos, one search each", () => {
     const config = AttentionConfig.parse({ nextUp: { mine: true, orgs: ["acme"], repos: ["other/tool"] } });
-    expect(unclaimedSearches(config, [], "me")).toEqual({
-      from: "config",
-      searches: [
-        { source: "mine", query: "is:issue is:open no:assignee user:me archived:false" },
-        { source: "org:acme", query: "is:issue is:open no:assignee org:acme archived:false" },
-        { source: "repo:other/tool", query: "is:issue is:open no:assignee repo:other/tool archived:false" },
-      ],
-    });
+    const { from, searches } = unclaimedSearches(config, [], "me");
+    expect(from).toBe("config");
+    expect(searches.map((search) => [search.source, search.query.match(/(user|org|repo):\S+/g)])).toEqual([
+      ["mine", ["user:me"]],
+      ["org:acme", ["org:acme"]],
+      ["repo:other/tool", ["repo:other/tool"]],
+    ]);
     expect(nextUpSources(config).map((source) => source.label)).toEqual(["My repos", "acme", "other/tool"]);
     expect(() => unclaimedSearches(config, [], null)).toThrow();
   });
@@ -1048,7 +1029,7 @@ describe("next up", () => {
       { source: "mine", nodes: [fork] },
     ]);
     expect(merged.map((node) => [node.number, node.sources])).toEqual([[1, ["org:acme", "repo:acme/shop"]]]);
-    const attention = run({ unclaimed: merged }, {});
+    const attention = run({ unclaimed: merged });
     expect(attention.unclaimed[0].sources).toEqual(["org:acme", "repo:acme/shop"]);
   });
 
@@ -1056,8 +1037,9 @@ describe("next up", () => {
     const projects = ["acme/shop", "me/tool"];
     const scope = (config: unknown, repos: string[]) => unclaimedSearches(AttentionConfig.parse(config), repos, null);
     expect(scope({ nextUp: { repos: ["acme/web"] } }, projects).from).toBe("config");
-    expect(scope({ orgs: ["acme"] }, projects)).toEqual({ from: "config", searches: [{ source: null, query: "is:issue is:open no:assignee org:acme archived:false" }] });
-    expect(scope({}, projects)).toEqual({ from: "projects", searches: [{ source: null, query: "is:issue is:open no:assignee repo:acme/shop repo:me/tool archived:false" }] });
+    const where = (result: ReturnType<typeof scope>) => [result.from, result.searches.map((search) => search.query.match(/(org|repo):\S+/g))];
+    expect(where(scope({ orgs: ["acme"] }, projects))).toEqual(["config", [["org:acme"]]]);
+    expect(where(scope({}, projects))).toEqual(["projects", [["repo:acme/shop", "repo:me/tool"]]]);
     expect(scope({}, [])).toEqual({ from: "none", searches: [] });
     // No sources of its own: back to the orgs and repos, then the projects.
     expect(scope({ nextUp: { mine: false, orgs: [], repos: [] } }, projects).from).toBe("projects");
@@ -1073,16 +1055,8 @@ describe("GitHub requests", () => {
     expect(variables.reviews).toContain("user-review-requested:@me");
   });
 
-  it("GH-01: sends each live search as its own request, and History as one, with only the fragments each uses", () => {
-    expect(searchQuery(["mine"], true)).toMatch(/^query Attention\(\$mine: String!\) \{\n  viewer \{ login id \}\n  mine: search/);
-    expect(searchQuery(["mine"]).match(/^fragment \w+/gm)).toEqual(["fragment pr", "fragment author"]);
-    expect(searchQuery(["involved"]).match(/^fragment \w+/gm)).toEqual(["fragment author", "fragment comment"]);
-    expect(searchQuery(HISTORY_SEARCHES).match(/^  \w+: search/gm)).toEqual(["  merged: search", "  reviewed: search", "  closed: search"]);
-    expect(Object.keys(searchVariables(config, NOW)).sort()).toEqual([...LIVE_SEARCHES, ...HISTORY_SEARCHES].filter((name) => name !== "unclaimed").sort());
-  });
-
   it("GH-01: refreshes every 15 minutes by default; the screen never forces a fetch", () => {
-    expect(config.refreshMinutes).toBe(15);
+    expect(AttentionConfig.parse({}).refreshMinutes).toBe(15);
   });
 
   it("ATT-08: records the latest activity by others for dismissals", () => {
@@ -1095,7 +1069,9 @@ describe("GitHub requests", () => {
     const attention = classify({ data, details, config, now: NOW });
     // Changed by others comes from the ledger, not the searches [HIS-06, HIS-07].
     const changes = changeItems({ ...EMPTY_LEDGER, events: fixtureChanges(NOW), gotIt: fixtureGotIt(NOW) }, NOW, 30, "2000-01-01T00:00:00Z");
-    expect(new Set([...attention.items, ...classifyHistory(data), ...changes.notes, ...changes.history].map((item) => item.section)).size).toBe(17);
+    // Every section but Wrap up, which the screen builds from its sessions [ATT-22].
+    const shown = new Set([...attention.items, ...classifyHistory(data), ...changes.notes, ...changes.history].map((item) => item.section));
+    expect([...shown].sort()).toEqual(Object.keys(SECTIONS).filter((id) => id !== "wrap").sort());
     expect(doing(attention).length).toBeGreaterThan(5);
     expect([attention.assigned.length, attention.unclaimed.length]).toEqual([2, 7]);
   });

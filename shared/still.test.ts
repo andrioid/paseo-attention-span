@@ -1,119 +1,71 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionView, FeedStatus, Item, NextUpIssue, Section, WaitingGroup } from "./attention";
+import { AttentionConfig } from "./config";
 import { historyClear, isClear, nextUpClear, sceneAt, waitingClear } from "./still";
+import { feed, item } from "./test-builders";
 
-const at = (hour: number, minute = 0) => new Date(2026, 10, 9, hour, minute);
-const view = (doing: Section[], live: Partial<AttentionView["feeds"]["live"]> = {}): Pick<AttentionView, "doing" | "feeds"> => ({
-  doing,
-  feeds: { live: { fetchedAt: "2026-11-09T10:00:00Z", refreshing: false, error: null, ...live }, history: { fetchedAt: null, refreshing: false, error: null } },
-});
+const never = feed({ fetchedAt: null });
+
+// A view with nothing in any tab, both feeds as given.
+function empty(status: FeedStatus = feed(), fields: Partial<AttentionView> = {}) {
+  return { doing: [], waiting: [], history: [], assigned: [], unclaimed: [], unclaimedFrom: "config", feeds: { live: status, history: status }, config: AttentionConfig.parse({}), ...fields } as AttentionView;
+}
 
 describe("sceneAt", () => {
-  it("ATT-18: follows fixed local hours", () => {
-    expect([4, 5, 10, 11, 15, 16, 20, 21, 23, 0].map((hour) => sceneAt(at(hour)))).toEqual([
-      "night",
-      "morning",
-      "morning",
-      "midday",
-      "midday",
-      "evening",
-      "evening",
-      "night",
-      "night",
-      "night",
-    ]);
-  });
-
-  it("ATT-18: changes on the hour, not before", () => {
-    expect(sceneAt(at(15, 59))).toBe("midday");
-    expect(sceneAt(at(16, 0))).toBe("evening");
+  it.each([
+    [0, 0, "night"],
+    [4, 59, "night"],
+    [5, 0, "morning"],
+    [10, 59, "morning"],
+    [11, 0, "midday"],
+    [15, 59, "midday"],
+    [16, 0, "evening"],
+    [20, 59, "evening"],
+    [21, 0, "night"],
+  ])("ATT-18: at %i:%i local time it's %s, changing on the hour", (hour, minute, scene) => {
+    expect(sceneAt(new Date(2026, 10, 9, hour, minute))).toBe(scene);
   });
 });
 
-describe("isClear", () => {
-  it("ATT-18: is clear when Doing is empty after a refresh that worked", () => {
-    expect(isClear(view([]))).toBe(true);
+describe("calm scenes", () => {
+  const scenes = {
+    Doing: (view: AttentionView, failed?: boolean) => isClear(view, failed),
+    Waiting: (view: AttentionView, failed?: boolean) => waitingClear(view, failed),
+    History: (view: AttentionView, failed?: boolean) => historyClear(view, 0, failed),
+    "Next up": (view: AttentionView, failed?: boolean) => nextUpClear(view, failed) === "clear",
+  };
+
+  it.each(Object.entries(scenes))("ATT-18, WAI-04, HIS-08, NXT-13: %s is calm when empty after a refresh that worked, even while another runs", (_, calm) => {
+    expect(calm(empty())).toBe(true);
+    expect(calm(empty(feed({ refreshing: true })))).toBe(true);
   });
 
-  it("ATT-18: stays clear while a background refresh runs", () => {
-    expect(isClear(view([], { refreshing: true }))).toBe(true);
+  it.each(Object.entries(scenes))("ATT-18, WAI-04, HIS-08, NXT-13: %s is never calm before the first refresh, after a failed one, or when loading the view failed", (_, calm) => {
+    expect(calm(empty(never))).toBe(false);
+    expect(calm(empty(feed({ error: "gh: not logged in" })))).toBe(false);
+    expect(calm(empty(), true)).toBe(false);
   });
 
-  it("ATT-18: is never clear before the first refresh, after a failed one, or when loading the view failed", () => {
-    expect(isClear(view([], { fetchedAt: null }))).toBe(false);
-    expect(isClear(view([], { error: "gh: not logged in" }))).toBe(false);
-    expect(isClear(view([]), true)).toBe(false);
+  it("ATT-18, ATT-22: Doing isn't calm while anything needs me, nor until Wrap up's rows are archived", () => {
+    expect(isClear(empty(feed(), { doing: [{ id: "reply", title: "Waiting for your reply", items: [] } as unknown as Section] }))).toBe(false);
+    expect(isClear(empty(), false, 1)).toBe(false);
   });
 
-  it("ATT-18: is not clear while anything needs me", () => {
-    expect(isClear(view([{ id: "reply", title: "Waiting for your reply", items: [] } as unknown as Section]))).toBe(false);
+  it("WAI-04: Waiting isn't calm while anything waits on anyone", () => {
+    expect(waitingClear(empty(feed(), { waiting: [{ who: null, items: [] } as unknown as WaitingGroup] }))).toBe(false);
   });
 
-  it("ATT-18, ATT-22: Wrap up's rows keep the horizon away until they're archived", () => {
-    expect(isClear(view([]), false, 1)).toBe(false);
-    expect(isClear(view([]), false, 0)).toBe(true);
-  });
-});
-
-const ok: FeedStatus = { fetchedAt: "2026-11-09T10:00:00Z", refreshing: false, error: null };
-const never: FeedStatus = { fetchedAt: null, refreshing: false, error: null };
-const broken: FeedStatus = { ...ok, error: "gh: not logged in" };
-
-describe("waitingClear", () => {
-  const waiting = (groups: unknown[], live = ok) => ({ waiting: groups as WaitingGroup[], feeds: { live, history: never } });
-
-  it("WAI-04: is clear when nothing waits on anyone after a refresh that worked", () => {
-    expect(waitingClear(waiting([]))).toBe(true);
-    expect(waitingClear(waiting([{ who: null, items: [] }]))).toBe(false);
+  it("HIS-08: History isn't calm with anything finished in its weeks, or a note unread", () => {
+    const done: Item = item("a", "done", { closedAt: new Date().toISOString() });
+    expect(historyClear(empty(feed(), { history: [done] }), 0)).toBe(false);
+    expect(historyClear(empty(), 1)).toBe(false);
   });
 
-  it("WAI-04: is never clear before the first refresh or after a failed one", () => {
-    expect(waitingClear(waiting([], never))).toBe(false);
-    expect(waitingClear(waiting([], broken))).toBe(false);
-    expect(waitingClear(waiting([]), true)).toBe(false);
-  });
-});
-
-describe("historyClear", () => {
-  const done = { key: "a", title: "Ship it", url: "https://github.com/o/r/pull/1", section: "done", closedAt: "2026-11-09T10:00:00Z" } as Item;
-  const history = (items: Item[], feed = ok) => ({ history: items, feeds: { live: ok, history: feed } });
-
-  it("HIS-08: is clear when nothing was finished and nothing is unread, after a refresh that worked", () => {
-    expect(historyClear(history([]), 0)).toBe(true);
-    expect(historyClear(history([done]), 0)).toBe(false);
-    expect(historyClear(history([]), 1)).toBe(false);
-  });
-
-  it("HIS-08: is never clear before the first refresh of History's feed or after a failed one", () => {
-    expect(historyClear(history([], never), 0)).toBe(false);
-    expect(historyClear(history([], broken), 0)).toBe(false);
-    expect(historyClear(history([]), 0, true)).toBe(false);
-  });
-});
-
-describe("nextUpClear", () => {
-  const issue = { key: "i" } as NextUpIssue;
-  const next = (assigned: NextUpIssue[], unclaimed: NextUpIssue[], unclaimedFrom: AttentionView["unclaimedFrom"], live = ok) => ({
-    assigned,
-    unclaimed,
-    unclaimedFrom,
-    feeds: { live, history: never },
-  });
-
-  it("NXT-13: asks for setup when there's nowhere to look, even before a refresh", () => {
-    expect(nextUpClear(next([], [], "none"))).toBe("setup");
-    expect(nextUpClear(next([], [], "none", never))).toBe("setup");
-  });
-
-  it("NXT-13: is clear when nothing is assigned or unclaimed after a refresh that worked", () => {
-    expect(nextUpClear(next([], [], "config"))).toBe("clear");
-    expect(nextUpClear(next([], [], "projects", never))).toBe(null);
-    expect(nextUpClear(next([], [], "config", broken))).toBe(null);
-    expect(nextUpClear(next([], [], "config"), true)).toBe(null);
-  });
-
-  it("NXT-13: shows the list while anything is in it, a filter hiding it all included", () => {
-    expect(nextUpClear(next([issue], [], "none"))).toBe(null);
-    expect(nextUpClear(next([], [issue], "config"))).toBe(null);
+  it("NXT-13: Next up asks for setup when there's nowhere to look, even before a refresh, and shows any issue, filtered or not", () => {
+    const issue = { key: "i" } as NextUpIssue;
+    expect(nextUpClear(empty(feed(), { unclaimedFrom: "none" }))).toBe("setup");
+    expect(nextUpClear(empty(never, { unclaimedFrom: "none" }))).toBe("setup");
+    expect(nextUpClear(empty(feed(), { unclaimedFrom: "none", assigned: [issue] }))).toBe(null);
+    expect(nextUpClear(empty(feed(), { unclaimed: [issue] }))).toBe(null);
   });
 });

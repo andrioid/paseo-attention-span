@@ -61,8 +61,7 @@ const SEARCHES = {
 };
 export type SearchName = keyof typeof SEARCHES;
 
-// Doing, Waiting and Next up. History has its own, slower schedule.
-export const LIVE_SEARCHES = ["mine", "reviews", "mentions", "involved", "asked", "assigned", "unclaimed", "ended", "closedIssues"] as const;
+// History's searches, on their own, slower schedule; the live ones are sent by the service, one request each.
 export const HISTORY_SEARCHES = ["merged", "reviewed", "closed"] as const;
 
 const FRAGMENTS: Record<string, string> = {
@@ -141,16 +140,30 @@ function where(orgs: string[], repos: string[]): string {
 
 const isoDate = (date: Date) => date.toISOString().slice(0, 10);
 
-function startOfWeek(now: Date): Date {
-  const monday = new Date(now);
-  monday.setUTCHours(0, 0, 0, 0);
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-  return monday;
+// How far `timeZone`'s clock is ahead of UTC at `at`, in ms.
+function zoneOffset(at: number, timeZone: string): number {
+  const format = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
+  const part = Object.fromEntries(format.formatToParts(at).map(({ type, value }) => [type, Number(value)]));
+  return Date.UTC(part.year, part.month - 1, part.day, part.hour, part.minute, part.second) - Math.floor(at / 1000) * 1000;
 }
 
-// Where History starts: whole weeks, from a Monday, so the oldest week isn't cut short [HIS-01].
-export function historySince(now: Date, weeks: number): string {
-  return new Date(startOfWeek(now).getTime() - (weeks - 1) * 7 * 86_400_000).toISOString();
+// Where History starts: midnight on the oldest week's Monday in the device's time zone, so the server's weeks are the
+// screen's and the oldest isn't cut short [HIS-01]. UTC until a device has sent its zone.
+export function historySince(now: Date, weeks: number, timeZone = "UTC"): string {
+  const local = new Date(now.getTime() + zoneOffset(now.getTime(), timeZone));
+  const monday = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - ((local.getUTCDay() + 6) % 7) - 7 * (weeks - 1));
+  // The offset at that midnight, which a daylight saving change since may have moved.
+  return new Date(monday - zoneOffset(monday - zoneOffset(monday, timeZone), timeZone)).toISOString();
+}
+
+// A time zone this server's Intl knows [HIS-01].
+export function isTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Where Next up looks for unclaimed issues [NXT-04, NXT-08]: one search per chosen source, so each issue says which
@@ -195,10 +208,11 @@ export function mergeUnclaimed(results: { source: string | null; nodes: (Pickabl
 }
 
 // The searches about me. Next up's unclaimed issues have their own [NXT-04].
-export function searchVariables(config: AttentionConfig, now: Date): Record<Exclude<SearchName, "unclaimed">, string> {
+export function searchVariables(config: AttentionConfig, now: Date, timeZone?: string): Record<Exclude<SearchName, "unclaimed">, string> {
   const scope = where(config.orgs, config.repos);
   const since = isoDate(new Date(now.getTime() - config.mentionDays * 86_400_000));
-  const history = isoDate(new Date(historySince(now, config.historyWeeks)));
+  // To the second: GitHub reads a bare date as UTC midnight.
+  const history = `${historySince(now, config.historyWeeks, timeZone).slice(0, 19)}+00:00`;
   return {
     mine: `is:pr is:open author:@me ${scope}`,
     // By name only, not via a team [REV-01].
@@ -316,14 +330,10 @@ export function issueFieldsQuery(orgs: string[]): string {
 // in search and in a repo's PR list. Seen on 2026-11-04 [PRS-13].
 export const MERGE_STATE_BATCH = 5;
 
-// The merge state of up to MERGE_STATE_BATCH PRs, in one request; m0, m1, … map back to their keys.
-export function mergeStateQuery(prs: PullRequestNode[]): { query: string; keys: Record<string, string> } {
-  const keys: Record<string, string> = {};
-  const fields = prs.map((pr, index) => {
-    keys[`m${index}`] = prKey(pr);
-    return `m${index}: ${repository(pr.repository.nameWithOwner)} { pullRequest(number: ${pr.number}) { mergeStateStatus } }`;
-  });
-  return { query: `query MergeState {\n${fields.join("\n")}\n}`, keys };
+// The merge state of up to MERGE_STATE_BATCH PRs, in one request, as m0, m1, … in the order given.
+export function mergeStateQuery(prs: PullRequestNode[]): string {
+  const fields = prs.map((pr, index) => `m${index}: ${repository(pr.repository.nameWithOwner)} { pullRequest(number: ${pr.number}) { mergeStateStatus } }`);
+  return `query MergeState {\n${fields.join("\n")}\n}`;
 }
 
 export type CheckContext = { status?: string; conclusion?: string | null; state?: string; isRequired?: boolean };

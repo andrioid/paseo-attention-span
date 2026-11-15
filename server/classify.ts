@@ -1,5 +1,6 @@
 import {
   type ActionId,
+  baseItem,
   type Attention,
   type Chip,
   type Item,
@@ -15,7 +16,7 @@ import {
   type Target,
   type WaitingOn,
 } from "../shared/attention";
-import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField, sameField } from "../shared/config";
+import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
 import { workChip, workKind } from "../shared/work";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, ProjectItemNode, PullRequestNode, RequestedReviewer } from "./github-types";
@@ -23,6 +24,7 @@ import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
 import { issueFor } from "./references";
 import { ISSUE_RULES, type IssueState, nudgeable, pick, PR_RULES, type PrState, replyActions, rulesBlock } from "./rules";
+import { sameName } from "../shared/names";
 
 // Turns one refresh worth of GitHub data into what needs me. Pure, so every rule is testable.
 
@@ -64,6 +66,121 @@ const author = (actor: Actor | null | undefined, since: string): Person | undefi
 // Search returns empty objects for result types a fragment doesn't cover.
 const compact = <T>(nodes: (T | null | undefined)[]) => nodes.filter((node): node is T => !!node && Object.keys(node).length > 0);
 
+// Stacks, followed through base/head branch names, among my PRs and those asking for my review, whoever opened them; each
+// from its bottom PR up [ATT-04]. A fork's branch isn't the repo's, so a PR from a fork is never a parent.
+function buildStacks(prs: PullRequestNode[]) {
+  const byHead = new Map(prs.filter((pr) => !pr.isCrossRepository).map((pr) => [`${pr.repository.nameWithOwner}\0${pr.headRefName}`, pr]));
+  const parentOf = (pr: PullRequestNode) => {
+    const parent = byHead.get(`${pr.repository.nameWithOwner}\0${pr.baseRefName}`);
+    return parent === pr ? undefined : parent;
+  };
+  const stacks: PullRequestNode[][] = [];
+  const seen = new Set<PullRequestNode>();
+  const walk = (pr: PullRequestNode, stack: PullRequestNode[]) => {
+    if (seen.has(pr)) return;
+    seen.add(pr);
+    stack.push(pr);
+    for (const child of prs.filter((candidate) => parentOf(candidate) === pr)) walk(child, stack);
+  };
+  const byNumber = [...prs].sort((a, b) => a.number - b.number);
+  for (const pr of byNumber) if (!parentOf(pr)) stacks.push([]), walk(pr, stacks[stacks.length - 1]);
+  for (const pr of byNumber) if (!seen.has(pr)) stacks.push([pr]); // cycles, in theory
+  return { stacks, parentOf };
+}
+
+// What each PR's checks, reviews and branches say, worked out once per PR.
+function prState(
+  pr: PullRequestNode,
+  {
+    details,
+    config,
+    now,
+    isMe,
+    isOther,
+    parentOf,
+  }: { details: Details; config: AttentionConfig; now: Date; isMe: (actor: Actor | null | undefined) => boolean; isOther: (actor: Actor | null | undefined) => boolean; parentOf: (pr: PullRequestNode) => PullRequestNode | undefined },
+) {
+  const commit = pr.commits.nodes[0]?.commit;
+  const ci = commit?.statusCheckRollup?.state;
+  const anyFailing = ci === "FAILURE" || ci === "ERROR";
+  const anyPending = ci === "PENDING" || ci === "EXPECTED";
+  // Asked a few PRs at a time where we could; search's answer is BLOCKED for all once there are more than a few [PRS-13].
+  const mergeBlocked = (details.mergeState[prKey(pr)] ?? pr.mergeStateStatus) === "BLOCKED";
+  // Where the repo requires checks, only those count; one that hasn't reported yet shows as GitHub blocking while CI runs.
+  // Where it requires none, every check counts [PRS-14].
+  const required = details.checks[prKey(pr)];
+  const ciFailing = required?.required ? required.failing > 0 : anyFailing;
+  const ciPending = !ciFailing && (required?.required ? required.pending > 0 || (anyPending && mergeBlocked) : anyPending);
+  const unresolved = pr.reviewThreads.nodes.filter((thread) => !thread.isResolved);
+  const last = (thread: (typeof unresolved)[number]) => thread.comments.nodes.at(-1);
+  const onMe = unresolved.filter((thread) => !isMe(last(thread)?.author));
+  const lastCommitAt = commit?.committedDate ?? pr.createdAt;
+  const changesRequestedAt = latest(...pr.latestReviews.nodes.filter((r) => r.state === "CHANGES_REQUESTED").map((r) => r.submittedAt));
+  const behindBy = details.behind[prKey(pr)] ?? 0;
+  return {
+    ciFailing,
+    ciPending,
+    optionalFailing: !ciFailing && anyFailing,
+    optionalPending: !ciFailing && !ciPending && anyPending,
+    conflicts: pr.mergeable === "CONFLICTING",
+    mergeBlocked,
+    approved: pr.reviewDecision === "APPROVED",
+    // Only what GitHub records as owed: a pending request, even one whose reviewer I can't see, or a decision. Who has
+    // reviewed doesn't count; GitHub drops a reviewer's request once they review, so a comment leaves the next move to
+    // me. The repo decides what counts as a review, not us [PRS-12].
+    asked: pr.reviewRequests.nodes.length > 0 || pr.reviewDecision === "APPROVED" || pr.reviewDecision === "CHANGES_REQUESTED",
+    autoMerge: !!pr.autoMergeRequest,
+    threadsOnMe: onMe.length,
+    botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
+    // Requested changes stay mine until I push after them.
+    changes: onMe.length > 0 || (pr.reviewDecision === "CHANGES_REQUESTED" && !(lastCommitAt > changesRequestedAt)),
+    repliedAt: latest(...unresolved.filter((thread) => isMe(last(thread)?.author)).map((thread) => last(thread)?.createdAt)),
+    lastCommitAt,
+    behindBy,
+    // A stacked PR no longer builds on its parent's latest version [UPS-02].
+    outOfSync: !!parentOf(pr) && behindBy > 0,
+    stale: daysSince(pr.updatedAt, now) >= config.staleDraftDays,
+    othersActivityAt: latest(
+      ...pr.comments.nodes.filter((c) => isOther(c.author)).map((c) => c.createdAt),
+      ...pr.reviewThreads.nodes.flatMap((t) => t.comments.nodes).filter((c) => isOther(c.author)).map((c) => c.createdAt),
+      ...pr.latestReviews.nodes.filter((r) => isOther(r.author)).map((r) => r.submittedAt),
+    ),
+  };
+}
+
+type PrFacts = ReturnType<typeof prState>;
+
+// A PR's chips in order, as [when, chip]: the item's from my stack's bottom PR, and each sub-row's [ATT-04, UPS-07].
+type ChipFacts = { pr: PullRequestNode; s: PrFacts; base: string; now: Date; section?: SectionId; rulesBlocked?: boolean; own?: boolean };
+type ChipRule = [when: (c: ChipFacts) => boolean, chip: Chip | ((c: ChipFacts) => Chip)];
+const CI_FAILING: ChipRule = [({ s }) => s.ciFailing, chip("CI failing", "bad")];
+const CONFLICTS: ChipRule = [({ s }) => s.conflicts, chip("conflicts", "bad")];
+const BEHIND: ChipRule = [({ s }) => s.behindBy > 0, ({ s, base }) => behindChip(s.behindBy, base)];
+const PR_CHIPS: ChipRule[] = [
+  [({ pr, s }) => pr.isDraft && s.stale, ({ pr, now }) => chip(`untouched ${ago(pr.updatedAt, now)}`, "warn")],
+  [({ pr, s }) => s.approved && !pr.isDraft, chip("approved", "good")],
+  [({ rulesBlocked }) => !!rulesBlocked, chip("blocked by repo rules", "warn")],
+  [({ s }) => s.autoMerge, chip("auto-merge on", "good")],
+  [({ pr }) => pr.reviewDecision === "CHANGES_REQUESTED", chip("changes requested", "warn")],
+  [({ s }) => s.threadsOnMe > 0, ({ s }) => chip(`${s.threadsOnMe} unresolved`, "warn")],
+  // One CI chip at most: failing, running, optional checks failing, or passed once ready on the current base [PRS-14].
+  CI_FAILING,
+  [({ s }) => s.ciPending, chip("CI running", "warn")],
+  [({ s }) => s.optionalFailing && !s.ciPending, chip("optional checks failing", "warn")],
+  [({ s, section }) => section === "ready" && s.behindBy === 0 && !s.ciFailing && !s.ciPending && !s.optionalFailing, ({ s }) => chip(s.optionalPending ? "required checks passed" : "CI passed", "good")],
+  CONFLICTS,
+  BEHIND,
+];
+const SUB_CHIPS: ChipRule[] = [
+  [({ s }) => s.approved, chip("approved", "good")],
+  // Only mine are mine to ask someone on [PRS-12].
+  [({ pr, s, own }) => !!own && !pr.isDraft && !s.asked, chip("no reviewer", "warn")],
+  CI_FAILING,
+  CONFLICTS,
+  BEHIND,
+];
+const chipsFor = (rules: ChipRule[], facts: ChipFacts) => rules.filter(([when]) => when(facts)).map(([, made]) => (typeof made === "function" ? made(facts) : made));
+
 export function classify({ data, details, config, now }: ClassifyInput): Attention {
   const me = data.viewer.login.toLowerCase();
   const isMe = (actor: { login: string } | null | undefined) => actor?.login.toLowerCase() === me;
@@ -97,74 +214,11 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   const requests = compact(data.reviews.nodes).filter((pr) => !ownKeys.has(prKey(pr)));
   const isOwn = (pr: PullRequestNode) => ownKeys.has(prKey(pr));
 
-  // Stacks, followed through base/head branch names, among my PRs and those asking for my review, whoever opened them [ATT-04].
-  // A fork's branch isn't the repo's, so a PR from a fork is never a parent.
   const prs = [...mine, ...requests];
-  const byHead = new Map(prs.filter((pr) => !pr.isCrossRepository).map((pr) => [`${pr.repository.nameWithOwner}\0${pr.headRefName}`, pr]));
-  const parentOf = (pr: PullRequestNode) => {
-    const parent = byHead.get(`${pr.repository.nameWithOwner}\0${pr.baseRefName}`);
-    return parent === pr ? undefined : parent;
-  };
-  const stacks: PullRequestNode[][] = [];
-  const seen = new Set<PullRequestNode>();
-  const walk = (pr: PullRequestNode, stack: PullRequestNode[]) => {
-    if (seen.has(pr)) return;
-    seen.add(pr);
-    stack.push(pr);
-    for (const child of prs.filter((candidate) => parentOf(candidate) === pr)) walk(child, stack);
-  };
-  const byNumber = [...prs].sort((a, b) => a.number - b.number);
-  for (const pr of byNumber) if (!parentOf(pr)) stacks.push([]), walk(pr, stacks[stacks.length - 1]);
-  for (const pr of byNumber) if (!seen.has(pr)) stacks.push([pr]); // cycles, in theory
+  const { stacks, parentOf } = buildStacks(prs);
 
-  const state = (pr: PullRequestNode) => {
-    const commit = pr.commits.nodes[0]?.commit;
-    const ci = commit?.statusCheckRollup?.state;
-    const anyFailing = ci === "FAILURE" || ci === "ERROR";
-    const anyPending = ci === "PENDING" || ci === "EXPECTED";
-    // Asked a few PRs at a time where we could; search's answer is BLOCKED for all once there are more than a few [PRS-13].
-    const mergeBlocked = (details.mergeState[prKey(pr)] ?? pr.mergeStateStatus) === "BLOCKED";
-    // Where the repo requires checks, only those count; one that hasn't reported yet shows as GitHub blocking while CI runs.
-    // Where it requires none, every check counts [PRS-14].
-    const required = details.checks[prKey(pr)];
-    const ciFailing = required?.required ? required.failing > 0 : anyFailing;
-    const ciPending = !ciFailing && (required?.required ? required.pending > 0 || (anyPending && mergeBlocked) : anyPending);
-    const unresolved = pr.reviewThreads.nodes.filter((thread) => !thread.isResolved);
-    const last = (thread: (typeof unresolved)[number]) => thread.comments.nodes.at(-1);
-    const onMe = unresolved.filter((thread) => !isMe(last(thread)?.author));
-    const lastCommitAt = commit?.committedDate ?? pr.createdAt;
-    const changesRequestedAt = latest(...pr.latestReviews.nodes.filter((r) => r.state === "CHANGES_REQUESTED").map((r) => r.submittedAt));
-    const behindBy = details.behind[prKey(pr)] ?? 0;
-    return {
-      ciFailing,
-      ciPending,
-      optionalFailing: !ciFailing && anyFailing,
-      optionalPending: !ciFailing && !ciPending && anyPending,
-      conflicts: pr.mergeable === "CONFLICTING",
-      mergeBlocked,
-      approved: pr.reviewDecision === "APPROVED",
-      // Only what GitHub records as owed: a pending request, even one whose reviewer I can't see, or a decision. Who has
-      // reviewed doesn't count; GitHub drops a reviewer's request once they review, so a comment leaves the next move to
-      // me. The repo decides what counts as a review, not us [PRS-12].
-      asked: pr.reviewRequests.nodes.length > 0 || pr.reviewDecision === "APPROVED" || pr.reviewDecision === "CHANGES_REQUESTED",
-      autoMerge: !!pr.autoMergeRequest,
-      threadsOnMe: onMe.length,
-      botThreadsOnly: onMe.length > 0 && onMe.every((thread) => (thread.opener?.nodes[0] ?? last(thread))?.author?.__typename === "Bot"),
-      // Requested changes stay mine until I push after them.
-      changes: onMe.length > 0 || (pr.reviewDecision === "CHANGES_REQUESTED" && !(lastCommitAt > changesRequestedAt)),
-      repliedAt: latest(...unresolved.filter((thread) => isMe(last(thread)?.author)).map((thread) => last(thread)?.createdAt)),
-      lastCommitAt,
-      behindBy,
-      // A stacked PR no longer builds on its parent's latest version [UPS-02].
-      outOfSync: !!parentOf(pr) && behindBy > 0,
-      stale: daysSince(pr.updatedAt, now) >= config.staleDraftDays,
-      othersActivityAt: latest(
-        ...pr.comments.nodes.filter((c) => isOther(c.author)).map((c) => c.createdAt),
-        ...pr.reviewThreads.nodes.flatMap((t) => t.comments.nodes).filter((c) => isOther(c.author)).map((c) => c.createdAt),
-        ...pr.latestReviews.nodes.filter((r) => isOther(r.author)).map((r) => r.submittedAt),
-      ),
-    };
-  };
+  const states = new Map(prs.map((pr) => [pr, prState(pr, { details, config, now, isMe, isOther, parentOf })]));
+  const state = (pr: PullRequestNode) => states.get(pr)!;
 
   const items: Item[] = [];
   const listed = new Set<string>();
@@ -226,19 +280,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
           ? undefined
           : "review";
 
-    const chips: Chip[] = [];
-    if (bottom.isDraft && s.stale) chips.push(chip(`untouched ${ago(bottom.updatedAt, now)}`, "warn"));
-    if (s.approved && !bottom.isDraft) chips.push(chip("approved", "good"));
-    if (rulesBlocked) chips.push(chip("blocked by repo rules", "warn"));
-    if (s.autoMerge) chips.push(chip("auto-merge on", "good"));
-    if (bottom.reviewDecision === "CHANGES_REQUESTED") chips.push(chip("changes requested", "warn"));
-    if (s.threadsOnMe > 0) chips.push(chip(`${s.threadsOnMe} unresolved`, "warn"));
-    if (s.ciFailing) chips.push(chip("CI failing", "bad"));
-    else if (s.ciPending) chips.push(chip("CI running", "warn"));
-    else if (s.optionalFailing) chips.push(chip("optional checks failing", "warn"));
-    else if (section === "ready" && s.behindBy === 0) chips.push(chip(s.optionalPending ? "required checks passed" : "CI passed", "good"));
-    if (s.conflicts) chips.push(chip("conflicts", "bad"));
-    if (s.behindBy > 0) chips.push(behindChip(s.behindBy, base));
+    const chips = chipsFor(PR_CHIPS, { pr: bottom, s, base, now, section, rulesBlocked });
 
     return {
       section,
@@ -292,14 +334,8 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
   const subRow = (pr: PullRequestNode, index: number, stack: PullRequestNode[]): SubRow => {
     const s = state(pr);
     const parent = parentOf(pr);
-    const chips: Chip[] = [];
-    if (stack.length > 1) chips.push(chip(`${index + 1}/${stack.length}`));
-    if (s.approved) chips.push(chip("approved", "good"));
-    // Only mine are mine to ask someone on [PRS-12].
-    if (isOwn(pr) && !pr.isDraft && !s.asked) chips.push(chip("no reviewer", "warn"));
-    if (s.ciFailing) chips.push(chip("CI failing", "bad"));
-    if (s.conflicts) chips.push(chip("conflicts", "bad"));
-    if (s.behindBy > 0) chips.push(behindChip(s.behindBy, parent ? `#${parent.number}` : pr.baseRefName));
+    const facts = { pr, s, base: parent ? `#${parent.number}` : pr.baseRefName, now, own: isOwn(pr) };
+    const chips = [...(stack.length > 1 ? [chip(`${index + 1}/${stack.length}`)] : []), ...chipsFor(SUB_CHIPS, facts)];
     return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, chips, attention: s.outOfSync || s.conflicts || s.ciFailing };
   };
 
@@ -368,24 +404,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const waiting = mentions.get(key);
     if (!waiting || listed.has(key)) continue;
     listed.add(key);
-    const kind = node.__typename === "PullRequest" ? "pr" : "issue";
-    const repo = node.repository.nameWithOwner;
-    items.push({
-      key,
-      section: "reply",
-      kind,
-      draft: false,
-      repo,
-      number: node.number,
-      title: node.title,
-      url: node.url,
-      chips: [],
-      person: waiting,
-      actions: replyActions(waiting),
-      children: [],
-      target: { kind, repo, number: node.number, title: node.title, url: node.url },
-      othersActivityAt: waiting.since,
-    });
+    items.push({ ...plain(node, node.__typename === "PullRequest" ? "pr" : "issue", "reply"), person: waiting, actions: replyActions(waiting), othersActivityAt: waiting.since });
   }
 
   // Issues and others' PRs I'm in: answered, or waiting on others, too long after waitingTooLongDays [WAI-01, ATT-11, ATT-16].
@@ -433,6 +452,11 @@ export function classifyHistory(data: HistoryResult): Item[] {
     const work = workKind({ type: node.issueType?.name, labels: node.labels?.nodes.map((label) => label.name), title: node.title });
     return work ? { ...item, work, chips: [workChip(work), ...item.chips] } : item;
   };
+  // Who merged a PR, when it wasn't me, alone or under its issue [HIS-05].
+  const mergedBy = (pr: { mergedBy?: { login: string } | null }) => {
+    const by = pr.mergedBy?.login;
+    return by && me && by.toLowerCase() !== me ? { mergedBy: by } : {};
+  };
   for (const issue of compact(data.closed.nodes)) {
     const notPlanned = issue.stateReason === "NOT_PLANNED";
     // Who closed it, when it wasn't me [HIS-07].
@@ -447,22 +471,15 @@ export function classifyHistory(data: HistoryResult): Item[] {
     // Each merged PR on its own: its branches are gone, so it can't be put back in its stack [ATT-03].
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
     const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
-    // Who merged it, when it wasn't me, alone or under its issue [HIS-05].
-    const by = pr.mergedBy?.login;
-    const mergedBy = by && me && by.toLowerCase() !== me ? { mergedBy: by } : {};
-    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy });
-    else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt, ...mergedBy }, pr));
+    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy(pr) });
+    else items.push(kinded({ ...plain(pr, "pr", "done"), closedAt: pr.mergedAt, ...mergedBy(pr) }, pr));
   }
   for (const pr of compact(data.reviewed.nodes)) {
-    const by = pr.mergedBy?.login;
-    const mergedBy = by && me && by.toLowerCase() !== me ? { mergedBy: by } : {};
-    items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt), ...mergedBy }, pr));
+    items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt), ...mergedBy(pr) }, pr));
   }
   return items.sort(order);
 }
 
-// Whether my last comment on an issue is the last one from a person, and if not, the answers since that I haven't 👍'd.
-// Bots don't count [MEN-05]. Only the last comments are fetched: once mine is out of them the conversation has moved on.
 // Whether my last comment on a thread is the last one from a person, and if not, the recent comments since that I haven't 👍'd.
 // On a thread I opened, my opening counts as my last word until I comment. Bots don't count [MEN-05]. Only the last comments
 // are fetched: on someone else's thread, once mine is out of them the conversation has moved on.
@@ -519,7 +536,7 @@ function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
   const tagged: WaitingOn[] = [];
   for (const comment of run) {
     for (const { login, team } of taggedIn(comment.bodyHTML)) {
-      const seen = (other: { login: string }) => other.login.toLowerCase() === login.toLowerCase();
+      const seen = (other: { login: string }) => sameName(other.login, login);
       if (login.toLowerCase() === me || tagged.some(seen)) continue;
       tagged.push({ login, team, avatarUrl: team ? undefined : `${origin}/${login}.png?size=64`, since: comment.createdAt });
     }
@@ -531,7 +548,7 @@ function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
 function reviewers(actors: (Actor | null | undefined)[], since: string): WaitingOn[] {
   const list: WaitingOn[] = [];
   for (const actor of actors) {
-    if (!actor || list.some((other) => other.login.toLowerCase() === actor.login.toLowerCase())) continue;
+    if (!actor || list.some((other) => sameName(other.login, actor.login))) continue;
     list.push({ login: actor.login, avatarUrl: actor.avatarUrl, team: actor.__typename === "Team", ...(actor.__typename === "Bot" ? { bot: true } : {}), since });
   }
   return list;
@@ -566,22 +583,7 @@ function recentReviewers(mine: PullRequestNode[], isOther: (actor: Actor | null 
 
 // An item with nothing to act on: waiting, history.
 function plain(node: { repository: { nameWithOwner: string }; number: number; title: string; url: string }, kind: "pr" | "issue", section: SectionId): Item {
-  const repo = node.repository.nameWithOwner;
-  return {
-    key: prKey(node),
-    section,
-    kind,
-    draft: false,
-    repo,
-    number: node.number,
-    title: node.title,
-    url: node.url,
-    chips: [],
-    actions: [],
-    children: [],
-    target: { kind, repo, number: node.number, title: node.title, url: node.url },
-    othersActivityAt: EPOCH,
-  };
+  return baseItem({ key: prKey(node), section, kind, repo: node.repository.nameWithOwner, number: node.number, title: node.title, url: node.url });
 }
 
 export function mergeMethodFor(pr: PullRequestNode, config: AttentionConfig): MergeMethod {
@@ -593,11 +595,11 @@ export function mergeMethodFor(pr: PullRequestNode, config: AttentionConfig): Me
 
 function rankIssues(nodes: PickableNode[], details: Details, config: AttentionConfig): NextUpIssue[] {
   const [priority, effort, scope] = FIELD_ROLES.map((role) => nextUpField(config, role));
-  const valueOf = (node: PickableNode, field: string | undefined) => node.issueFieldValues.nodes.find((value) => sameField(value.field?.name, field))?.name;
+  const valueOf = (node: PickableNode, field: string | undefined) => node.issueFieldValues.nodes.find((value) => sameName(value.field?.name, field))?.name;
   // A field of the issue's own org: its options' order, or the colors it gave them. Two orgs may both have a Priority field,
   // ordered and colored differently [NXT-02, NXT-10].
   const ofOrg = <T,>(byOrg: Record<string, Record<string, T>> | undefined, node: PickableNode, field: string) =>
-    Object.entries(byOrg?.[node.repository.nameWithOwner.split("/")[0].toLowerCase()] ?? {}).find(([name]) => sameField(name, field))?.[1];
+    Object.entries(byOrg?.[node.repository.nameWithOwner.split("/")[0].toLowerCase()] ?? {}).find(([name]) => sameName(name, field))?.[1];
   // Position in the configured order (matched by name), else in the issue's org's own options; missing goes last.
   const position = (node: PickableNode, ranked: { field: string; order?: string[] } | undefined) => {
     const value = valueOf(node, ranked?.field);

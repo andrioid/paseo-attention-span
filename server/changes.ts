@@ -1,7 +1,8 @@
 import { isFinishedChange, isHandover, type OthersChange } from "../shared/changes";
-import type { Item } from "../shared/attention";
+import { baseItem, type Item, type SectionId } from "../shared/attention";
 import type { AssignmentEvent, AssignmentSubject, ClosedIssue, EndedPullRequest, LiveResult, ReopenSubject } from "./github-types";
 import { prKey } from "./queries";
+import { keySet, sameName } from "../shared/names";
 
 // Changed by others: what someone else did to my work, kept between refreshes so a note stays until Got it or an archive
 // acknowledges it, and so History can list work that left my hands [HIS-06, HIS-07, ATT-22]. Pure, so every rule is
@@ -38,13 +39,12 @@ export type Lookups = Map<string, AssignmentSubject | null>;
 // Reopen lookups: the PR as it is now, null when it's gone or hidden, missing when the lookup failed.
 export type ReopenLookups = Map<string, ReopenSubject | null>;
 
-const same = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const present = <T>(nodes: (T | null | undefined)[]) => nodes.filter((node): node is T => !!node && Object.keys(node).length > 0);
 const logins = (subject: { assignees: { nodes: { login: string }[] } }) => subject.assignees.nodes.map((node) => node.login);
 // Assigned to someone, and not to me: out of my hands [PRS-08]. A PR of mine with nobody assigned is still mine.
 const handedOver = (subject: { assignees: { nodes: { login: string }[] } }, me: string) => {
   const assignees = logins(subject);
-  return assignees.length > 0 && !assignees.some((login) => same(login, me));
+  return assignees.length > 0 && !assignees.some((login) => sameName(login, me));
 };
 const signature = (subject: { assignees: { nodes: { login: string }[] } }) =>
   logins(subject)
@@ -88,72 +88,60 @@ const isAssignment = (node: AssignmentEvent | Record<string, never>): node is As
 // The new owner is the latest of the current assignees to be assigned. It left my hands with whichever came last of my
 // removal and the new owner's assignment, and whoever did that is named: "phil took over" when that's the new owner, else
 // "dave handed it to carol". So a PR I unassigned myself from is still mine until someone else takes it.
-export function handover(subject: AssignmentSubject, me: string): OthersChange | null {
+function handover(subject: AssignmentSubject, me: string): OthersChange | null {
   const assignees = logins(subject);
-  if (assignees.some((login) => same(login, me))) return null;
+  if (assignees.some((login) => sameName(login, me))) return null;
   if (subject.__typename === "Issue" && subject.state !== "OPEN") return null;
   const events = present(subject.timelineItems.nodes)
     .filter(isAssignment)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const removal = events.findLast((event) => event.__typename === "UnassignedEvent" && same(event.assignee?.login, me));
-  const given = events.findLast((event) => event.__typename === "AssignedEvent" && assignees.some((login) => same(login, event.assignee?.login)));
+  const removal = events.findLast((event) => event.__typename === "UnassignedEvent" && sameName(event.assignee?.login, me));
+  const given = events.findLast((event) => event.__typename === "AssignedEvent" && assignees.some((login) => sameName(login, event.assignee?.login)));
   const to = given?.assignee?.login ?? assignees[0];
   // A PR of mine with nobody on it is mine; an issue needs proof I was taken off it.
   if (subject.__typename === "PullRequest" ? !to : !removal) return null;
   const by = removal && given && to ? (given.createdAt > removal.createdAt ? given : removal) : (removal ?? given);
-  if (!by || same(by.actor?.login, me)) return null;
+  if (!by || sameName(by.actor?.login, me)) return null;
   const actor = by.actor?.login;
-  const kind = !to ? "unassigned" : same(actor, to) ? "took_over" : "handed";
+  const kind = !to ? "unassigned" : sameName(actor, to) ? "took_over" : "handed";
   return change(subject, subject.__typename === "PullRequest" ? "pr" : "issue", kind, by.createdAt, actor, to);
 }
 
 // A PR of mine someone else merged or closed unmerged [HIS-07]. Whether it left my hands before it ended is up to nextLedger,
 // which knows when that happened.
-export function ended(pr: EndedPullRequest, me: string): OthersChange | null {
-  if (pr.merged) return same(pr.mergedBy?.login, me) || !pr.mergedAt ? null : change(pr, "pr", "merged", pr.mergedAt, pr.mergedBy?.login);
+function ended(pr: EndedPullRequest, me: string): OthersChange | null {
+  if (pr.merged) return sameName(pr.mergedBy?.login, me) || !pr.mergedAt ? null : change(pr, "pr", "merged", pr.mergedAt, pr.mergedBy?.login);
   const closer = pr.timelineItems.nodes.at(-1)?.actor?.login;
-  return same(closer, me) ? null : change(pr, "pr", "closed", pr.closedAt, closer);
+  return sameName(closer, me) ? null : change(pr, "pr", "closed", pr.closedAt, closer);
 }
 
 // My PRs I closed without merging, from the closed search: finished work whose sessions Wrap up puts away, though no note
 // and no week lists them [ATT-22].
 export function ownClosed(data: Pick<LiveResult, "ended">, me: string): Item[] {
   return present(data.ended.nodes)
-    .filter((pr) => !pr.merged && same(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
+    .filter((pr) => !pr.merged && sameName(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
     .map((pr) => ({
-      key: prKey(pr),
-      kind: "pr" as const,
-      section: "done" as const,
-      draft: false,
-      repo: pr.repository.nameWithOwner,
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      chips: [],
-      actions: [],
-      children: [],
-      target: { kind: "pr" as const, repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url },
-      othersActivityAt: pr.closedAt,
+      ...baseItem({ key: prKey(pr), section: "done", kind: "pr", repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url }, pr.closedAt),
       closedAt: pr.closedAt,
       closedUnmerged: true as const,
     }));
 }
 
 // An issue assigned to me someone else closed, as completed or not planned [HIS-07]. My own closes are mine.
-export function closedByOther(issue: ClosedIssue, me: string): OthersChange | null {
+function closedByOther(issue: ClosedIssue, me: string): OthersChange | null {
   const closer = issue.timelineItems.nodes.at(-1)?.actor?.login;
-  if (same(closer, me)) return null;
+  if (sameName(closer, me)) return null;
   const reason = issue.stateReason === "NOT_PLANNED" ? "not_planned" : issue.stateReason === "COMPLETED" ? "completed" : undefined;
   return { ...change(issue, "issue", "issue_closed", issue.closedAt, closer), ...(reason ? { reason } : {}) };
 }
 
 // A PR Attention Span saw closed, now open again by someone else [HIS-07]. Only PRs already tracked count, so a first run
 // doesn't announce every old reopen, and issues don't come here: they surface in Next up.
-export function reopened(tracked: TrackedPr, subject: ReopenSubject, me: string): OthersChange | null {
+function reopened(tracked: TrackedPr, subject: ReopenSubject, me: string): OthersChange | null {
   if (subject.state !== "OPEN") return null;
   const event = subject.timelineItems.nodes.at(-1);
   const actor = event?.actor?.login;
-  if (!actor || same(actor, me)) return null;
+  if (!actor || sameName(actor, me)) return null;
   return {
     id: `reopened:${subject.id}:${event?.createdAt ?? tracked.closedAt}`,
     kind: "reopened",
@@ -289,7 +277,7 @@ export function nextLedger(
 // An archive acknowledges exactly the events on its work at that moment, keyed by "owner/name#number" [ATT-22].
 // `upTo` keeps what others did after then unread: a session archived in Paseo acknowledges only what came before it.
 export function acknowledge(ledger: ChangeLedger, keys: string[], upTo?: string): ChangeLedger {
-  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  const wanted = keySet(keys);
   const before = (at: string) => !upTo || Date.parse(at) <= Date.parse(upTo);
   const ids = ledger.events.filter((event) => wanted.has(event.key.toLowerCase()) && before(event.at)).map((event) => event.id);
   return { ...ledger, gotIt: [...new Set([...ledger.gotIt, ...ids])] };
@@ -308,36 +296,24 @@ export function withGotIt(next: ChangeLedger, gotIt: string[]): ChangeLedger {
 export function changeItems(ledger: ChangeLedger, now: Date, windowDays: number, historySince: string): { notes: Item[]; history: Item[]; finished: Item[] } {
   const since = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
   const gotIt = new Set(ledger.gotIt);
-  const base = (change: OthersChange): Omit<Item, "key" | "section"> => ({
-    kind: change.subject,
-    draft: false,
-    repo: change.repo,
-    number: change.number,
-    title: change.title,
-    url: change.url,
-    chips: [],
-    actions: [],
-    children: [],
-    target: { kind: change.subject, repo: change.repo, number: change.number, title: change.title, url: change.url },
-    othersActivityAt: change.at,
+  const base = (change: OthersChange, key: string, section: SectionId): Item => ({
+    ...baseItem({ key, section, kind: change.subject, repo: change.repo, number: change.number, title: change.title, url: change.url }, change.at),
     closedAt: change.at,
     change,
   });
   const notes = ledger.events
     .filter((change) => !gotIt.has(change.id) && change.at >= since)
-    .map((change): Item => ({ ...base(change), key: `change:${change.id}`, section: "changed", actions: ["got_it"] }));
+    .map((change): Item => ({ ...base(change, `change:${change.id}`, "changed"), actions: ["got_it"] }));
   const history = ledger.events
     // A merge or an issue close is the week's Finished, not a change repeated under it [HIS-07].
     .filter((change) => gotIt.has(change.id) && !isFinishedChange(change) && change.at >= historySince)
-    .map((change): Item => ({ ...base(change), key: `handed:${change.id}`, section: "handed_off", actions: [] }));
+    .map((change) => base(change, `handed:${change.id}`, "handed_off"));
   // A merge or close someone else did is finished work at once, not only when History's daily fetch catches up [HIS-07].
   const finished = ledger.events
     .filter((change) => isFinishedChange(change) && change.at >= historySince)
     .map(
       (change): Item => ({
-        ...base(change),
-        key: change.key,
-        section: "done",
+        ...base(change, change.key, "done"),
         // The week's cards say it in the finished wording, not the note's: "merged 2h ago by dave" [HIS-05, HIS-07].
         change: undefined,
         ...(change.kind === "merged" && change.actor ? { mergedBy: change.actor } : {}),

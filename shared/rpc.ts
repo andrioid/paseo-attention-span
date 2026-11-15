@@ -1,9 +1,9 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import type { AttentionView, ItemDetails, ProjectsAccess, ReviewerChoices, Target } from "./attention";
-import type { ArchiveOutcome } from "./archive";
+import { type AttentionView, FeedId, HistoryFilter, IssueCloseReason, type ItemDetails, type ProjectsAccess, type ReviewerChoices, type Target } from "./attention";
+import { type ArchiveOutcome, ArchiveTarget } from "./archive";
 import { SessionKind } from "./config";
-import type { ConfigStatus, CoverageCheck, IssueField, SetupStatus } from "./setup";
+import { type ConfigStatus, type CoverageCheck, CoverageKind, type IssueField, type SetupStatus } from "./setup";
 import type { FeedbackInfo } from "./feedback";
 import type { ReadyProvider } from "./providers";
 import type { UpdateNotice } from "./update";
@@ -14,11 +14,12 @@ const target = z.custom<Target>();
 const done = z.object({ ok: z.literal(true) });
 
 // The cached view. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳);
-// `cached` skips GitHub altogether, for a view that only needs what the server already knows.
+// `cached` skips GitHub altogether, for a view that only needs what the server already knows. `timeZone` is the device's
+// IANA zone, which History's weeks follow [HIS-01].
 export const getAttention = defineRpc({
   name: "attention.get",
   input: z
-    .object({ refresh: z.enum(["live", "history"]).optional(), cached: z.boolean().optional() })
+    .object({ refresh: FeedId.optional(), cached: z.boolean().optional(), timeZone: z.string().optional() })
     .refine((input) => !(input.refresh && input.cached), "refresh and cached don't go together"),
   output: view,
 });
@@ -28,12 +29,12 @@ export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.o
 // Clears Changed by others notes, one or all of them; `on: false` brings them back for Undo. Nothing changes on GitHub [HIS-07].
 export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ ids: z.array(z.string()), on: z.boolean() }), output: view });
 // Reviewed and Changed by others in History's weeks; remembered in state.json [HIS-07].
-export const setHistoryFilter = defineRpc({ name: "history.filter", input: z.object({ filter: z.array(z.enum(["reviewed", "changed"])) }), output: view });
+export const setHistoryFilter = defineRpc({ name: "history.filter", input: z.object({ filter: z.array(HistoryFilter) }), output: view });
 // Archives a Wrap up row's sessions, acknowledging what others did to the work [ATT-22]. `confirm` is the unsaved-work sheet.
 export const archiveSessions = defineRpc({
   name: "attention.archive",
   input: z.object({
-    targets: z.array(z.object({ itemKey: z.string(), agentIds: z.array(z.string()), keys: z.array(z.string()) })),
+    targets: z.array(ArchiveTarget),
     confirm: z.boolean(),
   }),
   output: z.custom<ArchiveOutcome>(),
@@ -45,7 +46,7 @@ export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.ob
 export const setupStatus = defineRpc({ name: "setup.status", input: z.object({}), output: z.custom<SetupStatus>() });
 // The settings screen: the orgs and repos in config.json, each checked on GitHub as it's added [SRC-02].
 export const getCoverage = defineRpc({ name: "config.coverage", input: z.object({}), output: z.custom<ConfigStatus>() });
-export const checkCoverage = defineRpc({ name: "config.check-coverage", input: z.object({ kind: z.enum(["org", "repo"]), name: z.string() }), output: z.custom<CoverageCheck>() });
+export const checkCoverage = defineRpc({ name: "config.check-coverage", input: z.object({ kind: CoverageKind, name: z.string() }), output: z.custom<CoverageCheck>() });
 export const setCoverage = defineRpc({ name: "config.set-coverage", input: z.object({ orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
 // Where Next up looks, chosen in settings [NXT-04]; orgs are picked from the ones I belong to.
 export const setNextUpSources = defineRpc({ name: "config.set-next-up", input: z.object({ mine: z.boolean(), orgs: z.array(z.string()), repos: z.array(z.string()) }), output: done });
@@ -73,7 +74,7 @@ export const closePullRequest = defineRpc({ name: "pr.close", input: z.object({ 
 export const claimIssue = defineRpc({ name: "issue.claim", input: z.object({ key: z.string(), target }), output: view });
 export const unclaimIssue = defineRpc({ name: "issue.unclaim", input: z.object({ key: z.string(), target }), output: view });
 // Close an issue from Next up; reopen is its Undo [NXT-11].
-export const closeIssue = defineRpc({ name: "issue.close", input: z.object({ key: z.string(), target, reason: z.enum(["completed", "not_planned"]), comment: z.string().optional() }), output: view });
+export const closeIssue = defineRpc({ name: "issue.close", input: z.object({ key: z.string(), target, reason: IssueCloseReason, comment: z.string().optional() }), output: view });
 export const reopenIssue = defineRpc({ name: "issue.reopen", input: z.object({ key: z.string(), target }), output: view });
 // `ready: false` and `on: false` are the Undo of each.
 export const setReady = defineRpc({ name: "pr.ready", input: z.object({ key: z.string(), target, ready: z.boolean() }), output: view });
