@@ -1,12 +1,14 @@
-import { type Attention, type AttentionView, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
+import { type Attention, type AttentionView, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer, type Target } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole } from "../shared/config";
 import { newIssueRepos } from "../shared/new-issue";
 import type { IssueField } from "../shared/setup";
 import type { ArchiveOutcome, ArchiveTarget, KeptRow, KeptWorktree } from "../shared/archive";
 import { rememberGroups } from "../shared/wrap-up";
+import { renderFollowUp } from "../shared/prompts";
 import { acknowledge, ownClosed } from "./changes";
 import { classify, classifyHistory } from "./classify";
+import { type FollowUpOutcome, followUpMark } from "./review-again";
 import { probeAnswer, projectsFailure, projectsWarning } from "./projects";
 import type { Port } from "./port";
 import { isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
@@ -174,6 +176,20 @@ export class AttentionService {
     if (row) this.remember(answer.kept, () => row);
     await this.save();
     return { ...answer, view: this.view() };
+  }
+
+  // Review again on an open Review session: sends it the follow-up once per re-request, unless it's busy; the next press
+  // after a busy one tries again [REV-02]. Marks for items no longer listed go.
+  async reviewAgain(paseo: PluginHandlerContext["paseo"], key: string, agentId: string, target: Target, context: (target: Target) => Promise<string>): Promise<FollowUpOutcome> {
+    const mark = followUpMark(target);
+    if (!mark) return "none";
+    if (this.state.followUps[key] === mark) return "already";
+    const outcome = await this.port.paseo.followUp(paseo, agentId, async () => renderFollowUp(target, await context(target)));
+    if (outcome !== "sent") return outcome;
+    const listed = new Set(this.items().map((item) => item.key));
+    this.state.followUps = { ...Object.fromEntries(Object.entries(this.state.followUps).filter(([other]) => listed.has(other))), [key]: mark };
+    await this.save();
+    return outcome;
   }
 
   // Dismiss on a kept row: the worktree stays, and so does Paseo's sidebar entry; Wrap up stops showing it [ATT-22].

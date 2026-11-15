@@ -324,6 +324,51 @@ describe("stacks whoever opened them", () => {
   });
 });
 
+describe("review asked for again", () => {
+  const mine = (state: string, days: number, oid = "reviewed") => ({ author: me, state, submittedAt: daysAgo(days), commit: { oid } });
+
+  it("REV-02: a request after my review is marked review again, with the commit I reviewed and the head now", () => {
+    const [item] = run({ reviews: [pr(1, { author: alice, latestReviews: { nodes: [mine("CHANGES_REQUESTED", 2)] } })] }).items;
+    expect(item).toMatchObject({ section: "review", actions: ["review"] });
+    expect(chips(item)).toEqual(["review again"]);
+    expect(item.target.stack).toEqual([{ number: 1, head: "branch-1", base: "main", review: true, reviewed: { at: daysAgo(2), oid: "reviewed", head: "oid1" } }]);
+  });
+
+  it("REV-02: any review of mine counts, a comment or a dismissed one too", () => {
+    for (const state of ["COMMENTED", "APPROVED", "DISMISSED"]) {
+      expect(chips(run({ reviews: [pr(1, { author: alice, latestReviews: { nodes: [mine(state, 1)] } })] }).items[0])).toEqual(["review again"]);
+    }
+  });
+
+  it("REV-01, REV-02: a first request, or one where only others reviewed, is a plain review", () => {
+    const others = { nodes: [{ author: bob, state: "APPROVED", submittedAt: daysAgo(1), commit: { oid: "x" } }] };
+    for (const first of [pr(1, { author: alice }), pr(1, { author: alice, latestReviews: others })]) {
+      const [item] = run({ reviews: [first] }).items;
+      expect(chips(item)).toEqual([]);
+      expect(item.target.stack?.[0].reviewed).toBeUndefined();
+    }
+  });
+
+  it("REV-02: a review GitHub kept no commit for still counts, without one", () => {
+    const [item] = run({ reviews: [pr(1, { author: alice, latestReviews: { nodes: [{ ...mine("COMMENTED", 1), commit: null }] } })] }).items;
+    expect(item.target.stack?.[0].reviewed).toEqual({ at: daysAgo(1), head: "oid1" });
+  });
+
+  it("REV-02, ATT-04: in a stack, only the PRs I reviewed before carry it; the stack is marked once", () => {
+    const hers = pr(20, { author: alice, headRefName: "x", latestReviews: { nodes: [mine("COMMENTED", 3, "old20")] } });
+    const hersTop = pr(21, { author: alice, baseRefName: "x", headRefName: "y" });
+    const [item] = run({ reviews: [hers, hersTop] }).items;
+    expect(chips(item)).toEqual(["review again", "stack of 2"]);
+    expect(item.target.stack?.map((p) => [p.number, p.reviewed?.oid])).toEqual([[20, "old20"], [21, undefined]]);
+  });
+
+  it("REV-02: my own PRs aren't reviews, whoever reviewed them", () => {
+    const [item] = run({ mine: [pr(1, { latestReviews: { nodes: [mine("COMMENTED", 1)] }, reviewRequests: asked })] }).items;
+    expect(chips(item)).not.toContain("review again");
+    expect(item.target.stack?.[0].reviewed).toBeUndefined();
+  });
+});
+
 describe("drafts", () => {
   it("PRS-05: lists my drafts after everything that isn't a draft", () => {
     expect(run({ mine: [pr(1, { isDraft: true }), pr(2, {}, "FAILURE")] }).items.map((item) => item.section)).toEqual(["ci", "drafts"]);

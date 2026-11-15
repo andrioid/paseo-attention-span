@@ -54,6 +54,8 @@ export const State = z.object({
   kept: z.array(z.custom<KeptRow>((value) => typeof (value as KeptRow)?.workspaceId === "string" && typeof (value as KeptRow)?.itemKey === "string")).default([]).catch([]),
   // The repository and agent profile the New issue sheet last started with [ISS-01].
   newIssue: z.object({ repo: z.string().nullable().default(null), profileId: z.string().nullable().default(null) }).default({ repo: null, profileId: null }).catch({ repo: null, profileId: null }),
+  // Item key -> the re-request whose follow-up an open Review session was sent, so it's sent once [REV-02].
+  followUps: z.record(z.string(), z.string()).default({}).catch({}),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].
   projectRepos: z.array(z.string()).default([]),
   // The last fetch of each feed. A cache from an older version is dropped rather than shown wrong, like one with an item in a

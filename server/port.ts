@@ -4,6 +4,7 @@ import { githubRepoOf } from "../shared/config";
 import { archiveSessions } from "./archive";
 import { type GitHub, gitHub } from "./fetch";
 import { graphql, graphqlResult } from "./gh";
+import { sendFollowUp } from "./review-again";
 import type { Store } from "./store";
 
 type Paseo = PluginHandlerContext["paseo"];
@@ -17,6 +18,8 @@ export interface Port {
     projectRepos(paseo: Paseo): Promise<string[]>;
     // Archives sessions, and `worktrees` kept before, tried again on their own [ATT-22].
     archive(paseo: Paseo, agentIds: string[], confirm: boolean, terminals: string[], worktrees: string[]): Promise<ArchiveResult>;
+    // Sends a session the text `prompt` makes, unless it's working or waiting on a permission [REV-02].
+    followUp(paseo: Paseo, agentId: string, prompt: () => Promise<string>): Promise<"sent" | "busy">;
   };
   store: Store;
   now(): number;
@@ -38,6 +41,7 @@ export function realPort(store: Store): Port {
         return [...new Set(projects.map((project) => githubRepoOf(project.projectKey)).filter((repo): repo is string => !!repo))].sort();
       },
       archive: archiveSessions,
+      followUp: sendFollowUp,
     },
     store,
     now: Date.now,

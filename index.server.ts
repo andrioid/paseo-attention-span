@@ -15,7 +15,7 @@ import {
   updateBranch,
 } from "./server/actions";
 import { ArchivedInPaseo } from "./server/archived";
-import { defaultBranch, sessionContext } from "./server/context";
+import { defaultBranch, reviewAgainContext, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { feedbackInfo } from "./server/feedback";
 import { fixtureAnswers, fixtureDismissKept, fixturePort, fixtureView } from "./server/fixture";
@@ -33,7 +33,7 @@ export default function contribute(server: PluginServerContext) {
   // Previews run on made-up data and never reach GitHub; which one is picked here, once.
   const store = createStore(DIR, OLD_DIR);
   const attention = new AttentionService(FIXTURE ? fixturePort(store, DIR) : realPort(store));
-  const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext, ghStatus, myOrgs, coverageOnGitHub };
+  const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext, reviewAgainContext, ghStatus, myOrgs, coverageOnGitHub };
   const updates = new UpdateCheck(FIXTURE ? fixtureUpdates : paseoUpdates);
   // Each view the screen gets; previews add their made-up sessions [ATT-22].
   const shown: (view: AttentionView) => AttentionView = FIXTURE ? fixtureView : (view) => view;
@@ -125,6 +125,9 @@ export default function contribute(server: PluginServerContext) {
   // The server's Paseo connection expands the snapshot; the app's may not (getpaseo compact snapshots) [SES-06].
   server.handle(rpc.readyProviders, async (_input, { paseo }) => ({ providers: readyProviders((await paseo.providers.snapshot()).entries) }));
   server.handle(rpc.sessionContext, async ({ kind, target }) => ({ context: await answers.sessionContext(kind, target) }));
+  server.handle(rpc.reviewAgain, ({ key, agentId, target }, { paseo }) =>
+    ready(() => attention.reviewAgain(paseo, key, agentId, target, answers.reviewAgainContext)).then((outcome) => ({ outcome })),
+  );
 
   return () => attention.stop();
 }

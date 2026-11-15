@@ -113,6 +113,13 @@ export const sessionContext = defineRpc({
   output: z.object({ context: z.string() }),
 });
 
+// Review again on an open Review session: sends it the follow-up, once per re-request, unless it's busy [REV-02].
+export const reviewAgain = defineRpc({
+  name: "session.review-again",
+  input: z.object({ key: z.string(), agentId: z.string(), target }),
+  output: z.object({ outcome: z.enum(["sent", "busy", "already", "none"]) }),
+});
+
 // Where a feedback session runs and the version it reports [FB-01].
 export const feedbackInfo = defineRpc({ name: "feedback.info", input: z.object({}), output: z.custom<FeedbackInfo>() });
 // The host's ready providers, read by the plugin's server: the app's own snapshot can arrive compact, with no entries [SES-06].

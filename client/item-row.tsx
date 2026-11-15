@@ -9,7 +9,7 @@ import type { SessionKind } from "../shared/config";
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
 import { ago } from "../shared/format";
 import { noteBusy } from "../shared/got-it";
-import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, rerunState, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, targetUrl, waitChips } from "../shared/item-view";
+import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, rerunState, reviewAgainSession, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, targetUrl, waitChips } from "../shared/item-view";
 import { CardList, CardRow } from "./card";
 import { NumberText, PlaceText } from "./entity";
 import type { IconName } from "./icons";
@@ -121,6 +121,8 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
   const styles = useStyles();
   // An open session leads; without one, the item's own action does [SES-03].
   const sessions = itemSessions(actions.agents, item);
+  // A review asked for again goes to its open Review session, with what changed [REV-02].
+  const again = reviewAgainSession(item, sessions);
   const waits = waitChips(item, !!group, actions.config.waitingTooLongDays);
   // The group names one; the card names the rest [WAI-01].
   const others = alsoWaitingOn(item, group?.who);
@@ -176,11 +178,13 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
       hover={prefetch}
       busy={item.change ? noteBusy(actions.busy, item.key) : actions.busy.has(item.key)}
       primary={
-        sessions[0]
-          ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id) }
-          : main
-            ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], iconOnly: main === "got_it", onPress: () => perform(main) }
-            : undefined
+        again
+          ? { label: actionLabel("review", item), icon: "agent", onPress: () => actions.reviewAgain(item, again.id) }
+          : sessions[0]
+            ? { label: "Open session", icon: "agent", onPress: () => actions.openAgent(sessions[0].id) }
+            : main
+              ? { label: actionLabel(main, item), icon: ACTION_ICONS[main], iconOnly: main === "got_it", onPress: () => perform(main) }
+              : undefined
       }
       secondary={[
         only ? { label: only.label, accessibilityLabel: only.accessibilityLabel, icon: only.icon, onPress: only.onPress } : { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
@@ -277,7 +281,7 @@ function sheetEntry(step: SheetStep, item: Item, actions: Actions, { onPerform, 
   const withOptions = (label: string, kind: SessionKind) => close(() => actions.startWithOptions({ itemKey: item.key, title: `${label}: ${item.title}`, kind, target: item.target }));
   switch (step.kind) {
     case "session":
-      return sessionEntry(step.agent, step.label, open);
+      return sessionEntry(step.agent, step.label, step.again ? (agentId) => close(() => actions.reviewAgain(item, agentId))() : open);
     case "ask":
       return { key: step.action, icon: "agent", label: `${step.label}…`, detail: step.detail, onPress: withOptions(step.label, step.session) };
     case "rerun":

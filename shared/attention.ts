@@ -181,6 +181,20 @@ export interface StackPr {
   base: string;
   // Someone else's, asking for my review; the rest are mine.
   review?: true;
+  // Asking for my review again after I reviewed it: when, on which commit, and its head now [REV-02].
+  reviewed?: LastReview;
+}
+
+export interface LastReview {
+  at: string;
+  // The commit my review was made on; missing when GitHub no longer has it.
+  oid?: string;
+  head: string;
+}
+
+// The PRs in a target's stack asking for my review again [REV-02].
+export function reviewAgain(target: Pick<Target, "stack">): StackPr[] {
+  return (target.stack ?? []).filter((pr) => pr.review && pr.reviewed);
 }
 
 // The PRs of mine in a target's stack: what Rebase, Refresh and Rerun act on. Others' branches are never pushed [ATT-04].

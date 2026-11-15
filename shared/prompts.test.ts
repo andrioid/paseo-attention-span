@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkoutPr } from "./attention";
 import { AttentionConfig } from "./config";
-import { renderPrompt } from "./prompts";
+import { renderFollowUp, renderPrompt } from "./prompts";
 
 const config = AttentionConfig.parse({});
 const target = { kind: "pr" as const, repo: "o/r", number: 7, title: "T", url: "https://x/7", headRefName: "feature", baseRefName: "main", stack: [{ number: 7, head: "feature", base: "main" }, { number: 8, head: "next", base: "feature" }] };
@@ -40,5 +40,40 @@ describe("prompts", () => {
   it("SES-04: a template in config.json replaces the built-in one", () => {
     const custom = AttentionConfig.parse({ prompts: { fix: "Fix {{repo}}#{{number}} on {{head}}: {{context}}" } });
     expect(renderPrompt("fix", target, "log", custom)).toBe("Fix o/r#7 on feature: log");
+  });
+
+  describe("review asked for again", () => {
+    const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old", head: "new" };
+    const again = { ...target, stack: [{ number: 7, head: "feature", base: "main", review: true as const, reviewed }] };
+
+    it("REV-02: the built-in Review focuses on what changed and asks how my earlier comments were taken up", () => {
+      const prompt = renderPrompt("review", again, "Since: git diff old..new", config);
+      expect(prompt).toContain("o/r#7");
+      expect(prompt).toContain("what changed since your last review");
+      expect(prompt).toContain("Your earlier comments, each: addressed, partly, or not");
+      expect(prompt).toContain("Since: git diff old..new");
+      expect(prompt).toContain("Do not post anything to GitHub.");
+      expect(prompt).not.toContain("{{");
+      expect(renderPrompt("review", { ...target, stack: [{ number: 7, head: "feature", base: "main", review: true }] }, "", config)).not.toContain("since your last review");
+    });
+
+    it("REV-02, SES-04: a review template in config.json still applies, and gets what changed as its context", () => {
+      const custom = AttentionConfig.parse({ prompts: { review: "Look at {{repo}}#{{number}}. {{context}}" } });
+      expect(renderPrompt("review", again, "since old", custom)).toBe("Look at o/r#7. since old");
+    });
+
+    it("REV-02, ATT-04: a stack's again names the PRs asked again, and the follow-up updates the checkout of its top first", () => {
+      const stack = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature", review: true as const, reviewed }] };
+      expect(renderPrompt("review", stack, "", config)).toContain("You reviewed some of them before");
+      const followUp = renderFollowUp(stack, "Your last review of #7: …");
+      expect(followUp).toContain("Review was asked for again on #7, #8 in o/r");
+      expect(followUp).toContain("if there are local changes, stop and ask me");
+      expect(followUp).toContain("`gh pr checkout 8 --force`");
+      expect(followUp).toContain("Report back, for each PR:");
+      expect(followUp).toContain("Your last review of #7: …");
+      expect(followUp).toContain("Do not post anything to GitHub.");
+      expect(followUp).not.toContain("{{");
+      expect(renderFollowUp(again, "")).toContain("`gh pr checkout 7 --force`");
+    });
   });
 });

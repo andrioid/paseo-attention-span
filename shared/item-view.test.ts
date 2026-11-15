@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ActionId, FailingChecks, Item, SubRow, WaitingOn } from "./attention";
-import { actionDetail, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, sessionBadge, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
+import type { ActionId, FailingChecks, Item, LastReview, SubRow, WaitingOn } from "./attention";
+import { actionDetail, actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, reviewAgainSession, sessionBadge, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
 import { AttentionConfig } from "./config";
 import { ACTION_SESSION } from "./prompts";
 import { agent, change, clock, item } from "./test-builders";
@@ -30,7 +30,7 @@ function lines(steps: SheetStep[]): string[] {
 }
 
 const row = (number: number, fields: Partial<SubRow> = {}): SubRow => ({ key: `o/r#${number}`, number, title: `PR ${number}`, url: `https://github.com/o/r/pull/${number}`, draft: false, chips: [], attention: false, ...fields });
-const stackTarget = (key: string, stack: { number: number; review?: true }[]) => {
+const stackTarget = (key: string, stack: { number: number; review?: true; reviewed?: LastReview }[]) => {
   const base = item(key, "review");
   return { ...base.target, baseRefName: "main", stack: stack.map((pr) => ({ head: `b${pr.number}`, base: "main", ...pr })) };
 };
@@ -97,6 +97,39 @@ describe("an item's sheet", () => {
     // Doing always has Dismiss too; a note has Got it.
     expect(soleStep(sheetPlan(item("o/r#5", "ci"), []))).toBeUndefined();
     expect(soleStep(sheetPlan(item("o/r#5", "changed", { actions: ["got_it"], change: change("merged", "o/r#5") }), []))).toBeUndefined();
+  });
+});
+
+describe("review asked for again", () => {
+  const reviewed = { at: daysAgo(2), oid: "old", head: "new" };
+  const again = item("o/r#1", "review", { actions: ["review"], target: stackTarget("o/r#1", [{ number: 1, review: true, reviewed }]) });
+
+  it("REV-02: its Review says so, and what the agent will look at", () => {
+    expect(actionLabel("review", again)).toBe("Review again");
+    expect(lines(sheetPlan(again, []))[0]).toBe("Review again…");
+    expect(actionDetail("review", again)).toBe("An agent reviews what changed since your last review and checks your earlier comments. Nothing is posted");
+    const stack = item("o/r#1", "review", { actions: ["review"], target: stackTarget("o/r#1", [{ number: 1, review: true, reviewed }, { number: 2, review: true }]) });
+    expect(actionLabel("review", stack)).toBe("Review stack again");
+    const first = item("o/r#1", "review", { actions: ["review"], target: stackTarget("o/r#1", [{ number: 1, review: true }]) });
+    expect(actionLabel("review", first)).toBe("Review");
+  });
+
+  it("REV-02, SES-03: an open Review session keeps its line, which sends it what changed; it goes to the one active last", () => {
+    const older = agent("a1", "o/r#1", { kind: "review", lastActivityAt: daysAgo(3) });
+    const newer = agent("a2", "o/r#1", { kind: "review", lastActivityAt: daysAgo(2) });
+    const fix = agent("a3", "o/r#1", { kind: "fix", lastActivityAt: hoursAgo(1) });
+    const steps = sheetPlan(again, [older, newer]);
+    expect(lines(steps).slice(0, 2)).toEqual(["Review again (session a1)", "Review again (session a2)"]);
+    expect(steps.filter((step) => step.kind === "session").every((step) => step.kind === "session" && step.again)).toBe(true);
+    expect(reviewAgainSession(again, [older, fix, newer])?.id).toBe("a2");
+  });
+
+  it("REV-02: a first request, or no open Review session, leaves the card as it was", () => {
+    const first = item("o/r#1", "review", { actions: ["review"], target: stackTarget("o/r#1", [{ number: 1, review: true }]) });
+    const session = agent("a1", "o/r#1", { kind: "review" });
+    expect(reviewAgainSession(first, [session])).toBeUndefined();
+    expect(sheetPlan(first, [session]).some((step) => step.kind === "session" && step.again)).toBe(false);
+    expect(reviewAgainSession(again, [agent("a2", "o/r#1", { kind: "fix" }), agent("a3", "o/r#1")])).toBeUndefined();
   });
 });
 

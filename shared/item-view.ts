@@ -1,6 +1,6 @@
 // What an item's card and sheet say and offer, as plain data: client/attention-screen.tsx draws it and wires the presses
 // [ATT-05, ATT-06].
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, isWorking, type Item, looseSessions, ownStack, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, isWorking, type Item, looseSessions, ownStack, reviewAgain, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
 import { summarizeRerun } from "./checks";
 import type { SessionKind } from "./config";
 import { ago } from "./format";
@@ -28,7 +28,7 @@ export function actionLabel(action: ActionId, item: Item): string {
   return {
     reply: "Reply ↗",
     acknowledge: "Acknowledge",
-    review: (item.target.stack?.length ?? 0) > 1 ? "Review stack" : "Review",
+    review: `${(item.target.stack?.length ?? 0) > 1 ? "Review stack" : "Review"}${reviewAgain(item.target).length ? " again" : ""}`,
     fix: "Fix CI",
     rerun: "Rerun failed jobs",
     address: "Address comments",
@@ -57,8 +57,9 @@ export function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): st
     reply: item.person ? `Opens ${item.person.login}'s comment on GitHub` : "Opens it on GitHub",
     acknowledge:
       comments.length === 1 ? `Reacts to ${comments[0].author}'s comment, which clears it` : `Pick which of the ${comments.length} waiting comments to react to`,
-    review:
-      (target.stack?.length ?? 0) > 1
+    review: reviewAgain(target).length
+      ? "An agent reviews what changed since your last review and checks your earlier comments. Nothing is posted"
+      : (target.stack?.length ?? 0) > 1
         ? `An agent reviews ${asking.map((p) => `#${p.number}`).join(", ") || "the stack"} in a checkout of the stack's top and reports back. Nothing is posted`
         : "An agent reviews the PR in a checkout and reports back. Nothing is posted",
     fix: "An agent reads the failing logs and commits a fix, without pushing",
@@ -79,13 +80,21 @@ export function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): st
 // A session is named for what started it; one of no kind, or a Start's, just continues.
 export const sessionLabel = (kind: SessionKind | undefined, item: Item) => (kind && kind !== "start" ? actionLabel(kind, item) : "Continue session");
 
+// The Review session a review asked for again goes to: the one active last [REV-02]. None when it isn't asked again, or
+// no Review session is open; then the card's button opens or starts as always.
+export function reviewAgainSession(item: Item, sessions: AgentSummary[]): AgentSummary | undefined {
+  if (!item.actions.includes("review") || reviewAgain(item.target).length === 0) return undefined;
+  return sessions.filter((agent) => agent.kind === "review").sort((a, b) => (b.lastActivityAt ?? "").localeCompare(a.lastActivityAt ?? ""))[0];
+}
+
 // A session on an item that has no session action of its own starts with this prompt; it's editable first.
 export const fallbackKind = (item: Item): SessionKind => (item.target.kind === "issue" ? "start" : "review");
 
 // One line of an item's sheet, top to bottom; the client draws each and wires its press [ATT-06].
 export type SheetStep =
   // A running session, in the line of what started it: it opens it [SES-03, ATT-07].
-  | { kind: "session"; agent: AgentSummary; label: string }
+  // On a review asked for again, pressing it sends the session the follow-up first [REV-02].
+  | { kind: "session"; agent: AgentSummary; label: string; again?: true }
   // A session action that asks first, with "…": the card's button is the one-tap start [SES-01, SES-02].
   | { kind: "ask"; action: ActionId; session: SessionKind; label: string; detail: string }
   // Rerun failed jobs, whose line comes from the fetched checks [PRS-09].
@@ -109,7 +118,8 @@ export function sheetPlan(item: Item, sessions: AgentSummary[]): SheetStep[] {
     if (session) {
       // An action's session takes its line once it runs, so work on it stays in one place [SES-03].
       const running = sessions.filter((agent) => agent.kind === session);
-      if (running.length) steps.push(...running.map((agent) => ({ kind: "session" as const, agent, label: sessionLabel(session, item) })));
+      const again = session === "review" && reviewAgain(item.target).length > 0 ? { again: true as const } : {};
+      if (running.length) steps.push(...running.map((agent) => ({ kind: "session" as const, agent, label: sessionLabel(session, item), ...again })));
       else steps.push({ kind: "ask", action, session, label, detail: actionDetail(action as Exclude<ActionId, "rerun">, item) });
     } else if (action === "rerun") {
       steps.push({ kind: "rerun", label });

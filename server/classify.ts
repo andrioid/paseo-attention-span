@@ -4,6 +4,7 @@ import {
   type Attention,
   type Chip,
   type Item,
+  type LastReview,
   type NextUpIssue,
   type IssueProject,
   type Person,
@@ -297,14 +298,22 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     };
   };
 
-  // Others' PRs in a stack that ask for my review: one Review for them all [REV-01, ATT-04].
+  // My last review of a PR asking for it again. GitHub drops my request once I review, so a request alongside a review of
+  // mine is a re-request; a push since then without one doesn't list it at all [REV-02].
+  const lastReview = (pr: PullRequestNode): LastReview | undefined => {
+    const review = pr.latestReviews.nodes.find((r) => isMe(r.author));
+    if (!review) return undefined;
+    return { at: review.submittedAt ?? EPOCH, ...(review.commit?.oid ? { oid: review.commit.oid } : {}), head: pr.headRefOid };
+  };
+
+  // Others' PRs in a stack that ask for my review: one Review for them all [REV-01, ATT-04], marked when it's asked again [REV-02].
   const reviewPart = (stack: PullRequestNode[]): Part => {
     const waiting = stack.map((pr) => mentions.get(prKey(pr))).find(Boolean);
     const lastCommitAt = latest(...stack.map((pr) => state(pr).lastCommitAt));
     return {
       section: waiting ? "reply" : "review",
       actions: waiting ? [...replyActions(waiting), "review"] : ["review"],
-      chips: stack.some((pr) => state(pr).ciFailing) ? [chip("CI failing", "bad")] : [],
+      chips: [...(stack.some(lastReview) ? [chip("review again")] : []), ...(stack.some((pr) => state(pr).ciFailing) ? [chip("CI failing", "bad")] : [])],
       person: waiting ?? author(stack[0].author, lastCommitAt),
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), lastCommitAt, waiting?.since),
     };
@@ -351,7 +360,10 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     headRefOid: pr.headRefOid,
     defaultBranch: pr.repository.defaultBranchRef?.name,
     mergeMethod: mergeMethodFor(pr, config),
-    stack: stack.map((p) => ({ number: p.number, head: p.headRefName, base: p.baseRefName, ...(isOwn(p) ? {} : { review: true as const }) })),
+    stack: stack.map((p) => {
+      const reviewed = isOwn(p) ? undefined : lastReview(p);
+      return { number: p.number, head: p.headRefName, base: p.baseRefName, ...(isOwn(p) ? {} : { review: true as const }), ...(reviewed ? { reviewed } : {}) };
+    }),
   });
 
   // One item per issue: my PRs grouped under the issue they work on [ATT-03]. Otherwise one per unit, led by its bottom PR.
