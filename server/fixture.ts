@@ -223,6 +223,9 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       // Bob's stack asking for my review: one item with one Review [ATT-04].
       pr(196, { title: "Price rules: data model", author: bob, headRefName: "rules-1", commits: commit("SUCCESS", 0.4) }),
       pr(197, { title: "Price rules: admin screen", author: bob, baseRefName: "rules-1", headRefName: "rules-2", commits: commit("SUCCESS", 0.3) }),
+      // Asked again after I reviewed: one with the Review session still open, one without [REV-02].
+      pr(198, { title: "Show shipping estimates at checkout", author: alice, latestReviews: { nodes: [{ author: me, state: "CHANGES_REQUESTED", submittedAt: daysAgo(2), commit: { oid: "oid198old" } }] }, commits: commit("SUCCESS", 0.2) }),
+      pr(199, { title: "Group order emails by customer", author: bob, latestReviews: { nodes: [{ author: me, state: "COMMENTED", submittedAt: daysAgo(3), commit: { oid: "oid199old" } }] }, commits: commit("SUCCESS", 0.5) }),
     ],
     mentions: [
       mention(95, [comment(bob, "@me should reminders go out on weekends too, or only on workdays?", 0.5)], { title: "Customers forget unpaid invoices", author: bob }),
@@ -381,6 +384,7 @@ export function fixtureGotIt(now: Date): string[] {
 // #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
 // #120's was started outside Attention Span, in a workspace Paseo linked to the PR, so it has no kind [SES-08].
 // #197's too, so it shows on its stack, led by #196 [ATT-04].
+// #198 is asked to be reviewed again while its Review session is still open: the card opens it [REV-02].
 const agent = (
   id: string,
   itemKey: string,
@@ -421,6 +425,7 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-113", `${REPO}#113`, "fix", "running", 2),
   agent("agent-120", `${REPO}#120`, undefined, "running", 3),
   agent("agent-197", `${REPO}#197`, undefined, "idle", 15),
+  agent("agent-198", `${REPO}#198`, "review", "idle", 2880, false, undefined, "Review PR 198: Show shipping estimates at checkout"),
   // Wrap up: finished work whose sessions are all idle [ATT-22].
   agent("agent-183", `${REPO}#183`, "fix", "idle", 20, false, sessionWorkspace("retry-webhooks", false, 0), "Retry webhooks"),
   // Its sheet counts lines and names the terminals archiving closes, as Paseo's own sheet would.

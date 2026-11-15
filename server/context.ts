@@ -1,4 +1,4 @@
-import { ownStack, type StackPr, type Target } from "../shared/attention";
+import { ownStack, reviewAgain, type StackPr, type Target } from "../shared/attention";
 import type { SessionKind } from "../shared/config";
 import { graphql, runGh } from "./gh";
 
@@ -49,14 +49,106 @@ export async function sessionContext(kind: SessionKind, target: Target): Promise
   if (kind === "address") return reviewFeedback(target);
 
   // Review of a stack: every branch, with a link to each PR asking for my review; the agent reads what it needs [ATT-04].
+  // Asked again, what I said last time and what changed since, on each PR I reviewed [REV-02].
   const stack = target.stack ?? [];
+  const again = kind === "review" ? reviewAgainContext(target) : Promise.resolve("");
   if (kind === "review" && stack.length > 1) {
     const lines = stack.map((pr) => `${branchLine(pr)}${pr.review ? `, review requested: https://github.com/${target.repo}/pull/${pr.number}` : ", mine"}`);
-    return `Stack, bottom first:\n${lines.join("\n")}`;
+    return join(`Stack, bottom first:\n${lines.join("\n")}`, await again);
   }
 
   // review, start: the whole description and the latest comments.
-  return conversation(ref, target);
+  const [talk, since] = await Promise.all([conversation(ref, target), again]);
+  return join(talk, since);
+}
+
+const join = (...parts: string[]) => parts.filter(Boolean).join("\n\n");
+
+const MY_REVIEWS = 5;
+const MY_THREADS = 100;
+
+// For each PR asking for my review again: my last reviews and the threads I'm in, with what came after, and how to find
+// the commits since the one I reviewed, whether the branch moved on, was rebased, or lost it [REV-02]. Empty when none
+// asks again.
+export async function reviewAgainContext(target: Target): Promise<string> {
+  const prs = reviewAgain(target);
+  const named = (target.stack?.length ?? 0) > 1;
+  const blocks = await Promise.all(prs.map((pr) => lastReview(target.repo, pr, named)));
+  return join(...blocks);
+}
+
+async function lastReview(repo: string, stacked: StackPr, named: boolean): Promise<string> {
+  type Author = { login: string } | null;
+  type Review = { author: Author; state: string; body: string; submittedAt: string | null; commit: { oid: string } | null };
+  type Thread = { isResolved: boolean; path: string; line: number | null; comments: { totalCount: number; nodes: { author: Author; body: string }[] } };
+  const [owner, name] = repo.split("/");
+  const { number } = stacked;
+  // My reviews only, by login, so others' reviews since can't crowd mine out; submitted ones only, as a review I've
+  // started and not sent isn't where I left off.
+  const { login } = (await graphql<{ viewer: { login: string } }>("query { viewer { login } }")).viewer;
+  const data = await graphql<{
+    repository: { pullRequest: { url: string; baseRefName: string; headRefOid: string; reviews: { nodes: Review[] }; reviewThreads: { totalCount: number; nodes: Thread[] } } };
+  }>(
+    `query($owner: String!, $name: String!, $number: Int!, $login: String!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          url baseRefName headRefOid
+          reviews(last: ${MY_REVIEWS * 4}, author: $login, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) { nodes { author { login } state body submittedAt commit { oid } } }
+          reviewThreads(first: ${MY_THREADS}) { totalCount nodes { isResolved path line comments(first: ${THREAD_COMMENTS}) { totalCount nodes { author { login } body } } } }
+        }
+      }
+    }`,
+    { owner, name, number, login },
+  );
+  const me = login.toLowerCase();
+  const mine = (author: Author) => author?.login.toLowerCase() === me;
+  const pr = data.repository.pullRequest;
+  const reviews = pr.reviews.nodes.filter((r) => mine(r.author));
+  const latest = reviews.at(-1);
+  const title = `Your last review${named ? ` of #${number}` : ""}`;
+  // Where GitHub's answer has none, the list's own reading of it still says when, and on which commit.
+  const reviewed = latest ? latest.commit?.oid : stacked.reviewed?.oid;
+  const when = latest ? `${latest.state.toLowerCase()}${latest.submittedAt ? ` on ${latest.submittedAt}` : ""}` : `on ${stacked.reviewed?.at ?? "an earlier date"}`;
+
+  const who = (author: Author) => (mine(author) ? "you" : `@${author?.login ?? "ghost"}`);
+  const said = reviews
+    .filter((r) => r.body.trim())
+    .slice(-MY_REVIEWS)
+    .map((r) => `- ${r.state.toLowerCase()}${r.submittedAt ? `, ${r.submittedAt}` : ""}: ${clip(r.body, 1500)}`);
+  const threads = pr.reviewThreads.nodes
+    .filter((t) => t.comments.nodes.some((c) => mine(c.author)))
+    .map((t) => {
+      const comments = t.comments.nodes.map((c) => `  ${who(c.author)}: ${clip(c.body, 800).replace(/\n/g, "\n  ")}`);
+      const more = notShown(t.comments.totalCount - t.comments.nodes.length, "more comments", pr.url);
+      return [`- ${t.path}${t.line ? `:${t.line}` : ""} (${t.isResolved ? "resolved" : "unresolved"})`, ...comments, more && `  ${more}`].filter(Boolean).join("\n");
+    });
+  // A long thread I'm not in among its first comments may still have mine further down; say how many weren't read through.
+  const longThreads = pr.reviewThreads.nodes.filter((t) => t.comments.totalCount > t.comments.nodes.length && !t.comments.nodes.some((c) => mine(c.author))).length;
+  const unread = longThreads ? `${longThreads === 1 ? "1 long review thread was" : `${longThreads} long review threads were`} read only to comment ${THREAD_COMMENTS} and may have yours further down; see ${pr.url}` : "";
+  const laterThreads = notShown(pr.reviewThreads.totalCount - pr.reviewThreads.nodes.length, "more review threads, some maybe yours", pr.url);
+
+  return join(
+    `${title}: ${when}.\n${sinceSteps(reviewed, pr.headRefOid, pr.baseRefName)}`,
+    said.length ? `What you wrote in your reviews:\n${said.join("\n")}` : "",
+    threads.length ? `Review threads you're in, with the replies:\n${threads.join("\n")}` : "",
+    unread,
+    laterThreads,
+  );
+}
+
+// How to find the commits since the one I reviewed: they follow it, perhaps with the base merged in, or the branch was
+// rebased or force-pushed past it. The
+// rebase case compares the two versions from where they meet, as the base may have moved too, a stack's parent with it.
+function sinceSteps(reviewed: string | undefined, head: string, base: string): string {
+  if (!reviewed) return `GitHub no longer has the commit you reviewed, so review the whole diff against ${base} and say you couldn't narrow it down.`;
+  if (reviewed === head) return `No commits since: the head is still ${head}. What's new is in the replies below.`;
+  return [
+    `You reviewed commit ${reviewed}; the head is now ${head}.`,
+    `- \`git fetch origin ${reviewed} ${head}\``,
+    `- If \`git merge-base --is-ancestor ${reviewed} ${head}\`: the new commits are \`git log ${reviewed}..${head}\`, their changes \`git diff ${reviewed}..${head}\`. If one of them merges ${base} in, what came with it isn't the PR's: review the author's own commits (\`git log --first-parent --no-merges ${reviewed}..${head}\`, each with \`git show\`) and the merge's conflict resolutions (\`git show --remerge-diff <merge>\`) instead of the whole diff.`,
+    `- Otherwise the branch was rebased or force-pushed: compare the two versions with \`git range-diff ${reviewed}...${head}\`. Commits that came with ${base} or a rebased parent show up too, as added, dropped or matched; leave those out.`,
+    `- If ${reviewed} can't be fetched, review the whole diff against ${base} and say you couldn't narrow it down.`,
+  ].join("\n");
 }
 
 const branchLine = (pr: StackPr) => `- #${pr.number}: ${pr.head} (on ${pr.base})`;

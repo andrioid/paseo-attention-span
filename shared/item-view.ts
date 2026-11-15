@@ -1,6 +1,6 @@
 // What an item's card and sheet say and offer, as plain data: client/attention-screen.tsx draws it and wires the presses
 // [ATT-05, ATT-06].
-import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, isWorking, type Item, looseSessions, ownStack, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
+import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, isWorking, type Item, looseSessions, ownStack, reviewAgain, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
 import { summarizeRerun } from "./checks";
 import type { SessionKind } from "./config";
 import { ago } from "./format";
@@ -28,7 +28,7 @@ export function actionLabel(action: ActionId, item: Item): string {
   return {
     reply: "Reply ↗",
     acknowledge: "Acknowledge",
-    review: (item.target.stack?.length ?? 0) > 1 ? "Review stack" : "Review",
+    review: `${(item.target.stack?.length ?? 0) > 1 ? "Review stack" : "Review"}${reviewAgain(item.target).length ? " again" : ""}`,
     fix: "Fix CI",
     rerun: "Rerun failed jobs",
     address: "Address comments",
@@ -57,8 +57,9 @@ export function actionDetail(action: Exclude<ActionId, "rerun">, item: Item): st
     reply: item.person ? `Opens ${item.person.login}'s comment on GitHub` : "Opens it on GitHub",
     acknowledge:
       comments.length === 1 ? `Reacts to ${comments[0].author}'s comment, which clears it` : `Pick which of the ${comments.length} waiting comments to react to`,
-    review:
-      (target.stack?.length ?? 0) > 1
+    review: reviewAgain(target).length
+      ? "An agent reviews what changed since your last review and checks your earlier comments. Nothing is posted"
+      : (target.stack?.length ?? 0) > 1
         ? `An agent reviews ${asking.map((p) => `#${p.number}`).join(", ") || "the stack"} in a checkout of the stack's top and reports back. Nothing is posted`
         : "An agent reviews the PR in a checkout and reports back. Nothing is posted",
     fix: "An agent reads the failing logs and commits a fix, without pushing",

@@ -1,4 +1,4 @@
-import { type ActionId, ownStack, type Target } from "./attention";
+import { type ActionId, ownStack, reviewAgain, type Target } from "./attention";
 import type { AttentionConfig, SessionKind } from "./config";
 
 // Built-in prompt templates [SES-04]. A template in config.json replaces one.
@@ -6,20 +6,30 @@ import type { AttentionConfig, SessionKind } from "./config";
 // For Review of a stack, {{head}} is its top branch and {{review}} the PRs asking for my review.
 const SWEEP = `Browser sweep, only if you're equipped to (you can run this repo's app and have browser tools): work out which pages and screens the change affects and check each one. If you can't, skip this and say so. Don't spend the session getting the app to run.`;
 
-export const PROMPT_TEMPLATES: Record<SessionKind, string> = {
-  review: `Review pull request {{repo}}#{{number}}: "{{title}}" ({{url}}). You are in a checkout of the PR branch.
+const STACK_INTRO = "Review the pull requests {{review}} in {{repo}}, part of the stack {{stack}} (bottom first). You are in a checkout of the top branch, {{head}}, which has every PR's changes.";
+const STACK_DIFF = "for each of {{review}}, read its description (linked below) and its diff against its own base (`git diff origin/<base>...origin/<head>`, branches below).";
+const AGAIN_STEP = "what changed since your last review, that is the commits after the one you reviewed, found as the context below says. Check whether each of your earlier comments was addressed.";
+const AGAIN_REPORT = "Your earlier comments, each: addressed, partly, or not, with where.";
 
-1. Review: read the description and the diff against {{base}}.
-2. Investigate: dig into anything risky or unclear in the code it touches.
+// The built-in Review prompt: what to review, the sweep, and what to report.
+function reviewTemplate(intro: string, read: string, touched: string, each: string, again?: string): string {
+  return `${intro}
+
+1. Review: ${read}
+2. Investigate: dig into anything risky or unclear in ${touched}.
 3. ${SWEEP}
-4. Report back:
-   - Findings, most important first.
+4. Report back${each}:
+${again ? `   - ${again}\n` : ""}   - Findings, most important first.
    - Verdict: approve, request changes or comment, with a one-line reason.
    - Draft review comments, ready to paste, each with file:line.
 
 Do not post anything to GitHub.
 
-{{context}}`,
+{{context}}`;
+}
+
+export const PROMPT_TEMPLATES: Record<SessionKind, string> = {
+  review: reviewTemplate("Review pull request {{repo}}#{{number}}: \"{{title}}\" ({{url}}). You are in a checkout of the PR branch.", "read the description and the diff against {{base}}.", "the code it touches", ""),
 
   fix: `The checks on pull request {{repo}}#{{number}} "{{title}}" ({{url}}) are failing.
 
@@ -63,19 +73,24 @@ Read the issue and the code it touches, then propose a plan before changing anyt
 };
 
 // Review of a stack, while config.json doesn't replace the review template: one session for every PR asking for my review [ATT-04].
-export const REVIEW_STACK_TEMPLATE = `Review the pull requests {{review}} in {{repo}}, part of the stack {{stack}} (bottom first). You are in a checkout of the top branch, {{head}}, which has every PR's changes.
+export const REVIEW_STACK_TEMPLATE = reviewTemplate(STACK_INTRO, `${STACK_DIFF} Review only those; the rest of the stack is context.`, "the code they touch", ", for each PR");
 
-1. Review: for each of {{review}}, read its description (linked below) and its diff against its own base (\`git diff origin/<base>...origin/<head>\`, branches below). Review only those; the rest of the stack is context.
-2. Investigate: dig into anything risky or unclear in the code they touch.
-3. ${SWEEP}
-4. Report back, for each PR:
-   - Findings, most important first.
-   - Verdict: approve, request changes or comment, with a one-line reason.
-   - Draft review comments, ready to paste, each with file:line.
-
-Do not post anything to GitHub.
-
-{{context}}`;
+// Review asked for again after I reviewed, while config.json doesn't replace the review template: what changed since, and
+// whether my earlier comments were taken up; the context says how to find it [REV-02].
+export const REVIEW_AGAIN_TEMPLATE = reviewTemplate(
+  "Review pull request {{repo}}#{{number}}: \"{{title}}\" ({{url}}) again. You reviewed it before, and review was asked for again. You are in a checkout of the PR branch.",
+  `${AGAIN_STEP} For context, the PR's whole diff is against {{base}}.`,
+  "the code the new commits touch",
+  "",
+  AGAIN_REPORT,
+);
+export const REVIEW_STACK_AGAIN_TEMPLATE = reviewTemplate(
+  `${STACK_INTRO} You reviewed some of them before, and review was asked for again.`,
+  `${AGAIN_STEP} For a PR asking for your review that you haven't reviewed before, ${STACK_DIFF.replace(/^for each of \{\{review\}\}, r/, "r")} Review only {{review}}; the rest of the stack is context.`,
+  "the code the new commits touch",
+  ", for each PR",
+  AGAIN_REPORT,
+);
 
 export const ACTION_SESSION: Partial<Record<ActionId, SessionKind>> = {
   review: "review",
@@ -94,7 +109,9 @@ export function renderPrompt(
 ): string {
   const stack = target.stack ?? [];
   const reviewStack = kind === "review" && stack.length > 1;
-  const template = config.prompts[kind] ?? (reviewStack ? REVIEW_STACK_TEMPLATE : PROMPT_TEMPLATES[kind]);
+  const again = kind === "review" && reviewAgain(target).length > 0;
+  const builtIn = reviewStack ? (again ? REVIEW_STACK_AGAIN_TEMPLATE : REVIEW_STACK_TEMPLATE) : again ? REVIEW_AGAIN_TEMPLATE : PROMPT_TEMPLATES[kind];
+  const template = config.prompts[kind] ?? builtIn;
   // Review reads the whole stack; the rest act on my PRs in it [ATT-04].
   const shown = kind === "review" ? stack : ownStack(target);
   const asking = stack.filter((pr) => pr.review);

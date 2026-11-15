@@ -61,7 +61,8 @@ export interface PullRequestNode {
   commits: Nodes<{ commit: { committedDate: string; statusCheckRollup: { state: string } | null } }>;
   // A person, or a team by its "org/slug"; null when it can't be seen.
   reviewRequests: Nodes<{ requestedReviewer: RequestedReviewer | null }>;
-  latestReviews: Nodes<{ author: Actor | null; state: string; submittedAt: string | null }>;
+  // The commit each review was made on, so a review asked for again can start from it [REV-02].
+  latestReviews: Nodes<{ author: Actor | null; state: string; submittedAt: string | null; commit?: { oid: string } | null }>;
   reviewThreads: Nodes<ReviewThread>;
   comments: Nodes<Comment>;
 }

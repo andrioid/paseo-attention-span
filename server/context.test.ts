@@ -4,7 +4,7 @@ import type { Target } from "../shared/attention";
 const gh = vi.hoisted(() => ({ runGh: vi.fn(), graphql: vi.fn() }));
 vi.mock("./gh", () => gh);
 
-const { clip, sessionContext } = await import("./context");
+const { clip, reviewAgainContext, sessionContext } = await import("./context");
 
 const issue: Target = { kind: "issue", repo: "acme/app", number: 35, title: "Bug", url: "https://github.com/acme/app/issues/35" };
 const pr: Target = { ...issue, kind: "pr", number: 7, url: "https://github.com/acme/app/pull/7" };
@@ -114,5 +114,95 @@ describe("sessionContext: address", () => {
     const context = await sessionContext("address", pr);
     expect(context).not.toContain("No unresolved review threads.");
     expect(context).toBe("100 more review threads (resolved or not) not shown, see https://github.com/acme/app/pull/7");
+  });
+});
+
+describe("sessionContext: review asked for again", () => {
+  const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old" };
+  const again: Target = { ...pr, stack: [{ number: 7, head: "feature", base: "main", review: true, reviewed }] };
+  type Review = { author: { login: string }; state: string; body: string; submittedAt: string; commit: { oid: string } | null };
+  const review = (login: string, state: string, body: string, oid: string | null = "old"): Review => ({ author: { login }, state, body, submittedAt: "2026-11-10T00:00:00Z", commit: oid ? { oid } : null });
+  const thread = (isResolved: boolean, ...comments: [string, string][]) => ({
+    isResolved,
+    path: "src/cart.ts",
+    line: 12,
+    comments: { totalCount: comments.length, nodes: comments.map(([login, body]) => ({ author: { login }, body })) },
+  });
+  const github = (reviews: Review[], threads: ReturnType<typeof thread>[], head = "new") =>
+    gh.graphql.mockResolvedValue({
+      viewer: { login: "Me" },
+      repository: { pullRequest: { url: pr.url, baseRefName: "main", headRefOid: head, reviews: { nodes: reviews }, reviewThreads: { totalCount: threads.length, nodes: threads } } },
+    });
+
+  it("REV-02: gives what I said last time, the threads I'm in with their replies, and how to find the commits since", async () => {
+    view("Body");
+    github(
+      [review("me", "CHANGES_REQUESTED", "Rounding is off"), review("bob", "APPROVED", "LGTM"), review("me", "COMMENTED", "")],
+      [thread(false, ["me", "Round per line"], ["alice", "Done in abc"]), thread(true, ["bob", "Nit"])],
+    );
+    const context = await sessionContext("review", again);
+    expect(context).toContain("Description:\nBody");
+    expect(context).toContain("Your last review: commented on 2026-11-10T00:00:00Z.");
+    expect(context).toContain("You reviewed commit old; the head is now new.");
+    expect(context).toContain("`git diff old..new`");
+    expect(context).toContain("`git range-diff old...new`");
+    expect(context).toContain("What you wrote in your reviews:\n- changes_requested, 2026-11-10T00:00:00Z: Rounding is off");
+    expect(context).toContain("- src/cart.ts:12 (unresolved)\n  you: Round per line\n  @alice: Done in abc");
+    expect(context).not.toContain("LGTM");
+    expect(context).not.toContain("Nit");
+  });
+
+  it("REV-02: says how many long threads weren't read far enough to tell whether I'm in them", async () => {
+    const long = { ...thread(false, ["bob", "Opening"]), comments: { totalCount: 30, nodes: [{ author: { login: "bob" }, body: "Opening" }] } };
+    github([review("me", "COMMENTED", "")], [long, thread(false, ["me", "Mine"])]);
+    const context = await reviewAgainContext(again);
+    expect(context).toContain("1 long review thread was read only to comment 20 and may have yours further down; see https://github.com/acme/app/pull/7");
+    expect(context).toContain("you: Mine");
+  });
+
+  it("REV-02: asks for my reviews by login, so others' can't crowd them out", async () => {
+    github([review("me", "COMMENTED", "")], []);
+    await reviewAgainContext(again);
+    expect(gh.graphql.mock.calls[1][1]).toMatchObject({ login: "Me", number: 7 });
+  });
+
+  it("REV-02: with no review of mine in GitHub's answer, still goes from the commit the list saw, threads and all", async () => {
+    github([], [thread(false, ["me", "Round per line"], ["alice", "Done"])]);
+    const context = await reviewAgainContext(again);
+    expect(context).toContain("Your last review: on 2026-11-10T00:00:00Z.");
+    expect(context).toContain("`git diff old..new`");
+    expect(context).toContain("you: Round per line");
+  });
+
+  it("REV-02: says the base merged in since isn't the PR's, and where its own changes and conflict resolutions are", async () => {
+    github([review("me", "COMMENTED", "")], []);
+    const context = await reviewAgainContext(again);
+    expect(context).toContain("If one of them merges main in, what came with it isn't the PR's");
+    expect(context).toContain("`git log --first-parent --no-merges old..new`");
+    expect(context).toContain("`git show --remerge-diff <merge>`");
+  });
+
+  it("REV-02: says when there's nothing new to diff, or the commit I reviewed is gone", async () => {
+    github([review("me", "COMMENTED", "")], [], "old");
+    expect(await reviewAgainContext(again)).toContain("No commits since: the head is still old.");
+    github([review("me", "COMMENTED", "", null)], []);
+    expect(await reviewAgainContext(again)).toContain("GitHub no longer has the commit you reviewed, so review the whole diff against main");
+  });
+
+  it("REV-02, ATT-04: a stack gets a part for each PR asked again, after its branches", async () => {
+    github([review("me", "COMMENTED", "")], []);
+    const stacked: Target = { ...pr, stack: [{ number: 5, head: "a", base: "main", review: true, reviewed }, { number: 6, head: "b", base: "a", review: true }] };
+    const context = await sessionContext("review", stacked);
+    expect(context).toMatch(/^Stack, bottom first:/);
+    expect(context).toContain("Your last review of #5: commented");
+    expect(context).not.toContain("of #6");
+    // Who I am, then my reviews of #5; nothing for #6, which I never reviewed.
+    expect(gh.graphql).toHaveBeenCalledTimes(2);
+  });
+
+  it("REV-02: nothing extra when nobody asked again", async () => {
+    view("Body");
+    expect(await sessionContext("review", { ...pr, stack: [{ number: 7, head: "feature", base: "main", review: true }] })).toBe("Description:\nBody");
+    expect(gh.graphql).not.toHaveBeenCalled();
   });
 });

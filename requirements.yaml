@@ -50,6 +50,7 @@ functional:
   reviews:
     As a developer, I can:
       REV-01: see pull requests where my review is requested by name; so that I don't hold up others.
+      REV-02: see a pull request whose review was re-requested after I reviewed it marked "Review again", with its Review session given what I said last time and focused on the commits since my last review; so that a second look costs less than the first.
   own_pull_requests:
     As a developer, I can:
       PRS-01: see my pull requests whose checks fail; so that I fix them before they block review or merge.

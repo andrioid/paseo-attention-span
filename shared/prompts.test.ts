@@ -41,4 +41,32 @@ describe("prompts", () => {
     const custom = AttentionConfig.parse({ prompts: { fix: "Fix {{repo}}#{{number}} on {{head}}: {{context}}" } });
     expect(renderPrompt("fix", target, "log", custom)).toBe("Fix o/r#7 on feature: log");
   });
+
+  describe("review asked for again", () => {
+    const reviewed = { at: "2026-11-10T00:00:00Z", oid: "old" };
+    const again = { ...target, stack: [{ number: 7, head: "feature", base: "main", review: true as const, reviewed }] };
+
+    it("REV-02: the built-in Review focuses on what changed and asks how my earlier comments were taken up", () => {
+      const prompt = renderPrompt("review", again, "Since: git diff old..new", config);
+      expect(prompt).toContain("o/r#7");
+      expect(prompt).toContain("what changed since your last review");
+      expect(prompt).toContain("Your earlier comments, each: addressed, partly, or not");
+      expect(prompt).toContain("Since: git diff old..new");
+      expect(prompt).toContain("Do not post anything to GitHub.");
+      expect(prompt).not.toContain("{{");
+      expect(renderPrompt("review", { ...target, stack: [{ number: 7, head: "feature", base: "main", review: true }] }, "", config)).not.toContain("since your last review");
+    });
+
+    it("REV-02, SES-04: a review template in config.json still applies, and gets what changed as its context", () => {
+      const custom = AttentionConfig.parse({ prompts: { review: "Look at {{repo}}#{{number}}. {{context}}" } });
+      expect(renderPrompt("review", again, "since old", custom)).toBe("Look at o/r#7. since old");
+    });
+
+    it("REV-02, ATT-04: a stack asked again says so, and still reviews only the PRs asking for it", () => {
+      const stack = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature", review: true as const, reviewed }] };
+      expect(renderPrompt("review", stack, "", config)).toContain("You reviewed some of them before");
+      const mixed = { ...target, stack: [again.stack[0], { number: 8, head: "next", base: "feature" }] };
+      expect(renderPrompt("review", mixed, "", config)).toContain("Review only #7; the rest of the stack is context.");
+    });
+  });
 });

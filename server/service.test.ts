@@ -412,4 +412,3 @@ describe("kept worktrees", () => {
     expect((await archiving).view.kept).toEqual([]);
   });
 });
-

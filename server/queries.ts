@@ -101,7 +101,7 @@ const FRAGMENTS: Record<string, string> = {
   closingIssuesReferences(first: 5) { nodes { number title url repository { nameWithOwner } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
   reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { ...author } ... on Bot { ...author } ... on Team { __typename combinedSlug avatarUrl } } } }
-  latestReviews(first: 10) { nodes { author { ...author } state submittedAt } }
+  latestReviews(first: 10) { nodes { author { ...author } state submittedAt commit { oid } } }
   reviewThreads(last: 30) {
     nodes {
       isResolved
