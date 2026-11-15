@@ -1,6 +1,8 @@
 #!/bin/sh
 # Starts a throwaway Paseo daemon with the plugin in fixture mode, then takes screenshots.
 set -eu
+# This worktree's shooter and config, next to the image's playwright-core so the shooter finds it.
+cp /plugin/preview/shoot.mjs /plugin/preview/shots.mjs /plugin/preview/plugin-config.json /preview/
 HOME_DIR=/tmp/paseo-home
 paseo() { /opt/paseo/resources/bin/paseo --home "$HOME_DIR" "$@"; }
 

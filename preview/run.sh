@@ -11,15 +11,17 @@ layouts=$(node shots.mjs layouts "${1:-}")
 mkdir -p out && chmod 777 out && rm -f out/*.png out/*.txt out/*.log out/manifest.json
 # Taken before and after, so an edit made during the run doesn't pass for what was shot.
 before=$(node fingerprint.mjs)
-docker build -q -t attention-span-preview . >/dev/null
+# A name of its own, apart from the older image that had a shooter built in, which worktrees on older branches still build.
+# Every container runs the image this build made, by its id, even if another worktree retags the name meanwhile.
+image=$(docker build -q -t attention-span-preview-base .)
 started=$(date +%s)
 # One layout per container. Its output goes to out/<layout>.log; its result lines are printed as it ends, with the
 # daemon's log tail when it failed.
-export PASEO_APP PLUGIN="$(cd .. && pwd)" OUT="$PWD/out" SELECTION="${1:-}"
+export PASEO_APP PLUGIN="$(cd .. && pwd)" OUT="$PWD/out" SELECTION="${1:-}" IMAGE="$image"
 # shellcheck disable=SC2086
 printf '%s\n' $layouts | xargs -P 2 -I{} sh -c '
   status=0
-  docker run --rm -v "$PASEO_APP":/opt/paseo:ro -v "$PLUGIN":/plugin:ro -v "$OUT":/out attention-span-preview "$SELECTION" {} >"$OUT/{}.log" 2>&1 || status=$?
+  docker run --rm -v "$PASEO_APP":/opt/paseo:ro -v "$PLUGIN":/plugin:ro -v "$OUT":/out "$IMAGE" "$SELECTION" {} >"$OUT/{}.log" 2>&1 || status=$?
   grep -E "^(ok|failed)" "$OUT/{}.log" || true
   if [ "$status" -ne 0 ]; then tail -40 "$OUT/{}.log" | sed "s/^/  {} | /"; touch "$OUT/{}.failed"; fi
 ' || true
