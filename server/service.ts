@@ -303,6 +303,7 @@ export class AttentionService {
   async act(key: string, work: () => Promise<void>, change: Change): Promise<AttentionView> {
     await work();
     const before = this.state.pending[key];
+    const wasClosed = key in this.state.closedAsks;
     const at = new Date(this.port.now()).toISOString();
     if (change) this.state.pending[key] = { at, effect: change.kind === "finished" ? this.finished(key, at, change.notPlanned) : change };
     else delete this.state.pending[key];
@@ -312,7 +313,8 @@ export class AttentionService {
     if (effect?.kind === "done" && this.state.history?.asks.some((ask) => ask.key === key)) this.state.closedAsks[key] = effect.item;
     else if (!change) delete this.state.closedAsks[key];
     await this.save();
-    const history = change?.kind === "finished" || before?.effect.kind === "done";
+    // Undo of a close brings back its ask once History is fetched, even after the close stopped pending [ATT-24].
+    const history = change?.kind === "finished" || before?.effect.kind === "done" || (!change && wasClosed);
     this.followUp("live");
     if (history) this.followUp("history");
     return this.view();
@@ -381,13 +383,15 @@ export class AttentionService {
         this.followMerges();
       }
       else {
-        this.state.history = { fetchedAt, ...(await this.fetchHistory(now)) };
+        const { open, ...history } = await this.fetchHistory(now);
+        this.state.history = { fetchedAt, ...history };
         // Keep open, and an issue closed when asked, last as long as History's weeks: an ask missing from one fetch, while
         // someone's PR is open or a lookup failed, may come back. A closed one History lists itself needs no keeping [ATT-24].
         const since = historySince(now, this.config.historyWeeks, this.timeZone);
         for (const [key, mergedAt] of Object.entries(this.state.keptOpen)) if (mergedAt < since) delete this.state.keptOpen[key];
         const listed = new Set(this.state.history.items.map((item) => item.key));
-        for (const [key, item] of Object.entries(this.state.closedAsks)) if (listed.has(key) || (item.closedAt ?? "") < since) delete this.state.closedAsks[key];
+        // Reopened on GitHub, it's open again: only a lookup that answered says so, so a failed one keeps it.
+        for (const [key, item] of Object.entries(this.state.closedAsks)) if (listed.has(key) || open.has(key) || (item.closedAt ?? "") < since) delete this.state.closedAsks[key];
       }
       // Forget dismissals of items that are gone.
       const keys = new Set(this.items().map((item) => item.key));
@@ -431,9 +435,11 @@ export class AttentionService {
     return this.state.projectRepos;
   }
 
-  private async fetchHistory(now: Date): Promise<{ items: Item[]; asks: CloseAsk[] }> {
+  // History, the issues to ask about closing, and which issues my merged PRs refer to were found open [ATT-24].
+  private async fetchHistory(now: Date): Promise<{ items: Item[]; asks: CloseAsk[]; open: Set<string> }> {
     const data = await this.port.github.history(this.config, now, this.timeZone);
-    return { items: classifyHistory(data), asks: classifyCloseAsks(data) };
+    const open = new Set(Object.entries(data.referenced ?? {}).flatMap(([key, issue]) => (issue.state === "OPEN" ? [key] : [])));
+    return { items: classifyHistory(data), asks: classifyCloseAsks(data), open };
   }
 
   // Whether the gh login may read projects, asked at most hourly, or now when Settings asks [NXT-12]. On only when GitHub

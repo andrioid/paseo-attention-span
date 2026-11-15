@@ -471,6 +471,33 @@ describe("asking to close an issue", () => {
     expect(view.history.filter((item) => [ISSUE, `${REPO}#901`].includes(item.key)).map((item) => [item.key, item.children.map((child) => child.number)])).toEqual([[ISSUE, [901]]]);
   });
 
+  it("ATT-24: an issue closed when asked and reopened on GitHub leaves History and asks again", async () => {
+    const issue = structuredClone(open);
+    const { service, start, advance } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.act(ISSUE, async () => {}, { kind: "finished" });
+    issue.state = "CLOSED";
+    await advance(SETTLE_MS + 1);
+    issue.state = "OPEN";
+    const view = await service.get("history");
+    expect([view.history.some((item) => item.key === ISSUE), asked(view)]).toEqual([false, [[ISSUE, [901]]]]);
+  });
+
+  it("ATT-24: Undo after the close settled fetches History, which asks again", async () => {
+    const issue = structuredClone(open);
+    const { service, github, start, advance } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")], issue)).history(config, now, timeZone));
+    await start();
+    await service.act(ISSUE, async () => {}, { kind: "finished" });
+    issue.state = "CLOSED";
+    await advance(SETTLE_MS + 1);
+    const fetched = github.history.mock.calls.length;
+    issue.state = "OPEN";
+    await service.act(ISSUE, async () => {}, null);
+    await advance(SETTLE_MS + 1);
+    expect(github.history.mock.calls.length).toBeGreaterThan(fetched);
+    expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+  });
+
   it("ATT-24: closing an issue assigned to me keeps my merged PRs under it", async () => {
     // #152 is assigned to me in the fixture's live feed.
     const assigned = { ...structuredClone(open), number: 152, title: "Customer statements as PDF" };
