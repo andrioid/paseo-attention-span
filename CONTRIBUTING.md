@@ -18,7 +18,7 @@ npm run preview            # every layout
 npm run preview -- phone   # only names containing "phone"
 ```
 
-`npm run screenshots` does the same, then copies a curated set into `docs/screenshots/`. Rerun it after visible UI changes, and commit the images.
+`npm run screenshots` copies a curated set from the last full preview into `docs/screenshots/`; it refuses unless that run was of the current source. After visible UI changes, run the full preview, then this, and commit the images.
 
 This builds a Docker image and runs the plugin in a throwaway Paseo daemon that serves its own web app, then saves screenshots of every tab to `preview/out/`: desktop and phone width, dark and light.
 
