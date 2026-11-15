@@ -3,6 +3,7 @@ import {
   baseItem,
   type Attention,
   type Chip,
+  type CloseAsk,
   type Item,
   type LastReview,
   type NextUpIssue,
@@ -494,6 +495,27 @@ export function classifyHistory(data: HistoryResult): Item[] {
     items.push(kinded({ ...plain(pr, "pr", "reviewed"), closedAt: pr.mergedAt, person: author(pr.author, pr.mergedAt), ...mergedBy(pr) }, pr));
   }
   return items.sort(order);
+}
+
+// Open issues my merged PRs worked on, picked as History picks a closed one, where no PR for it is still open, mine or
+// anyone's that GitHub links: Wrap up offers to close each [ATT-24, ATT-03]. My open PRs grouped under one are in the live
+// feed, so the view leaves those out.
+export function classifyCloseAsks(data: HistoryResult): CloseAsk[] {
+  const referenced = new Map(Object.entries(data.referenced ?? {}));
+  // Closed issues count as issues too, so a PR that worked on one isn't put under another it mentions.
+  const closed = new Set(compact(data.closed.nodes).map(prKey));
+  const asks = new Map<string, CloseAsk>();
+  for (const pr of compact(data.merged.nodes)) {
+    const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
+    const key = issueFor([linked], (ref) => closed.has(ref) || referenced.has(ref));
+    const issue = key ? referenced.get(key) : undefined;
+    if (!key || !issue || issue.state !== "OPEN" || (issue.closedByPullRequestsReferences?.nodes ?? []).some((other) => other.state === "OPEN")) continue;
+    const ask = asks.get(key) ?? { key, repo: issue.repository.nameWithOwner, number: issue.number, title: issue.title, url: issue.url, prs: [], mergedAt: pr.mergedAt };
+    ask.prs.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, mergedAt: pr.mergedAt });
+    if (pr.mergedAt > ask.mergedAt) ask.mergedAt = pr.mergedAt;
+    asks.set(key, ask);
+  }
+  return [...asks.values()].map((ask) => ({ ...ask, prs: ask.prs.sort((a, b) => a.mergedAt!.localeCompare(b.mergedAt!)) }));
 }
 
 // Whether my last comment on a thread is the last one from a person, and if not, the recent comments since that I haven't 👍'd.

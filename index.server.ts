@@ -55,6 +55,7 @@ export default function contribute(server: PluginServerContext) {
     }).then(shown),
   );
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)).then(shown));
+  server.handle(rpc.keepOpen, ({ key, on }) => ready(() => attention.keepOpen(key, on)).then(shown));
   server.handle(rpc.undismissItem, ({ key }) => ready(() => attention.undismiss(key)).then(shown));
   server.handle(rpc.gotIt, ({ ids, on }) => ready(() => attention.gotIt(ids, on)).then(shown));
   server.handle(rpc.setHistoryFilter, ({ filter }) => ready(() => attention.setHistoryFilter(filter)).then(shown));

@@ -10,6 +10,7 @@ export const SCENARIOS = [
   { name: "tabs", shots: ["doing", "history", "waiting", "next-up"] },
   { name: "doing-bands", shots: ["doing-needs-reviewer", "doing-ready", "doing-wrap", "doing-review"] },
   { name: "wrap-confirm", shots: ["doing-wrap-dirty", "doing-wrap-multi"] },
+  { name: "wrap-ask", shots: ["doing-wrap-kept-open"] },
   { name: "hints", shots: ["doing-hint", "waiting-too-long"], desktop: true },
   { name: "waiting-copy", shots: ["waiting-copied"] },
   { name: "waiting-sheet", shots: ["waiting-sheet"] },

@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type CloseAsk, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole } from "../shared/config";
 import { newIssueRepos } from "../shared/new-issue";
@@ -6,13 +6,13 @@ import type { IssueField } from "../shared/setup";
 import type { ArchiveOutcome, ArchiveTarget, KeptRow, KeptWorktree } from "../shared/archive";
 import { rememberGroups } from "../shared/wrap-up";
 import { acknowledge, ownClosed } from "./changes";
-import { classify, classifyHistory } from "./classify";
+import { classify, classifyCloseAsks, classifyHistory } from "./classify";
 import { probeAnswer, projectsFailure, projectsWarning } from "./projects";
 import type { Port } from "./port";
 import { isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import type { Details, LiveResult } from "./github-types";
 import { State } from "./store";
-import { applyPending, buildView, doneItem, type Effect, isPending, SETTLE_MS } from "./view";
+import { applyPending, buildView, doneItem, type Effect, isPending, type Pending, SETTLE_MS } from "./view";
 import { keySet, uniqueKeys } from "../shared/names";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -110,6 +110,16 @@ export class AttentionService {
 
   async undismiss(key: string): Promise<AttentionView> {
     delete this.state.dismissed[key];
+    await this.save();
+    return this.view();
+  }
+
+  // Keep open: Wrap up stops asking to close the issue until another PR of mine merges under it; `on: false` is its Undo.
+  // Nothing changes on GitHub [ATT-24].
+  async keepOpen(key: string, on: boolean): Promise<AttentionView> {
+    const ask = this.state.history?.asks.find((candidate) => candidate.key === key);
+    if (on && ask) this.state.keptOpen[key] = ask.mergedAt;
+    if (!on) delete this.state.keptOpen[key];
     await this.save();
     return this.view();
   }
@@ -306,8 +316,14 @@ export class AttentionService {
   // Into History if it's mine: a PR in my lists, or an issue assigned to me [HIS-01]. Else just off the lists.
   private finished(key: string, at: string, notPlanned?: boolean): Effect {
     const live = this.state.live?.attention;
-    const source = live?.items.find((item) => item.key === key) ?? live?.assigned.find((issue) => issue.key === key);
+    const source = live?.items.find((item) => item.key === key) ?? live?.assigned.find((issue) => issue.key === key) ?? this.askItem(key);
     return source ? { kind: "done", item: doneItem(source, at, notPlanned) } : { kind: "gone" };
+  }
+
+  // An issue Wrap up asked to close, as History will list it once closed: my merged PRs under it [ATT-24, HIS-01].
+  private askItem(key: string): Item | undefined {
+    const ask = this.state.history?.asks.find((candidate) => candidate.key === key);
+    return ask && { ...baseItem({ key, section: "done", kind: "issue", repo: ask.repo, number: ask.number, title: ask.title, url: ask.url }), children: ask.prs };
   }
 
   // A PR of mine the live feed saw merged, which History doesn't list yet, perhaps merged on GitHub: History is fetched
@@ -357,7 +373,12 @@ export class AttentionService {
         this.state.groups = rememberGroups(this.state.groups, this.state.live.attention.items, now, Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7));
         this.followMerges();
       }
-      else this.state.history = { fetchedAt, items: await this.fetchHistory(now) };
+      else {
+        this.state.history = { fetchedAt, ...(await this.fetchHistory(now)) };
+        // Keep open is forgotten once the issue isn't asked about: closed, or out of History's weeks [ATT-24].
+        const asked = new Set(this.state.history.asks.map((ask) => ask.key));
+        for (const key of Object.keys(this.state.keptOpen)) if (!asked.has(key)) delete this.state.keptOpen[key];
+      }
       // Forget dismissals of items that are gone.
       const keys = new Set(this.items().map((item) => item.key));
       for (const key of Object.keys(this.state.dismissed)) if (!keys.has(key)) delete this.state.dismissed[key];
@@ -400,8 +421,9 @@ export class AttentionService {
     return this.state.projectRepos;
   }
 
-  private async fetchHistory(now: Date): Promise<Item[]> {
-    return classifyHistory(await this.port.github.history(this.config, now, this.timeZone));
+  private async fetchHistory(now: Date): Promise<{ items: Item[]; asks: CloseAsk[] }> {
+    const data = await this.port.github.history(this.config, now, this.timeZone);
+    return { items: classifyHistory(data), asks: classifyCloseAsks(data) };
   }
 
   // Whether the gh login may read projects, asked at most hourly, or now when Settings asks [NXT-12]. On only when GitHub
@@ -497,6 +519,12 @@ export class AttentionService {
     return newIssueRepos(this.config, this.state.projectRepos, [...shown, ...issues], attention?.login ?? null);
   }
 
+  // History's asks, less those kept open since their latest merge, and an issue I just closed until History shows it [ATT-24].
+  private closeAsks(pending: Record<string, Pending>): CloseAsk[] {
+    const off = (key: string) => ["done", "gone"].includes(pending[key]?.effect.kind ?? "");
+    return (this.state.history?.asks ?? []).filter((ask) => !off(ask.key) && !((this.state.keptOpen[ask.key] ?? "") >= ask.mergedAt));
+  }
+
   private view(): AttentionView {
     const status = (id: FeedId): FeedStatus => ({
       fetchedAt: this.state[id]?.fetchedAt ?? null,
@@ -522,6 +550,7 @@ export class AttentionService {
       pending: Object.keys(pending).length,
       newIssue: { repos: this.newIssueRepos(shown.attention), ...this.state.newIssue },
       kept: this.state.kept,
+      closeAsks: this.closeAsks(pending),
       },
       this.state.changes,
       new Date(now),

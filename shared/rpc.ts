@@ -26,6 +26,8 @@ export const getAttention = defineRpc({
 export const dismissItem = defineRpc({ name: "attention.dismiss", input: z.object({ key: z.string() }), output: view });
 // Undo one dismissal [ATT-08].
 export const undismissItem = defineRpc({ name: "attention.undismiss", input: z.object({ key: z.string() }), output: view });
+// Keep open: Wrap up stops asking "Close #12?" until another PR merges under it; `on: false` is its Undo [ATT-24].
+export const keepOpen = defineRpc({ name: "issue.keep-open", input: z.object({ key: z.string(), on: z.boolean() }), output: view });
 // Clears Changed by others notes, one or all of them; `on: false` brings them back for Undo. Nothing changes on GitHub [HIS-07].
 export const gotIt = defineRpc({ name: "attention.got-it", input: z.object({ ids: z.array(z.string()), on: z.boolean() }), output: view });
 // Reviewed and Changed by others in History's weeks; remembered in state.json [HIS-07].

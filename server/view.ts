@@ -1,7 +1,8 @@
-import { type Attention, type AttentionView, baseItem, type Chip, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type Chip, type CloseAsk, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { KeptRow } from "../shared/archive";
 import type { NewIssueInfo } from "../shared/new-issue";
+import { keySet } from "../shared/names";
 import { workChip, workKind } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
 import { historySince } from "./queries";
@@ -19,6 +20,8 @@ export interface ViewMeta {
   pending: number;
   newIssue: NewIssueInfo;
   kept?: KeptRow[];
+  // History's asks, less those kept open or just closed [ATT-24].
+  closeAsks?: CloseAsk[];
 }
 
 // What a tap on GitHub changed, shown until a fetch can show it for itself [FRESH-02].
@@ -151,6 +154,13 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
       .map((id) => ({ id, title: SECTIONS[id].title, items: shown.filter((item) => item.section === id) }))
       .filter((section) => section.items.length > 0);
   const doing = sections("doing");
+  const activeKeys = (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]);
+  const active = keySet(activeKeys);
+  // An issue with a PR of mine open under it isn't done: that PR's in the live feed, which History's asks can't know [ATT-24].
+  const closeAsks = (meta.closeAsks ?? []).filter((ask) => !active.has(ask.key.toLowerCase()));
+  // Next up keeps an issue it asks about, saying its PRs merged [ATT-24].
+  const asked = keySet(closeAsks.map((ask) => ask.key));
+  const marked = (issues: NextUpIssue[]) => issues.map((issue) => (asked.has(issue.key.toLowerCase()) ? { ...issue, prsMerged: true as const } : issue));
   return {
     ...meta,
     login: attention?.login ?? null,
@@ -161,9 +171,10 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
     history: shown.filter((item) => SECTIONS[item.section].tab === "history"),
     // Dismissed or not, these are still open; Wrap up must not call their sessions finished [ATT-22].
     ownClosed: attention?.ownClosed ?? [],
-    activeKeys: (attention?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]),
-    assigned: attention?.assigned ?? [],
-    unclaimed: attention?.unclaimed ?? [],
+    activeKeys,
+    closeAsks,
+    assigned: marked(attention?.assigned ?? []),
+    unclaimed: marked(attention?.unclaimed ?? []),
     unclaimedFrom: attention?.unclaimedFrom ?? "config",
     projects: attention?.projects ?? [],
     dismissedCount: items.filter((item) => isDismissed(item, dismissed)).length,

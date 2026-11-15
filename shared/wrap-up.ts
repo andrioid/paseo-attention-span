@@ -1,4 +1,4 @@
-import { type AgentSummary, type AttentionView, isIdle, type Item, matchSessions, memberKeys, type RememberedGroups, type WrapItem } from "./attention";
+import { type AgentSummary, type AttentionView, baseItem, type CloseAsk, isIdle, type Item, matchSessions, memberKeys, type RememberedGroups, type WrapItem } from "./attention";
 import { type UnsavedSession, unsavedOf } from "./archive";
 import { ago } from "./format";
 import { changeText } from "./changes";
@@ -25,9 +25,10 @@ export function sessionCleanliness(agent: AgentSummary): SessionCleanliness {
   return unsaved.files || unsaved.uncommitted || unsaved.commits ? "dirty" : "unknown";
 }
 
-// A row with one session, clean: Archive session archives it at once, whatever happened on GitHub [ATT-22].
+// A row with one session, clean: Archive session archives it at once, whatever happened on GitHub [ATT-22]. A row asking to
+// close an issue answers that first [ATT-24].
 export function cleanSingle(item: WrapItem): boolean {
-  return item.wrap.sessions.length === 1 && sessionCleanliness(item.wrap.sessions[0]) === "clean";
+  return !item.wrap.ask && item.wrap.sessions.length === 1 && sessionCleanliness(item.wrap.sessions[0]) === "clean";
 }
 
 // What finishing looked like, in the same words the cards use [HIS-05, HIS-07].
@@ -75,25 +76,48 @@ function candidates(view: WrapView): Item[] {
 }
 
 // What Wrap up reads from the view.
-export type WrapView = Pick<AttentionView, "history" | "doing" | "waiting"> & Partial<Pick<AttentionView, "activeKeys" | "groups" | "ownClosed">>;
+export type WrapView = Pick<AttentionView, "history" | "doing" | "waiting"> & Partial<Pick<AttentionView, "activeKeys" | "groups" | "ownClosed" | "closeAsks">>;
+
+// "#34 merged 2h ago", "#34 and #35 merged 2h ago", "4 PRs merged 2h ago": what's done under an issue asked about, by its
+// latest merge [ATT-24].
+export function askText(ask: CloseAsk, now: Date): string {
+  const numbers = ask.prs.map((pr) => `#${pr.number}`);
+  const which = numbers.length > 3 ? `${numbers.length} PRs` : numbers.length > 1 ? `${numbers.slice(0, -1).join(", ")} and ${numbers.at(-1)}` : numbers[0];
+  return `${which} merged ${ago(ask.mergedAt, now)} ago`;
+}
 
 // What Doing's Wrap up shows, newest finish first. A row needs at least one open session, all idle. A stack or issue group
 // enters once, and only when everything its sessions serve is done: a key still open in Doing or Waiting, or a remembered
 // sibling of one, keeps the group out [ATT-22].
 export function wrapItems(view: WrapView, agents: AgentSummary[], now = new Date()): WrapItem[] {
-  if (agents.length === 0) return [];
+  const asks = view.closeAsks ?? [];
+  if (agents.length === 0 && asks.length === 0) return [];
   const active = keySet([...(view.activeKeys ?? []), ...[...view.doing.flatMap((section) => section.items), ...view.waiting.flatMap((group) => group.items)].flatMap(memberKeys)]);
   const groups = view.groups ?? {};
   const serving = (key: string) => [key.toLowerCase(), ...(groups[key.toLowerCase()] ?? [])].some((other) => active.has(other));
   const rows: { item: WrapItem; at: string }[] = [];
   const used = new Set<string>();
+  // The group's sessions must all be idle, none may serve work that's still active, and a session belongs to one row only.
+  // A sub-agent still working keeps its session's row out too.
+  const unready = (sessions: AgentSummary[]) => sessions.some((agent) => !isIdle(agent) || agent.subAgents?.working || serving(agent.itemKey) || used.has(agent.id));
+  // An issue to close leads its row, with its merged PRs' sessions once they're ready, so they don't make rows of their own;
+  // it asks with or without them [ATT-24].
+  const asked = new Set<string>();
+  for (const ask of asks) {
+    const keys = [ask.key, ...ask.prs.map((pr) => pr.key)];
+    const found = matchSessions(agents, keys);
+    const sessions = unready(found) ? [] : found;
+    for (const agent of sessions) used.add(agent.id);
+    for (const key of keys) asked.add(key.toLowerCase());
+    const base = baseItem({ key: `wrap:${ask.key}`, section: "wrap", kind: "issue", repo: ask.repo, number: ask.number, title: ask.title, url: ask.url }, ask.mergedAt);
+    rows.push({ item: { ...base, section: "wrap", children: ask.prs, wrap: { sessions, itemKey: ask.key, keys, finish: askText(ask, now), ask: true } }, at: ask.mergedAt });
+  }
   for (const item of candidates(view)) {
     const keys = memberKeys(item);
+    if (keys.some((key) => asked.has(key.toLowerCase()))) continue;
     const sessions = matchSessions(agents, keys);
     if (sessions.length === 0) continue;
-    // The group's sessions must all be idle, none may serve work that's still active, and a session belongs to one row only.
-    // A sub-agent still working keeps its session's row out too.
-    if (sessions.some((agent) => !isIdle(agent) || agent.subAgents?.working || serving(agent.itemKey) || used.has(agent.id)) || keys.some(serving)) continue;
+    if (unready(sessions) || keys.some(serving)) continue;
     for (const agent of sessions) used.add(agent.id);
     rows.push({
       item: {
@@ -113,7 +137,8 @@ export function wrapItems(view: WrapView, agents: AgentSummary[], now = new Date
 // The unread changes History shows: every note except the ones already in Wrap up, where archiving is the acknowledgement
 // [HIS-07, ATT-22]. A note whose work has no session left, or whose sessions are busy, stays unread.
 export function unreadChanges(notes: Item[], wrap: WrapItem[]): Item[] {
-  const inWrap = keySet(wrap.flatMap((item) => item.wrap.keys));
+  // A row asking to close an issue only acknowledges when it has sessions to archive [ATT-24].
+  const inWrap = keySet(wrap.filter((item) => item.wrap.sessions.length > 0).flatMap((item) => item.wrap.keys));
   return notes.filter((note) => !memberKeys(note).some((key) => inWrap.has(key.toLowerCase())));
 }
 

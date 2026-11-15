@@ -205,6 +205,19 @@ export interface HistoryResult {
   merged: Nodes<{ number: number; title: string; url: string; headRefName?: string; body?: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; closingIssuesReferences: Nodes<{ number: number; repository: Repo }> } & Labels>;
   reviewed: Nodes<{ number: number; title: string; url: string; mergedAt: string; mergedBy?: { login: string } | null; repository: Repo; author: Actor | null } & Labels>;
   closed: Nodes<{ number: number; title: string; url: string; closedAt: string; stateReason: string | null; repository: Repo; issueType?: { name: string } | null; timelineItems?: Nodes<{ actor?: { login: string } | null }> } & Labels>;
+  // Looked up after the search: "owner/name#number" -> an issue my merged PRs refer to, open or closed; PRs are left out
+  // [ATT-24]. Missing when nothing was looked up.
+  referenced?: Record<string, ReferencedIssue>;
+}
+
+export interface ReferencedIssue {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  repository: Repo;
+  // Anyone's open PRs GitHub links to it.
+  closedByPullRequestsReferences?: Nodes<{ state: string }>;
 }
 
 export type SearchResult = LiveResult & HistoryResult;

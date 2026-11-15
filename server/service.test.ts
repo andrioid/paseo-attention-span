@@ -179,7 +179,7 @@ describe("History's weeks", () => {
         closed: { nodes: [issue].filter((node) => Date.parse(node.closedAt) >= since("closed")) },
       } satisfies HistoryResult;
     }) as Gh["graphql"],
-    graphqlResult: vi.fn() as never,
+    graphqlResult: (async () => ({ data: {}, errors: [], failures: [] })) as never,
   };
   const shown = (view: AttentionView) => historyWeeks(view.history, []).weeks.map((week) => week.done.map((item) => [item.number, item.children.map((child) => child.number)]));
 
@@ -410,5 +410,39 @@ describe("kept worktrees", () => {
     await h.service.forgetKept("w1");
     finish();
     expect((await archiving).view.kept).toEqual([]);
+  });
+});
+
+describe("asking to close an issue", () => {
+  const repository = { nameWithOwner: REPO };
+  const ISSUE = `${REPO}#900`;
+  const merged = (number: number, mergedAt: string) => ({ number, title: `Step ${number}`, url: `u${number}`, body: `Part of #900`, mergedAt, repository, closingIssuesReferences: { nodes: [] } });
+  const open = { number: 900, title: "Export to CSV", url: "u900", state: "OPEN", repository, closedByPullRequestsReferences: { nodes: [] } };
+  // gh answering History's search with my merged PRs, and the lookup of the issue they refer to as still open.
+  const gh = (prs: ReturnType<typeof merged>[]): Gh => ({
+    graphql: (async () => ({ viewer: { login: "me", id: "U_me" }, merged: { nodes: prs }, reviewed: { nodes: [] }, closed: { nodes: [] } }) satisfies HistoryResult) as Gh["graphql"],
+    graphqlResult: (async (query: string) => ({ data: query.includes("number: 900") ? { i0: { issueOrPullRequest: open } } : {}, errors: [], failures: [] })) as never,
+  });
+  const asked = (view: AttentionView) => (view.closeAsks ?? []).map((ask) => [ask.key, ask.prs.map((pr) => pr.number)]);
+
+  it("ATT-24: asks once my PRs under an open issue have merged; Keep open lasts until another merges", async () => {
+    const prs = [merged(901, "2026-11-12T10:00:00Z")];
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh(prs)).history(config, now, timeZone));
+    await start();
+    expect(asked(await service.get(undefined, true))).toEqual([[ISSUE, [901]]]);
+    expect(asked(await service.keepOpen(ISSUE, true))).toEqual([]);
+    // Nothing new: still kept open after History is fetched again.
+    expect(asked(await service.get("history"))).toEqual([]);
+    prs.push(merged(902, "2026-11-13T10:00:00Z"));
+    expect(asked(await service.get("history"))).toEqual([[ISSUE, [901, 902]]]);
+  });
+
+  it("ATT-24, ATT-14: Close takes the issue, with its PRs, to History until it's fetched; Undo asks again", async () => {
+    const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([merged(901, "2026-11-12T10:00:00Z")])).history(config, now, timeZone));
+    await start();
+    const closed = await service.act(ISSUE, async () => {}, { kind: "finished" });
+    expect(asked(closed)).toEqual([]);
+    expect(closed.history.find((item) => item.key === ISSUE)?.children.map((child) => child.number)).toEqual([901]);
+    expect(asked(await service.act(ISSUE, async () => {}, null))).toEqual([[ISSUE, [901]]]);
   });
 });

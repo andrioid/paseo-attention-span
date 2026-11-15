@@ -215,6 +215,7 @@ function AttentionList({
                   login={view.login}
                   fixture={!!view.fixtureAgents}
                   openAgent={act.openAgent}
+                  {...act.askActions}
                   onArchive={(item, confirm, terminals) => act.archiveRows([item], confirm, item.key, terminals)}
                   onArchiveAll={async () => {
                     const clean = wrap.filter(cleanSingle);

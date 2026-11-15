@@ -272,7 +272,20 @@ export function baseItem({ key, section, kind, repo, number, title, url }: Pick<
   return { key, section, kind, draft: false, repo, number, title, url, chips: [], actions: [], children: [], target: { kind, repo, number, title, url }, othersActivityAt };
 }
 
-// A Wrap up row's sessions: all idle, or it wouldn't be there [ATT-22].
+// An open issue whose PRs of mine, grouped under it, have all merged, with none open for it: Wrap up asks "Close #12?" [ATT-24].
+export interface CloseAsk {
+  key: string;
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  // My merged PRs under it, oldest merge first, each with its mergedAt.
+  prs: SubRow[];
+  // The latest of their merges: Keep open lasts until a later one.
+  mergedAt: string;
+}
+
+// A Wrap up row's sessions: all idle, or it wouldn't be there [ATT-22, ATT-24].
 export interface WrapInfo {
   sessions: AgentSummary[];
   // The finished item's own key; the row's is prefixed with "wrap:" so it never collides with it.
@@ -283,9 +296,12 @@ export interface WrapInfo {
   finish: string;
   // A session on someone else's PR that merged: its card says "review session" in words.
   review?: true;
+  // An open issue whose PRs of mine all merged: the row asks "Close #12?", and has sessions only when one is open on that
+  // work. Closing leaves its sessions to the usual row [ATT-24].
+  ask?: true;
 }
 
-// A Wrap up row: always with its sessions and keys [ATT-22].
+// A Wrap up row: with its sessions and keys; one asking to close an issue may have no session [ATT-22, ATT-24].
 export type WrapItem = Item & { section: "wrap"; wrap: WrapInfo };
 
 // The GitHub work an item stands for: itself, the PRs under it, and the work a change note is about, spelled as GitHub
@@ -354,6 +370,8 @@ export interface NextUpIssue {
   projects?: IssueProject[];
   // Open PRs that close it: someone may already be on it [NXT-10].
   openPrs: { number: number; url: string; author: string | null }[];
+  // My PRs under it have all merged and Wrap up asks whether to close it [ATT-24].
+  prsMerged?: true;
 }
 
 // More about an item, fetched when its sheet opens rather than in every refresh [GH-01].
@@ -505,6 +523,8 @@ export interface AttentionView {
   ownClosed?: Item[];
   // Key -> the keys of the stack or issue group it was last seen open in, lower case [ATT-22, ATT-04].
   groups?: Record<string, string[]>;
+  // Open issues whose PRs of mine have all merged, not kept open since: Wrap up asks "Close #12?" [ATT-24].
+  closeAsks?: CloseAsk[];
   assigned: NextUpIssue[];
   unclaimed: NextUpIssue[];
   unclaimedFrom: UnclaimedSource;

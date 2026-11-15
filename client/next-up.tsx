@@ -172,8 +172,10 @@ function IssueList({ issues, claim, ...rowProps }: RowProps & { issues: NextUpIs
   );
 }
 
-// An open PR that closes it means someone may already be on it [NXT-10].
+// An open PR that closes it means someone may already be on it [NXT-10]; my PRs under it all merged mean it may be done,
+// while Wrap up asks [ATT-24].
 function prSignal(issue: NextUpIssue): Chip[] {
+  if (issue.prsMerged) return [{ text: "PRs merged", tone: "good" }];
   const [first, ...more] = issue.openPrs;
   if (!first) return [];
   return [{ text: `PR by ${first.author ?? "someone"}${more.length ? ` +${more.length}` : ""}`, tone: "warn" }];
