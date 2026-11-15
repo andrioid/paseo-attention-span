@@ -73,39 +73,42 @@ const MY_THREADS = 100;
 export async function reviewAgainContext(target: Target): Promise<string> {
   const prs = reviewAgain(target);
   const named = (target.stack?.length ?? 0) > 1;
-  const blocks = await Promise.all(prs.map((pr) => lastReview(target.repo, pr.number, named)));
+  const blocks = await Promise.all(prs.map((pr) => lastReview(target.repo, pr, named)));
   return join(...blocks);
 }
 
-async function lastReview(repo: string, number: number, named: boolean): Promise<string> {
+async function lastReview(repo: string, stacked: StackPr, named: boolean): Promise<string> {
   type Author = { login: string } | null;
   type Review = { author: Author; state: string; body: string; submittedAt: string | null; commit: { oid: string } | null };
   type Thread = { isResolved: boolean; path: string; line: number | null; comments: { totalCount: number; nodes: { author: Author; body: string }[] } };
   const [owner, name] = repo.split("/");
+  const { number } = stacked;
+  // My reviews only, by login, so others' reviews since can't crowd mine out; submitted ones only, as a review I've
+  // started and not sent isn't where I left off.
+  const { login } = (await graphql<{ viewer: { login: string } }>("query { viewer { login } }")).viewer;
   const data = await graphql<{
-    viewer: { login: string };
     repository: { pullRequest: { url: string; baseRefName: string; headRefOid: string; reviews: { nodes: Review[] }; reviewThreads: { totalCount: number; nodes: Thread[] } } };
   }>(
-    `query($owner: String!, $name: String!, $number: Int!) {
-      viewer { login }
+    `query($owner: String!, $name: String!, $number: Int!, $login: String!) {
       repository(owner: $owner, name: $name) {
         pullRequest(number: $number) {
           url baseRefName headRefOid
-          reviews(last: 50, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) { nodes { author { login } state body submittedAt commit { oid } } }
+          reviews(last: ${MY_REVIEWS * 4}, author: $login, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) { nodes { author { login } state body submittedAt commit { oid } } }
           reviewThreads(first: ${MY_THREADS}) { totalCount nodes { isResolved path line comments(first: ${THREAD_COMMENTS}) { totalCount nodes { author { login } body } } } }
         }
       }
     }`,
-    { owner, name, number },
+    { owner, name, number, login },
   );
-  const me = data.viewer.login.toLowerCase();
+  const me = login.toLowerCase();
   const mine = (author: Author) => author?.login.toLowerCase() === me;
   const pr = data.repository.pullRequest;
-  // Submitted ones only: a review I've started and not sent isn't where I left off.
   const reviews = pr.reviews.nodes.filter((r) => mine(r.author));
   const latest = reviews.at(-1);
   const title = `Your last review${named ? ` of #${number}` : ""}`;
-  if (!latest) return `${title}: not among the PR's last 50 reviews; read them at ${pr.url}`;
+  // Where GitHub's answer has none, the list's own reading of it still says when, and on which commit.
+  const reviewed = latest ? latest.commit?.oid : stacked.reviewed?.oid;
+  const when = latest ? `${latest.state.toLowerCase()}${latest.submittedAt ? ` on ${latest.submittedAt}` : ""}` : `on ${stacked.reviewed?.at ?? "an earlier date"}`;
 
   const who = (author: Author) => (mine(author) ? "you" : `@${author?.login ?? "ghost"}`);
   const said = reviews
@@ -125,7 +128,7 @@ async function lastReview(repo: string, number: number, named: boolean): Promise
   const laterThreads = notShown(pr.reviewThreads.totalCount - pr.reviewThreads.nodes.length, "more review threads, some maybe yours", pr.url);
 
   return join(
-    `${title}: ${latest.state.toLowerCase()}${latest.submittedAt ? ` on ${latest.submittedAt}` : ""}.\n${sinceSteps(latest.commit?.oid, pr.headRefOid, pr.baseRefName)}`,
+    `${title}: ${when}.\n${sinceSteps(reviewed, pr.headRefOid, pr.baseRefName)}`,
     said.length ? `What you wrote in your reviews:\n${said.join("\n")}` : "",
     threads.length ? `Review threads you're in, with the replies:\n${threads.join("\n")}` : "",
     unread,
@@ -133,7 +136,8 @@ async function lastReview(repo: string, number: number, named: boolean): Promise
   );
 }
 
-// How to find the commits since the one I reviewed: they follow it, or the branch was rebased or force-pushed past it. The
+// How to find the commits since the one I reviewed: they follow it, perhaps with the base merged in, or the branch was
+// rebased or force-pushed past it. The
 // rebase case compares the two versions from where they meet, as the base may have moved too, a stack's parent with it.
 function sinceSteps(reviewed: string | undefined, head: string, base: string): string {
   if (!reviewed) return `GitHub no longer has the commit you reviewed, so review the whole diff against ${base} and say you couldn't narrow it down.`;
@@ -141,7 +145,7 @@ function sinceSteps(reviewed: string | undefined, head: string, base: string): s
   return [
     `You reviewed commit ${reviewed}; the head is now ${head}.`,
     `- \`git fetch origin ${reviewed} ${head}\``,
-    `- If \`git merge-base --is-ancestor ${reviewed} ${head}\`: the new commits are \`git log ${reviewed}..${head}\`, their changes \`git diff ${reviewed}..${head}\`.`,
+    `- If \`git merge-base --is-ancestor ${reviewed} ${head}\`: the new commits are \`git log ${reviewed}..${head}\`, their changes \`git diff ${reviewed}..${head}\`. If one of them merges ${base} in, what came with it isn't the PR's: review the author's own commits (\`git log --first-parent --no-merges ${reviewed}..${head}\`, each with \`git show\`) and the merge's conflict resolutions (\`git show --remerge-diff <merge>\`) instead of the whole diff.`,
     `- Otherwise the branch was rebased or force-pushed: compare the two versions with \`git range-diff ${reviewed}...${head}\`. Commits that came with ${base} or a rebased parent show up too, as added, dropped or matched; leave those out.`,
     `- If ${reviewed} can't be fetched, review the whole diff against ${base} and say you couldn't narrow it down.`,
   ].join("\n");

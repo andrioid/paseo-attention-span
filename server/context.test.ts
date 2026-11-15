@@ -160,6 +160,28 @@ describe("sessionContext: review asked for again", () => {
     expect(context).toContain("you: Mine");
   });
 
+  it("REV-02: asks for my reviews by login, so others' can't crowd them out", async () => {
+    github([review("me", "COMMENTED", "")], []);
+    await reviewAgainContext(again);
+    expect(gh.graphql.mock.calls[1][1]).toMatchObject({ login: "Me", number: 7 });
+  });
+
+  it("REV-02: with no review of mine in GitHub's answer, still goes from the commit the list saw, threads and all", async () => {
+    github([], [thread(false, ["me", "Round per line"], ["alice", "Done"])]);
+    const context = await reviewAgainContext(again);
+    expect(context).toContain("Your last review: on 2026-11-10T00:00:00Z.");
+    expect(context).toContain("`git diff old..new`");
+    expect(context).toContain("you: Round per line");
+  });
+
+  it("REV-02: says the base merged in since isn't the PR's, and where its own changes and conflict resolutions are", async () => {
+    github([review("me", "COMMENTED", "")], []);
+    const context = await reviewAgainContext(again);
+    expect(context).toContain("If one of them merges main in, what came with it isn't the PR's");
+    expect(context).toContain("`git log --first-parent --no-merges old..new`");
+    expect(context).toContain("`git show --remerge-diff <merge>`");
+  });
+
   it("REV-02: says when there's nothing new to diff, or the commit I reviewed is gone", async () => {
     github([review("me", "COMMENTED", "")], [], "old");
     expect(await reviewAgainContext(again)).toContain("No commits since: the head is still old.");
@@ -174,7 +196,8 @@ describe("sessionContext: review asked for again", () => {
     expect(context).toMatch(/^Stack, bottom first:/);
     expect(context).toContain("Your last review of #5: commented");
     expect(context).not.toContain("of #6");
-    expect(gh.graphql).toHaveBeenCalledTimes(1);
+    // Who I am, then my reviews of #5; nothing for #6, which I never reviewed.
+    expect(gh.graphql).toHaveBeenCalledTimes(2);
   });
 
   it("REV-02: nothing extra when nobody asked again", async () => {
