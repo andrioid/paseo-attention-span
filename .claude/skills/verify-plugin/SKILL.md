@@ -1,6 +1,6 @@
 ---
 name: verify-plugin
-description: Verify this Paseo plugin end to end in an isolated Docker preview. Typecheck and test, run the plugin in a throwaway Paseo daemon on fixture data, and read screenshots. While iterating on one screen, run one layout and read only that screen's shot; run every tab at desktop and phone width in dark and light themes once, when the work is done. Use after changing UI, the classifier, fixture data or anything the screen shows, and before asking the user to look. Never use the user's own Paseo daemon for this.
+description: Verify this Paseo plugin end to end in an isolated Docker preview. Typecheck and test, run the plugin in a throwaway Paseo daemon on fixture data, and read screenshots. While iterating, run only the shot you're changing, by its name (about 15 seconds), and read only it; run everything, every layout at desktop and phone width in dark and light themes, once, when the work is done (about 4 minutes). Use after changing UI, the classifier, fixture data or anything the screen shows, and before asking the user to look. Never use the user's own Paseo daemon for this.
 ---
 
 # Verify the plugin
@@ -19,13 +19,17 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 
 2. **Preview:**
    ```bash
-   npm run preview              # all four layouts, about 1–2 minutes
-   npm run preview -- phone     # only names containing "phone" (or "desktop", "dark", "light", "desktop-dark", …)
+   npm run preview -- desktop-dark-doing-sheet   # one shot in one layout: about 15 seconds
+   npm run preview -- doing-sheet                # that shot in every layout that has it
+   npm run preview -- doing-sheet,history        # several, comma-separated
+   npm run preview -- phone                      # every shot in the layouts containing "phone" (or "desktop-dark", "light", …)
+   npm run preview                               # everything: every layout, every shot
    ```
-   - `preview/run.sh` builds the image (cached after the first time), clears `preview/out/`, and runs the container.
-   - It prints `ok <layout>` or `failed <layout>: <reason>` for each layout.
-   - On failure it saves `<layout>-failure.png` and prints the container daemon's log tail.
-   - **Match the run to the change.** Checking one screen doesn't need four layouts: run one (`npm run preview -- desktop-dark`, or `phone-dark` for a phone-only fix) and read only the shots of the screen you changed. Run all four layouts once, when the work is done and before asking the user to look.
+   - **Iterate on the shot you're changing, by its name** (the file name without `.png`, from the table below). Only the scenarios that take it run, and only the shots you named are written. `node preview/shots.mjs list` lists every name; an unknown name fails at once and suggests near ones.
+   - **Run everything once, when the work is done** and before asking the user to look, then `npm run screenshots` if the UI changed.
+   - `preview/run.sh` builds the image (cached after the first time), clears `preview/out/`, and runs one container per layout, two at a time: everything takes about 4 minutes, one shot about 15 seconds. Each container has its own daemon, so nothing one layout changes reaches another. A layout's full output is `preview/out/<layout>.log`.
+   - Each layout prints `ok <layout> in …s`, or `failed <layout> <scenario>: <reason>` for each scenario that failed. After a failure the layout starts over and runs its remaining scenarios, so one failure doesn't hide another. Each scenario's time is in the layout's log. The slowest is `clear` (the `*-clear`, `doing-dismissed` and `next-up-setup` shots): about a minute on phones, as it dismisses every row through Paseo's sliding sheet.
+   - On failure it saves `<layout>-<scenario>-failure.png` and prints the container daemon's log tail.
 
 3. **Read the screenshots** in `preview/out/` with the Read tool. Each layout is `{desktop,phone}-{dark,light}`, and each gives you:
 
@@ -84,7 +88,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    - wrong sections or counts
    - anything that differs from what the change intended
 
-4. **Refresh the docs screenshots** after visible UI changes: `npm run screenshots` copies a curated set into `docs/screenshots/`. Commit them with the change.
+4. **Refresh the docs screenshots** after visible UI changes: `npm run screenshots` copies a curated set from `preview/out/` into `docs/screenshots/`, without running the preview again. It copies only a finished full run of the current source: a full run writes `preview/out/manifest.json` with a hash of what it was shot from (`preview/fingerprint.mjs`), and any change since, or a run with a selection, makes it refuse. Commit the copies with the change.
 5. **Report** what you looked at and what you saw. Say plainly that native iOS/Android wasn't covered.
 
 ## How it works
@@ -93,7 +97,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 |---|---|
 | Image: Node 24, Chromium, `playwright-core` | `preview/Dockerfile` |
 | Starts a daemon with `--home /tmp/paseo-home`, sets `pluginsEnabled`, `features.webUi.enabled` (the daemon serves the web app itself), dictation and voice off, then installs `/plugin` and runs the shooter | `preview/entrypoint.sh` |
-| Opens `http://127.0.0.1:6767/` inside the container, clicks the "Attention" sidebar entry, then each tab by its accessibility label | `preview/shoot.mjs` |
+| Opens `http://127.0.0.1:6767/` inside the container, clicks the "Attention" sidebar entry, then runs each selected scenario | `preview/shoot.mjs` |
+| Layouts, scenarios and their shots, and how a selection picks them | `preview/shots.mjs` |
 | Plugin config inside the container (Next up sources, and Effort with its own order) | `preview/plugin-config.json` |
 | The fake GitHub data, plus fake sessions (`FIXTURE_AGENTS`), session context and sheet details (`fixtureDetails`) | `server/fixture.ts` |
 | A local repo with the `acme/shop` remote registered as a project, with a worktree workspace on `branch-102`, so Options has a project and a workspace to offer. `acme/issues` has no project on purpose | `preview/entrypoint.sh` |
@@ -105,7 +110,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 ## Keeping it useful
 
 - **New screen states:** when you add a section, chip, action or row state, add a case to `fixture()` in `server/fixture.ts` so the preview shows it. Session states come from `FIXTURE_AGENTS`. The test "covers every section with the preview fixture" in `server/classify.test.ts` counts the sections; update its number.
-- **New interactions:** to screenshot one (a modal, Options, a confirm bar), add a step to `shoot.mjs` after the tab loop. Find elements by visible text or accessibility label, and only press things that don't call GitHub.
+- **New interactions:** to screenshot one (a modal, Options, a confirm bar), add a scenario: its name and shots in `SCENARIOS` in `preview/shots.mjs`, in the order it should run, and what it does under the same name in `run` in `preview/shoot.mjs`. A scenario starts on the plugin's screen with nothing open, goes to its tab with `tab()`, and leaves things as it found them: close what it opened, clear filters it set, restore config.json in a `finally`. Related shots that build on each other share one scenario. Mark one `last` if it changes the daemon for good, and `desktop` if it needs a pointer. Find elements by visible text or accessibility label, and only press things that don't call GitHub. Take every shot through `capture()` (or `shot`, `modalShot`, `bandShot`, `top`), so a selection writes only what it asked for.
+- **No fixed sleeps.** Wait for what the shot shows (`locator.waitFor`), then `settled()`: it returns once nothing in the page has changed for 150 ms, no CSS transition is running and every image has loaded. For state outside the page, such as config.json, poll with `until()`. A `waitForTimeout` costs its full length in every layout and still guesses.
 - **Tabs on phones are icon-only,** so the shooter finds them by `accessibilityLabel` ("Doing, 11"). Keep that label on the `Tab` component.
 
 ## Troubleshooting
