@@ -1,6 +1,6 @@
 ---
 name: verify-plugin
-description: Verify this Paseo plugin end to end in an isolated Docker preview. Typecheck and test, run the plugin in a throwaway Paseo daemon on fixture data, and read screenshots. While iterating on one screen, run one layout and read only that screen's shot; run every tab at desktop and phone width in dark and light themes once, when the work is done. Use after changing UI, the classifier, fixture data or anything the screen shows, and before asking the user to look. Never use the user's own Paseo daemon for this.
+description: Verify this Paseo plugin end to end in an isolated Docker preview. Typecheck and test, run the plugin in a throwaway Paseo daemon on fixture data, and read screenshots. While iterating, run only the shot you're changing, by its name (about 15 seconds), and read only it; run everything, every layout at desktop and phone width in dark and light themes, once, when the work is done (about 4 minutes). Use after changing UI, the classifier, fixture data or anything the screen shows, and before asking the user to look. Never use the user's own Paseo daemon for this.
 ---
 
 # Verify the plugin
@@ -19,7 +19,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 
 2. **Preview:**
    ```bash
-   npm run preview -- desktop-dark-doing-sheet   # one shot in one layout: about 30 seconds
+   npm run preview -- desktop-dark-doing-sheet   # one shot in one layout: about 15 seconds
    npm run preview -- doing-sheet                # that shot in every layout that has it
    npm run preview -- doing-sheet,history        # several, comma-separated
    npm run preview -- phone                      # every shot in the layouts containing "phone" (or "desktop-dark", "light", …)
@@ -28,7 +28,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    - **Iterate on the shot you're changing, by its name** (the file name without `.png`, from the table below). Only the scenarios that take it run, and only the shots you named are written. `node preview/shots.mjs list` lists every name; an unknown name fails at once and suggests near ones.
    - **Run everything once, when the work is done** and before asking the user to look, then `npm run screenshots` if the UI changed.
    - `preview/run.sh` builds the image (cached after the first time), clears `preview/out/`, and runs one container per layout, two at a time: everything takes about 4 minutes, one shot about 15 seconds. Each container has its own daemon, so nothing one layout changes reaches another. A layout's full output is `preview/out/<layout>.log`.
-   - Each scenario prints its time, then each layout `ok <layout> in …s` or `failed <layout> <scenario>: <reason>`. After a failure the layout starts over and runs its remaining scenarios, so one failure doesn't hide another.
+   - Each layout prints `ok <layout> in …s`, or `failed <layout> <scenario>: <reason>` for each scenario that failed. After a failure the layout starts over and runs its remaining scenarios, so one failure doesn't hide another. Each scenario's time is in the layout's log. The slowest is `clear` (the `*-clear`, `doing-dismissed` and `next-up-setup` shots): about a minute on phones, as it dismisses every row through Paseo's sliding sheet.
    - On failure it saves `<layout>-<scenario>-failure.png` and prints the container daemon's log tail.
 
 3. **Read the screenshots** in `preview/out/` with the Read tool. Each layout is `{desktop,phone}-{dark,light}`, and each gives you:
