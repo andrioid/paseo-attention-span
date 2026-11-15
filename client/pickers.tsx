@@ -8,7 +8,7 @@ import type { AttentionConfig } from "../shared/config";
 import { ago } from "../shared/format";
 import { renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
-import type { OptionsSpec } from "./item-actions";
+import type { OptionsSpec, Started } from "./item-actions";
 import { branchWorkspaces, findCheckout, githubProjects, listProfiles, noProjectMessage, resolveAgentConfig, startSession, useStartRpcs } from "./sessions";
 import { Dialog } from "./sheet";
 import { Avatar, Button, CheckRow, Loading, TablerIcon, Toggle, useStyles } from "./ui";
@@ -137,7 +137,7 @@ export function ReviewerSheet({
 }
 
 // Session options in a modal: a bottom sheet on phones [SES-02].
-export function SessionOptions({ spec, config, started, onClose }: { spec: OptionsSpec; config: AttentionConfig; started: (agentId: string) => Promise<void>; onClose: () => void }) {
+export function SessionOptions({ spec, config, started, onClose }: { spec: OptionsSpec; config: AttentionConfig; started: (started: Started) => Promise<void>; onClose: () => void }) {
   const styles = useStyles();
   const paseo = usePaseo();
   const toast = useToast();
@@ -169,7 +169,8 @@ export function SessionOptions({ spec, config, started, onClose }: { spec: Optio
     setStarting(true);
     try {
       await spec.before?.();
-      await started(await startSession(paseo, { itemKey, kind, target, prompt: prompt ?? data.prompt, config: config, fetchProviders: fetchProviders, checkout: data.checkout, profileId, workspaceId }));
+      const agentId = await startSession(paseo, { itemKey, kind, target, prompt: prompt ?? data.prompt, config: config, fetchProviders: fetchProviders, checkout: data.checkout, profileId, workspaceId });
+      await started({ agentId, itemKey, kind, target });
       onClose();
     } catch (error) {
       toast.error(`Starting the session failed: ${(error as Error).message}`);
