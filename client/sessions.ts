@@ -1,6 +1,6 @@
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type AgentSummary, checkoutPr, isWorking, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
+import { type AgentSummary, checkoutPr, type SessionWorkspace, subAgentBusy, sessionTitle, type Target } from "../shared/attention";
 import { linkedSessions, subAgentsOf } from "../shared/linked-sessions";
 import { everyPage } from "../shared/paging";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
@@ -90,13 +90,12 @@ export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
   const everyone = all.map((entry) => entry.agent);
   return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)].map((agent) => {
     const workspace = agent.workspaceId ? byWorkspace.get(agent.workspaceId) : undefined;
-    // Its sub-agents go with it when it's archived, and one still working keeps its Wrap up row out. Only running counts:
-    // a finished sub-agent stays flagged for attention, as nobody opens it, and reporting back is its parent's job [ATT-22].
+    // Its sub-agents go with it when it's archived, and one still busy keeps its Wrap up row out [ATT-22].
     const subAgents = subAgentsOf(everyone, [agent.id]);
     return {
       ...agent,
       ...(workspace ? { workspace } : {}),
-      ...(subAgents.length ? { subAgents: { count: subAgents.length, working: subAgents.some(isWorking) } } : {}),
+      ...(subAgents.length ? { subAgents: { count: subAgents.length, working: subAgents.some(subAgentBusy) } } : {}),
     };
   });
 }

@@ -424,6 +424,12 @@ export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "c
 // A session working on its turn, or starting up [ATT-07].
 export const isWorking = (agent: { status: string }): boolean => agent.status === "running" || agent.status === "initializing";
 
+// A sub-agent holds its session back while it runs or waits on a permission I must give. Finished or failed, it stays
+// flagged for attention nobody gives it, as reporting back is its parent's job, so that doesn't count [ATT-22].
+export function subAgentBusy(agent: { status: string; requiresAttention?: boolean; attentionReason?: string | null }): boolean {
+  return isWorking(agent) || (!!agent.requiresAttention && agent.attentionReason === "permission");
+}
+
 // A session is idle when it isn't working and doesn't need me; Wrap up and archiving both ask [ATT-22].
 export function isIdle(agent: { status: string; requiresAttention?: boolean }): boolean {
   return !agent.requiresAttention && !isWorking(agent);
