@@ -95,7 +95,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
 
 | Piece | Where |
 |---|---|
-| Image: Node 24, Chromium, `playwright-core` | `preview/Dockerfile` |
+| Image: Node 24, Chromium, `playwright-core`, nothing else. Every worktree shares it, so the entrypoint, shooter and config aren't in it: each run takes its own from the mounted plugin | `preview/Dockerfile` |
 | Starts a daemon with `--home /tmp/paseo-home`, sets `pluginsEnabled`, `features.webUi.enabled` (the daemon serves the web app itself), dictation and voice off, then installs `/plugin` and runs the shooter | `preview/entrypoint.sh` |
 | Opens `http://127.0.0.1:6767/` inside the container, clicks the "Attention" sidebar entry, then runs each selected scenario | `preview/shoot.mjs` |
 | Layouts, scenarios and their shots, and how a selection picks them | `preview/shots.mjs` |

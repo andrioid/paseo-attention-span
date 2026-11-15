@@ -7,7 +7,8 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /preview
 RUN npm init -y >/dev/null && npm install --no-audit --no-fund playwright-core@1.56.1
-COPY entrypoint.sh shoot.mjs shots.mjs plugin-config.json ./
-RUN useradd --create-home preview && chmod +x entrypoint.sh
+# Only what doesn't change with the plugin: the entrypoint, shooter and config come from the mounted worktree at each run, so
+# worktrees sharing this image can't run each other's shooter.
+RUN useradd --create-home preview && chown preview /preview
 USER preview
-ENTRYPOINT ["/preview/entrypoint.sh"]
+ENTRYPOINT ["sh", "/plugin/preview/entrypoint.sh"]
