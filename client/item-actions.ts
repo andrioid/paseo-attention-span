@@ -7,7 +7,7 @@ import type { ActionId, AgentSummary, AttentionView, HistoryFilter, IssueCloseRe
 import type { AttentionConfig, SessionKind } from "../shared/config";
 import { summarizeRerun } from "../shared/checks";
 import { ALL_NOTES, ALL_WRAP } from "../shared/got-it";
-import { type ArchiveOutcome, archiveTarget } from "../shared/archive";
+import { type ArchiveOutcome, archiveTarget, type KeptRow } from "../shared/archive";
 import type { FilterChange } from "../shared/next-up-filter";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
@@ -89,6 +89,8 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   const gotIt = useRpc(rpc.gotIt);
   const saveHistoryFilter = useRpc(rpc.setHistoryFilter);
   const archiveSessions = useRpc(rpc.archiveSessions);
+  const archiveWorktreeRpc = useRpc(rpc.archiveWorktree);
+  const dismissKept = useRpc(rpc.dismissKept);
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
   const saveProjects = useRpc(rpc.setProjectFilter);
@@ -188,13 +190,30 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
         const archived = new Set(items.flatMap((item) => item.wrap.sessions.map((session) => session.id)));
         setArchivedSessions((known) => new Set([...known, ...archived]));
         const sessions = archived.size;
-        // A worktree that wouldn't go is an error; one kept on purpose, for another session, is just said.
-        if (outcome.warning) toast.error(outcome.warning);
-        if (outcome.note) toast.show(outcome.note, { variant: "info" });
-        if (!outcome.warning && !outcome.note) toast.show(sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`, { variant: "success" });
+        // A worktree that stayed lingers as a row saying why; the toast only confirms [ATT-22].
+        const kept = outcome.kept.length ? ` · ${outcome.kept.length === 1 ? "worktree" : "worktrees"} kept` : "";
+        toast.show(`${sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`}${kept}`, { variant: "success" });
       } else if (outcome.reason === "working") {
         toast.error(`Couldn't archive: ${outcome.message}`);
       }
+      return outcome;
+    } catch (error) {
+      toast.error(`Archive failed: ${(error as Error).message}`);
+      return null;
+    } finally {
+      setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
+    }
+  }
+
+  // A kept worktree tried again on its own: Archive worktree, or Try again [ATT-22].
+  async function archiveWorktree(row: KeptRow, confirm: boolean, terminals: string[] = []): Promise<ArchiveOutcome | null> {
+    const key = `kept:${row.workspaceId}`;
+    setBusy((keys) => new Set(keys).add(key));
+    try {
+      const outcome = await archiveWorktreeRpc({ workspaceId: row.workspaceId, confirm, terminals });
+      attention.setView(outcome.view);
+      if (outcome.ok && !outcome.kept.length) toast.show(`Archived ${row.name}`, { variant: "success" });
+      else if (!outcome.ok && outcome.reason === "working") toast.error(`Couldn't archive: ${outcome.message}`);
       return outcome;
     } catch (error) {
       toast.error(`Archive failed: ${(error as Error).message}`);
@@ -334,6 +353,8 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     openAgent,
     started,
     archiveRows,
+    archiveWorktree,
+    dismissKept: (row: KeptRow) => void run(`kept:${row.workspaceId}`, "Dismiss", async () => attention.setView(await dismissKept({ workspaceId: row.workspaceId }))),
     itemActions,
     issueActions,
     filterHistory,

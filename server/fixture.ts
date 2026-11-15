@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentSummary, AttentionView, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
+import type { KeptRow } from "../shared/archive";
 import type { OthersChange } from "../shared/changes";
 import type { SessionKind } from "../shared/config";
 import type { CoverageCheck, CoverageKind, IssueField, SetupStatus } from "../shared/setup";
@@ -422,9 +423,11 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-197", `${REPO}#197`, undefined, "idle", 15),
   // Wrap up: finished work whose sessions are all idle [ATT-22].
   agent("agent-183", `${REPO}#183`, "fix", "idle", 20, false, sessionWorkspace("retry-webhooks", false, 0), "Retry webhooks"),
-  agent("agent-186", `${REPO}#186`, "fix", "idle", 40, false, sessionWorkspace("split-invoice-pdf", true, 1, true, 2), "Split invoice PDF"),
+  // Its sheet counts lines and names the terminals archiving closes, as Paseo's own sheet would.
+  agent("agent-186", `${REPO}#186`, "fix", "idle", 40, false, { ...sessionWorkspace("split-invoice-pdf", true, 1, true, 2)!, dirtyLines: { added: 12, deleted: 3 }, terminals: ["dev", "shell"] }, "Split invoice PDF"),
   agent("agent-190", `${REPO}#190`, "review", "idle", 60, false, sessionWorkspace("add-vat-export", false, 0), "Review PR 190: Add the VAT export"),
-  agent("agent-172", `${REPO}#172`, "fix", "idle", 240, false, sessionWorkspace("fix-vat-credit-notes", false, 0), "Fix VAT on credit notes"),
+  // With a review sub-agent it started, archived along with it.
+  { ...agent("agent-172", `${REPO}#172`, "fix", "idle", 240, false, sessionWorkspace("fix-vat-credit-notes", false, 0), "Fix VAT on credit notes"), subAgents: { count: 1, working: false } },
   agent("agent-172b", `${REPO}#172`, "address", "idle", 250, false, sessionWorkspace("credit-note-tests", undefined, undefined), "Credit note tests"),
 ];
 
@@ -476,22 +479,47 @@ export function fixturePort(store: Store, dir: string): Port {
       login: async () => "me",
       // Previews can always read projects [NXT-12].
       probeProjects: async () => ({ data: { viewer: { projectsV2: { nodes: [] } } }, errors: [], failures: [] }),
-      live: async (_config, now) => fixtureNow(now, quiet()),
+      live: async (_config, now) => (dismissedKept.clear(), fixtureNow(now, quiet())),
       // Previews start each layout with a refresh, which brings the notes back: Got it would otherwise outlive a layout.
       changes: async (ledger, _data, now) => ({ ...ledger, events: quiet() ? [] : fixtureChanges(now), gotIt: fixtureGotIt(now) }),
       history: async (_config, now) => fixtureNow(now, quiet()).data,
       issueFields: async () => FIXTURE_ISSUE_FIELDS,
     },
     // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true }) },
+    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },
     store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
     now: Date.now,
     setTimer,
   };
 }
 
-// A view with the made-up sessions, as the preview daemon has no agents [ATT-22].
-export const fixtureView = (view: AttentionView): AttentionView => ({ ...view, fixtureAgents: FIXTURE_AGENTS });
+// Wrap up rows whose worktree stayed, one for each reason [ATT-22].
+const keptRow = (number: number, title: string, fields: Pick<KeptRow, "name" | "reason" | "detail" | "agentId">): KeptRow => ({
+  workspaceId: `WS_kept_${number}`,
+  ...fields,
+  itemKey: `${REPO}#${number}`,
+  title,
+  repo: REPO,
+  number,
+  kind: "pr",
+  at: new Date().toISOString(),
+});
+export const FIXTURE_KEPT: KeptRow[] = [
+  keptRow(176, "Round prices per currency", { name: "Round prices per currency", reason: "session", detail: "Fix flaky price test", agentId: "agent-101" }),
+  keptRow(178, "Cache the tax tables", { name: "cache-tax-tables", reason: "terminal", detail: "dev server" }),
+  keptRow(179, "Drop the legacy exporter", { name: "Drop the legacy exporter", reason: "refused", detail: "worktree is locked" }),
+];
+
+// Made-up kept rows dismissed in this layout; each layout's first refresh brings them back, like the notes.
+const dismissedKept = new Set<string>();
+export const fixtureDismissKept = (workspaceId: string) => void dismissedKept.add(workspaceId);
+
+// A view with the made-up sessions, as the preview daemon has no agents, and kept worktrees for it to show [ATT-22].
+export const fixtureView = (view: AttentionView): AttentionView => ({
+  ...view,
+  fixtureAgents: FIXTURE_AGENTS,
+  kept: [...(view.kept ?? []), ...FIXTURE_KEPT.filter((row) => !dismissedKept.has(row.workspaceId))],
+});
 
 // The sheet's, picker's, session's and setup's asks, answered from made-up data; gh counts as signed in.
 export const fixtureAnswers = {

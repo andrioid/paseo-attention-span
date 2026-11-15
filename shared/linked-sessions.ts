@@ -22,7 +22,22 @@ export interface PaseoWorkspaceEntry {
 }
 
 // Agents another agent started belong to that agent's session, not to the item.
-const PARENT_AGENT_LABEL = "paseo.parent-agent-id";
+export const PARENT_AGENT_LABEL = "paseo.parent-agent-id";
+
+// The unarchived sub-agents under these sessions, and theirs in turn: part of their session, so archived with it and never
+// "another session" in its worktree [ATT-22]. An archived one in between is walked through, where the list has it, so an
+// open sub-agent below it is still found. Deepest last.
+export function subAgentsOf<A extends Pick<PaseoAgentEntry, "id" | "labels" | "archivedAt">>(agents: A[], sessionIds: string[]): A[] {
+  const found: A[] = [];
+  const seen = new Set(sessionIds);
+  for (let parents = [...seen]; parents.length; ) {
+    const children = agents.filter((agent) => !seen.has(agent.id) && parents.includes(agent.labels?.[PARENT_AGENT_LABEL] ?? ""));
+    for (const child of children) seen.add(child.id);
+    found.push(...children);
+    parents = children.map((child) => child.id);
+  }
+  return found.filter((agent) => !agent.archivedAt);
+}
 
 // "owner/name#number" for a GitHub pull request URL.
 export function pullRequestKey(url: string): string | null {

@@ -127,7 +127,9 @@ function AttentionList({
   // Calm only once a refresh that worked says Doing is empty, Wrap up included [ATT-18, ATT-22].
   // Sessions not known yet, or failing to load, leave Wrap up unknown: no calm on that [ATT-18, ATT-22].
   const sessionsKnown = !!view.fixtureAgents || (agents.isSuccess && !agents.isError);
-  const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length);
+  // A worktree that stayed after its sessions were archived lingers in Wrap up, uncounted, but keeps the calm away [ATT-22].
+  const kept = view.kept ?? [];
+  const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length + kept.length);
   // The other tabs' scenes, on the same terms [HIS-08, WAI-04, NXT-13].
   const calm = {
     history: historyClear(view, notes.length, !!attention.error),
@@ -201,11 +203,14 @@ function AttentionList({
       ) : null}
       {tab === "doing" ? (
         <>
-          {clear ? <Still /> : wrap.length || view.doing.length ? (
+          {clear ? <Still /> : wrap.length || kept.length || view.doing.length ? (
             <>
-              {wrap.length > 0 ? (
+              {wrap.length + kept.length > 0 ? (
                 <WrapUp
                   items={wrap}
+                  kept={kept}
+                  onArchiveWorktree={act.archiveWorktree}
+                  onDismissKept={act.dismissKept}
                   busy={act.busy}
                   login={view.login}
                   fixture={!!view.fixtureAgents}

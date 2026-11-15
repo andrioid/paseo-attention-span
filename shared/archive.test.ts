@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sheetWords, unsavedOf, unsavedWords } from "./archive";
+import { keptText, sheetLines, unsavedOf, unsavedWords } from "./archive";
 
 const session = { agentId: "a", title: "Fix CI" };
 
@@ -20,10 +20,16 @@ describe("unsaved work", () => {
     expect(unsavedWords({ ...session, files: 1, commits: 1, branch: "b" })).toBe("1 uncommitted file and 1 unpushed commit on b");
   });
 
-  it("ATT-22: the confirm sheet names unsaved work, then the terminals archiving closes", () => {
-    expect(sheetWords({ ...session, files: 2, branch: "split-pdf" })).toBe("Its worktree has 2 uncommitted files on split-pdf. Archiving may remove them.");
-    expect(sheetWords({ ...session, files: 2, terminals: ["dev", "shell"] })).toBe("Its worktree has 2 uncommitted files. Archiving may remove them. Archiving closes its terminals: dev, shell.");
-    expect(sheetWords({ ...session, terminals: ["dev"] })).toBe("Archiving closes its terminal: dev.");
-    expect(sheetWords({ ...session, unknown: true })).toBe("Couldn't check for unsaved changes. Archiving may remove the worktree.");
+  it("ATT-22: the confirm sheet says it in Paseo's words, then the terminals archiving closes", () => {
+    expect(sheetLines({ ...session, files: 2, added: 12, deleted: 3, commits: 1 })).toEqual(["Uncommitted changes: 2 files (+12 −3)", "1 unpushed commit"]);
+    expect(sheetLines({ ...session, uncommitted: true, terminals: ["dev", "shell"] })).toEqual(["Uncommitted changes", "Closes terminals: dev, shell"]);
+    expect(sheetLines({ ...session, terminals: ["dev"] })).toEqual(["Closes terminal: dev"]);
+    expect(sheetLines({ ...session, unknown: true, commits: 2 })).toEqual(["Couldn't check for unsaved changes", "2 unpushed commits"]);
+  });
+
+  it("ATT-22: a kept worktree's row says why it stayed", () => {
+    expect(keptText({ reason: "session", detail: "Fix flaky test" })).toBe("Fix flaky test still in it");
+    expect(keptText({ reason: "terminal", detail: "dev" })).toBe("dev opened meanwhile");
+    expect(keptText({ reason: "refused", detail: "worktree is locked" })).toBe("Paseo: worktree is locked");
   });
 });

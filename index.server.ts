@@ -18,7 +18,7 @@ import { ArchivedInPaseo } from "./server/archived";
 import { defaultBranch, sessionContext } from "./server/context";
 import { itemDetails } from "./server/details";
 import { feedbackInfo } from "./server/feedback";
-import { fixtureAnswers, fixturePort, fixtureView } from "./server/fixture";
+import { fixtureAnswers, fixtureDismissKept, fixturePort, fixtureView } from "./server/fixture";
 import { FIXTURE } from "./server/gh";
 import { realPort } from "./server/port";
 import { checkCoverage, configStatus, coverageOnGitHub, ghStatus, myOrgs, setupStatus } from "./server/setup";
@@ -68,6 +68,14 @@ export default function contribute(server: PluginServerContext) {
     if (archived.waiting) void ready(() => archived.notice(paseo));
   });
   server.handle(rpc.archiveSessions, ({ targets, confirm, terminals }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm, terminals)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })));
+  server.handle(rpc.archiveWorktree, ({ workspaceId, confirm, terminals }, { paseo }) =>
+    ready(() => attention.archiveWorktree(paseo, workspaceId, confirm, terminals)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })),
+  );
+  server.handle(rpc.dismissKept, ({ workspaceId }) => {
+    if (FIXTURE) fixtureDismissKept(workspaceId);
+    return ready(() => attention.dismissKept(workspaceId)).then(shown);
+  });
+  server.on("workspace.archived", ({ workspace }) => void ready(() => attention.forgetKept(workspace.id)));
   server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()).then(shown));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)).then(shown));
   server.handle(rpc.setupStatus, () => setupStatus(store, answers.ghStatus));

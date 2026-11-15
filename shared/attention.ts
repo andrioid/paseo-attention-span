@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { OthersChange } from "./changes";
 import { keySet, uniqueKeys } from "./names";
+import type { KeptRow } from "./archive";
 import type { NewIssueInfo } from "./new-issue";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
 import type { WorkKind } from "./work";
@@ -393,6 +394,8 @@ export interface AgentSummary {
   lastActivityAt: string | null;
   // Its workspace, for Wrap up: whether its worktree holds unsaved work, and whether it's Paseo's own worktree [ATT-22].
   workspace?: SessionWorkspace;
+  // The sub-agents it started, and theirs, unarchived: archived with it, and while one works its row stays out [ATT-22].
+  subAgents?: { count: number; working: boolean };
 }
 
 export interface SessionWorkspace {
@@ -404,8 +407,11 @@ export interface SessionWorkspace {
   dirty?: boolean;
   // Commits not on the upstream branch, from Paseo; missing when it couldn't tell.
   ahead?: number;
-  // Previews only, where Paseo has no worktree: how many files are uncommitted, for the confirm sheet's words.
+  // Previews only, where Paseo has no worktree: how many files and lines are uncommitted, and the terminals open, for the
+  // confirm sheet's words.
   dirtyFiles?: number;
+  dirtyLines?: { added: number; deleted: number };
+  terminals?: string[];
 }
 
 // An item's open sessions: started on it or on any PR under it, until it's merged or closed.
@@ -489,6 +495,8 @@ export interface AttentionView {
   pending: number;
   // Fixture mode only: made-up sessions, since the preview daemon has no agents.
   fixtureAgents?: AgentSummary[];
+  // Wrap up rows whose sessions are archived but whose worktree stayed, until it's gone or dismissed [ATT-22].
+  kept?: KeptRow[];
 }
 
 // What a tick in Next up's project filter stands for: one status of one project, a project's issues without a status, or
