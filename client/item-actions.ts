@@ -72,6 +72,14 @@ export interface Actions {
   started: (agentId: string) => Promise<void>;
 }
 
+// A session just started on an item.
+export interface Started {
+  agentId: string;
+  itemKey: string;
+  kind: SessionKind;
+  target: Target;
+}
+
 function issueTarget(issue: NextUpIssue): Target {
   return { kind: "issue", repo: issue.repo, number: issue.number, title: issue.title, url: issue.url, defaultBranch: issue.defaultBranch };
 }
@@ -145,9 +153,23 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     else toast.show("Session started. Open it from the sidebar.", { variant: "success" });
   }
 
+  // A session started from somewhere with no card for it (a new issue, feedback): open it, or it'd be hard to find.
   async function started(agentId: string) {
     await queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
     openAgent(agentId);
+  }
+
+  // A session started on an item leaves me here, so I can start several in a row; the item's card offers Open session
+  // [SES-10]. The session goes on the list at once, so the card offers it even if the poll after fails, rather than Start
+  // again; the next poll that succeeds replaces it with Paseo's own.
+  async function startedOn({ agentId, itemKey, kind, target }: Started) {
+    queryClient.setQueryData<AgentSummary[]>(AGENTS_QUERY_KEY, (agents = []) =>
+      agents.some((agent) => agent.id === agentId)
+        ? agents
+        : [...agents, { id: agentId, itemKey, kind, status: "running", requiresAttention: false, title: null, workspaceId: null, lastActivityAt: new Date().toISOString() }],
+    );
+    await queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
+    toast.show(`Session started on #${target.number}`, { variant: "success" });
   }
 
   // One tap: start a session with defaults [SES-01]. An open one is offered first, by the card [SES-03].
@@ -163,7 +185,8 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     await before?.();
     const { context } = await fetchContext({ kind, target });
     const prompt = renderPrompt(kind, target, context, config);
-    await started(await startSession(paseo, { itemKey, kind, target, prompt, config, fetchProviders, checkout }));
+    const agentId = await startSession(paseo, { itemKey, kind, target, prompt, config, fetchProviders, checkout });
+    await startedOn({ agentId, itemKey, kind, target });
   }
 
   function place(codeRepo: string) {
@@ -352,6 +375,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     fetchDetails,
     openAgent,
     started,
+    startedOn,
     archiveRows,
     archiveWorktree,
     dismissKept: (row: KeptRow) => void run(`kept:${row.workspaceId}`, "Dismiss", async () => attention.setView(await dismissKept({ workspaceId: row.workspaceId }))),

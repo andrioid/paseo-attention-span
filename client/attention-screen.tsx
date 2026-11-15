@@ -283,7 +283,7 @@ function AttentionList({
         />
       ) : null}
       {newIssue ? <NewIssueSheet request={newIssue} view={view} onView={attention.setView} onStarted={act.started} onClose={() => setNewIssue(null)} /> : null}
-      {act.options ? <SessionOptions spec={act.options} config={view.config} started={act.started} onClose={act.closeOptions} /> : null}
+      {act.options ? <SessionOptions spec={act.options} config={view.config} started={act.startedOn} onClose={act.closeOptions} /> : null}
       {act.placing ? <CodeRepoPicker issueRepo={act.placing.target.repo} missing={act.placing.missing} onPick={act.place} onClose={act.cancelPlacing} /> : null}
     </ScrollView>
   );
