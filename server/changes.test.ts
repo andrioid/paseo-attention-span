@@ -324,10 +324,16 @@ describe("issues closed and PRs reopened by others", () => {
     expect(refresh(before, {}, { at: later, reopens: new Map([["P1", reopenSubject({ state: "CLOSED" })]]) }).tracked).toEqual({});
   });
 
-  it("ATT-22: my own unmerged closes are finished work for Wrap up; others' and merges aren't", () => {
+  it("ATT-22, FRESH-03: my own unmerged closes and my merged PRs are finished work for Wrap up; others' closes aren't", () => {
     const mine = endedPr("P1", { merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "me" } }] } });
     const theirs = endedPr("P2", { number: 10, merged: false, mergedAt: null, mergedBy: null, timelineItems: { nodes: [{ actor: { login: "alice" } }] } });
-    expect(ownClosed(data({ ended: [mine, theirs, endedPr("P3", {})] }), "me").map((item) => [item.key, item.closedUnmerged])).toEqual([["acme/shop#9", true]]);
+    const merged = endedPr("P3", { number: 11, url: "https://github.com/acme/shop/pull/11" });
+    const byMe = endedPr("P4", { number: 12, url: "https://github.com/acme/shop/pull/12", mergedBy: { login: "ME" } });
+    expect(ownClosed(data({ ended: [mine, theirs, merged, byMe] }), "me").map((item) => [item.key, item.closedUnmerged, item.mergedBy])).toEqual([
+      ["acme/shop#9", true, undefined],
+      ["acme/shop#11", undefined, "dave"],
+      ["acme/shop#12", undefined, undefined],
+    ]);
     // Its branch comes along, for a session left on it [ATT-22].
     expect(ownClosed(data({ ended: [{ ...mine, headRefName: "spike" }] }), "me")[0].target.headRefName).toBe("spike");
   });

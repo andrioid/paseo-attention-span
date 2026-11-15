@@ -58,10 +58,12 @@ export function rememberGroups(groups: RememberedGroups, items: Pick<Item, "key"
 
 // The finished work and changes that could appear in Wrap up: my done and reviewed items, my own unmerged closes, work that
 // left my hands, and a change on finished work that History hasn't fetched yet [ATT-22, HIS-01, HIS-07]. A done item beats
-// the note about it.
+// the note about it. A merged PR from the live feed only stands in until History lists it, alone or under its issue, so
+// it never makes a row of its own beside its issue's [FRESH-03].
 function candidates(view: WrapView): Item[] {
+  const listed = new Set(view.history.flatMap((item) => [item.key, ...item.children.map((child) => child.key)]).map((key) => key.toLowerCase()));
   const seen = new Set<string>();
-  const ordered = [...view.history, ...(view.ownClosed ?? [])].sort((a, b) => Number(a.section === "changed") - Number(b.section === "changed"));
+  const ordered = [...view.history, ...(view.ownClosed ?? []).filter((item) => !listed.has(item.key.toLowerCase()))].sort((a, b) => Number(a.section === "changed") - Number(b.section === "changed"));
   return ordered.filter((item) => {
     // A reopened PR is open again, not work to wrap up.
     if (item.section === "changed" && (!item.change || item.change.kind === "reopened")) return false;

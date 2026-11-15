@@ -41,6 +41,8 @@ export class AttentionService {
   private state: State = State.parse({});
   // Workspaces Paseo said were archived; an archive that keeps one of them after the fact adds no row for it [ATT-22].
   private archivedWorkspaces = new Set<string>();
+  // Merged PRs of mine a History fetch was asked for, once each, so a search slow to show one doesn't fetch on every refresh.
+  private historyAskedFor = new Set<string>();
   private config: AttentionConfig = AttentionConfig.parse({});
   private configError: string | null = null;
   private feeds: Record<FeedId, Feed> = {
@@ -301,6 +303,19 @@ export class AttentionService {
     return source ? { kind: "done", item: doneItem(source, at, notPlanned) } : { kind: "gone" };
   }
 
+  // A PR of mine the live feed saw merged, which History doesn't list yet, perhaps merged on GitHub: History is fetched
+  // once its search has caught up, once per PR [FRESH-03]. Until then the live feed's own entry stands in (ownClosed).
+  private followMerges(): void {
+    const listed = new Set((this.state.history?.items ?? []).flatMap((item) => [item.key, ...item.children.map((child) => child.key)]).map((key) => key.toLowerCase()));
+    const merged = (this.state.live?.attention.ownClosed ?? []).filter((item) => !item.closedUnmerged).map((item) => item.key.toLowerCase());
+    // Kept only while the live feed still lists them, so the record stays as small as its recent closes.
+    this.historyAskedFor = new Set(merged.filter((key) => this.historyAskedFor.has(key)));
+    const unseen = merged.filter((key) => !listed.has(key) && !this.historyAskedFor.has(key));
+    if (unseen.length === 0) return;
+    for (const key of unseen) this.historyAskedFor.add(key);
+    this.followUp("history");
+  }
+
   // One fetch once GitHub's search has caught up with the latest change, which ends what's pending.
   private followUp(id: FeedId): void {
     this.followUps[id]?.();
@@ -333,6 +348,7 @@ export class AttentionService {
       if (id === "live") {
         this.state.live = { fetchedAt, attention: await this.fetchLive(now) };
         this.state.groups = rememberGroups(this.state.groups, this.state.live.attention.items, now, Math.max(this.config.mentionDays, this.config.historyWeeks * 7 + 7));
+        this.followMerges();
       }
       else this.state.history = { fetchedAt, items: await this.fetchHistory(now) };
       // Forget dismissals of items that are gone.

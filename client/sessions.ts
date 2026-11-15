@@ -1,5 +1,6 @@
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { type AgentSummary, type AttentionView, checkoutPr, sessionTitle, type Target } from "../shared/attention";
 import { closedBranches } from "../shared/linked-sessions";
 import { ITEM_LABEL, KIND_LABEL, LABEL, SESSION_LABELS, sessionsFrom } from "../shared/item-sessions";
@@ -22,23 +23,45 @@ export function useItemAgents() {
   const paseo = usePaseo();
   const queryClient = useQueryClient();
   const fetchAttention = useRpc(rpc.getAttention);
+  // A list that brings other merged branches than the last poll linked by polls again at once, so a session on a branch
+  // just merged reaches Wrap up without waiting for the next round [ATT-22, FRESH-03]. A poll already running finishes
+  // first, then sees the change and polls once more.
+  const branchesNow = () => closedBranches(queryClient.getQueryData<AttentionView>(VIEW_QUERY_KEY) ?? {});
+  const pollAgain = () => {
+    if (signature(branchesNow()) !== linkedBy.get(queryClient)) void queryClient.refetchQueries({ queryKey: AGENTS_QUERY_KEY }, { cancelRefetch: false });
+  };
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe((event) => {
+        if (event.type === "updated" && event.query.queryKey[1] === VIEW_QUERY_KEY[1]) pollAgain();
+      }),
+    [queryClient],
+  );
   return useQuery({
     queryKey: AGENTS_QUERY_KEY,
     refetchInterval: 15_000,
     queryFn: async () => {
       const before = queryClient.getQueryData<AgentSummary[]>(AGENTS_QUERY_KEY);
       // My merged and closed PRs' branches, from the list already loaded, for sessions Paseo no longer links [ATT-22].
-      const agents = await itemAgents(paseo, closedBranches(queryClient.getQueryData<AttentionView>(VIEW_QUERY_KEY) ?? {}));
+      const branches = branchesNow();
+      linkedBy.set(queryClient, signature(branches));
+      const agents = await itemAgents(paseo, branches);
       const now = new Set(agents.map((agent) => agent.id));
       if (before?.some((agent) => !now.has(agent.id))) {
         await fetchAttention({ cached: true })
           .then((view) => queryClient.setQueryData(VIEW_QUERY_KEY, view))
           .catch(() => {}); // the view's own poll catches up
       }
+      // A list that arrived while this poll ran: once it's done, poll again.
+      setTimeout(pollAgain, 0);
       return agents;
     },
   });
 }
+
+const signature = (branches: Map<string, string>) => [...branches].join("\n");
+// The branches the last poll linked by, one record per app, shared by the screen's and the sidebar's copies of the poll.
+const linkedBy = new WeakMap<object, string>();
 
 // Labels tie an agent to the item it works on [ATT-07, SES-03]; kept with the rest of the session list in shared.
 export { ITEM_LABEL, KIND_LABEL, LABEL };

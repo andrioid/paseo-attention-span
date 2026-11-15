@@ -7,6 +7,7 @@ import type { HistoryResult } from "./github-types";
 import { fixture, REPO } from "./fixture";
 import type { Port } from "./port";
 import { AttentionService } from "./service";
+import { SETTLE_MS } from "./view";
 import { State, type Store } from "./store";
 
 const START = Date.parse("2026-11-14T12:00:00Z");
@@ -201,6 +202,45 @@ describe("History's weeks", () => {
 
 describe("what I just did", () => {
   const updating = { kind: "chip", chip: { text: "updating", tone: "neutral" } } as const;
+
+  it("FRESH-03, ATT-22: a merge seen live counts for Wrap up at once and fetches History once, after GitHub caught up", async () => {
+    const { service, github, start, advance } = harness({ refreshMinutes: 10 });
+    const merged = {
+      id: "PR_77", number: 77, title: "Merged on GitHub", url: "u", headRefName: "fix-77", merged: true, mergedAt: new Date(START).toISOString(),
+      closedAt: new Date(START).toISOString(), repository: { nameWithOwner: REPO }, mergedBy: { login: "me" }, assignees: { nodes: [] }, timelineItems: { nodes: [] },
+    };
+    github.live.mockImplementation(async (_config, at) => {
+      const { data, details } = fixture(at);
+      return { data: { ...data, ended: { nodes: [merged] } }, details };
+    });
+    await start();
+    expect((await service.get()).ownClosed).toMatchObject([{ key: `${REPO}#77`, target: { headRefName: "fix-77" } }]);
+    expect(github.history).toHaveBeenCalledTimes(1);
+    await advance(SETTLE_MS);
+    expect(github.history).toHaveBeenCalledTimes(2);
+    // History's search still lacks it: no fetch on every refresh after that.
+    await advance(30 * MINUTE);
+    expect(github.history).toHaveBeenCalledTimes(2);
+  });
+
+  it("FRESH-03: a merge History already lists, under its issue and in other case, fetches nothing more", async () => {
+    const { github, start, advance } = harness({ refreshMinutes: 10 });
+    const at = new Date(START).toISOString();
+    const repository = { nameWithOwner: REPO };
+    github.history.mockImplementation(async () => ({
+      ...fixture(new Date(START)).data,
+      closed: { nodes: [{ number: 40, title: "Backups", url: "u", closedAt: at, stateReason: "COMPLETED", repository }] },
+      merged: { nodes: [{ number: 41, title: "Verify", url: "u", mergedAt: at, repository, closingIssuesReferences: { nodes: [{ number: 40, repository }] } }] },
+    }));
+    github.live.mockImplementation(async (_config, now) => {
+      const { data, details } = fixture(now);
+      const merged = { id: "PR_41", number: 41, title: "Verify", url: "u", merged: true, mergedAt: at, closedAt: at, repository: { nameWithOwner: REPO.toUpperCase() }, mergedBy: null, assignees: { nodes: [] }, timelineItems: { nodes: [] } };
+      return { data: { ...data, ended: { nodes: [merged] } }, details };
+    });
+    await start();
+    await advance(30 * MINUTE);
+    expect(github.history).toHaveBeenCalledTimes(1);
+  });
 
   it("FRESH-02: an action's effect shows until a fetch begun after GitHub caught up, which follows by itself", async () => {
     const { service, github, start, advance, jump } = harness();

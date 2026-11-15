@@ -373,7 +373,8 @@ export interface Attention {
   projects?: ProjectInfo[];
   // Repo -> who reviewed or was asked on my PRs there, latest first, for the reviewer picker [PRS-12].
   reviewers?: Record<string, Reviewer[]>;
-  // My PRs I closed without merging lately: finished work for Wrap up, never shown in History [ATT-22].
+  // My PRs that ended lately, closed by me unmerged or merged: finished work for Wrap up, never shown in History; a merged
+  // one stands in until History has it [ATT-22, FRESH-03].
   ownClosed?: Item[];
 }
 
@@ -487,7 +488,7 @@ export interface AttentionView {
   history: Item[];
   // Every item key on Doing, Waiting or Next up before dismissals, so Wrap up knows what still isn't done [ATT-22].
   activeKeys?: string[];
-  // My PRs I closed without merging, for Wrap up only [ATT-22].
+  // My PRs I closed without merging, and merged ones History may not have yet, for Wrap up only [ATT-22, FRESH-03].
   ownClosed?: Item[];
   // Key -> the keys of the stack or issue group it was last seen open in, lower case [ATT-22, ATT-04].
   groups?: Record<string, string[]>;
