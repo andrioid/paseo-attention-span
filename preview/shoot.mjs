@@ -108,7 +108,7 @@ for (const layout of layouts) {
       await page.screenshot({ path: `/out/${prefix}-doing-wrap.png`, clip: await band("Wrap up", "Waiting for your reply") });
       // A dirty session asks first; several sessions list themselves. Neither archives until confirmed.
       await page.getByRole("button", { name: "Archive the session on #186" }).click();
-      await page.getByText("Archive anyway").waitFor({ timeout: 10000 });
+      await page.getByText("Closes terminals: dev, shell").waitFor({ timeout: 10000 });
       await page.waitForTimeout(400);
       await modalShot("doing-wrap-dirty");
       // A phone's bottom sheet has no Escape; its × closes it.
@@ -402,8 +402,10 @@ for (const layout of layouts) {
         await page.waitForTimeout(800);
       }
       await page.getByRole("button", { name: "Archive the session on #186" }).click();
-      await page.getByRole("button", { name: "Archive anyway" }).waitFor({ timeout: 10000 });
-      await page.getByRole("button", { name: "Archive anyway" }).click();
+      // The sheet's Archive is the last: Paseo's own UI has hidden ones of the same name.
+      const archive = page.getByRole("button", { name: "Archive", exact: true }).last();
+      await archive.waitFor({ timeout: 10000 });
+      await archive.click();
       await page.waitForTimeout(800);
       await page.getByRole("button", { name: "Archive the sessions on #172" }).click();
       await page.getByRole("button", { name: "Archive both" }).waitFor({ timeout: 10000 });
@@ -412,14 +414,20 @@ for (const layout of layouts) {
       // Last, because it changes the daemon's state: dismiss one item.
       await doing();
       await page.getByRole("button", { name: /^Details for #/ }).first().click();
-      await page.getByRole("button", { name: "Dismiss" }).last().click();
+      await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await shot("doing-dismissed");
+      // Kept worktrees keep the horizon away too: dismiss them first [ATT-22].
+      const keptRows = page.getByRole("button", { name: /^Dismiss: keep / });
+      for (let left = await keptRows.count(); left > 0; left = await keptRows.count()) {
+        await keptRows.first().click();
+        for (let i = 0; i < 50 && (await keptRows.count()) === left; i++) await page.waitForTimeout(100);
+      }
       // Dismiss the rest: a clear Doing tab shows its horizon, as on a real screen's height [ATT-18].
       const details = page.getByRole("button", { name: /^Details for #/ });
       for (let left = await details.count(); left > 0; left = await details.count()) {
         await details.first().click();
-        await page.getByRole("button", { name: "Dismiss" }).last().click();
+        await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
         for (let i = 0; i < 50 && (await details.count()) === left; i++) await page.waitForTimeout(100);
       }
       const tall = page.viewportSize();

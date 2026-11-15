@@ -14,7 +14,7 @@ export type SessionCleanliness = "clean" | "dirty" | "unknown";
 // Previews count the files [ATT-22].
 export function sessionUnsaved(agent: AgentSummary): UnsavedSession | null {
   const workspace = agent.workspace;
-  return unsavedOf({ agentId: agent.id, title: agent.title }, workspace && { ...workspace, files: workspace.dirtyFiles });
+  return unsavedOf({ agentId: agent.id, title: agent.title }, workspace && { ...workspace, files: workspace.dirtyFiles, lines: workspace.dirtyLines });
 }
 
 // Dirty as soon as Paseo says something is unsaved, even when it couldn't tell the other half; unknown only when it knows
@@ -90,7 +90,8 @@ export function wrapItems(view: WrapView, agents: AgentSummary[], now = new Date
     const sessions = matchSessions(agents, keys);
     if (sessions.length === 0) continue;
     // The group's sessions must all be idle, none may serve work that's still active, and a session belongs to one row only.
-    if (sessions.some((agent) => !isIdle(agent) || serving(agent.itemKey) || used.has(agent.id)) || keys.some(serving)) continue;
+    // A sub-agent still working keeps its session's row out too.
+    if (sessions.some((agent) => !isIdle(agent) || agent.subAgents?.working || serving(agent.itemKey) || used.has(agent.id)) || keys.some(serving)) continue;
     for (const agent of sessions) used.add(agent.id);
     rows.push({
       item: {

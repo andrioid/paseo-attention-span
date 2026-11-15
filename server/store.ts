@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { type Attention, type HistoryFilter, type Item, type RememberedGroups, type SectionId, SECTIONS } from "../shared/attention";
 import { AttentionConfig, FIELD_ROLES, type FieldRole } from "../shared/config";
+import type { KeptRow } from "../shared/archive";
 import type { OthersChange } from "../shared/changes";
 import { type ChangeLedger, EMPTY_LEDGER } from "./changes";
 import type { Pending } from "./view";
@@ -49,6 +50,8 @@ export const State = z.object({
   // Key -> the keys of the stack or issue group it was last seen in, and when, so Wrap up still knows a merged PR's open
   // siblings after History lists it on its own [ATT-22, ATT-04].
   groups: z.record(z.string(), z.object({ keys: z.array(z.string()), at: z.string() })).default({}).catch({}) satisfies z.ZodType<RememberedGroups>,
+  // Wrap up rows whose sessions were archived but whose worktree stayed, until it goes or is dismissed [ATT-22].
+  kept: z.array(z.custom<KeptRow>((value) => typeof (value as KeptRow)?.workspaceId === "string" && typeof (value as KeptRow)?.itemKey === "string")).default([]).catch([]),
   // The repository and agent profile the New issue sheet last started with [ISS-01].
   newIssue: z.object({ repo: z.string().nullable().default(null), profileId: z.string().nullable().default(null) }).default({ repo: null, profileId: null }).catch({ repo: null, profileId: null }),
   // My Paseo projects' GitHub repos when last listed, for refreshes before the app has connected [NXT-08].

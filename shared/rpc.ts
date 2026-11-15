@@ -41,6 +41,13 @@ export const archiveSessions = defineRpc({
   }),
   output: z.custom<ArchiveOutcome>(),
 });
+// A kept worktree tried again on its own, with the same sheet; or dismissed, leaving the worktree be [ATT-22].
+export const archiveWorktree = defineRpc({
+  name: "attention.archive-worktree",
+  input: z.object({ workspaceId: z.string(), confirm: z.boolean(), terminals: z.array(z.string()).default([]) }),
+  output: z.custom<ArchiveOutcome>(),
+});
+export const dismissKept = defineRpc({ name: "attention.dismiss-kept", input: z.object({ workspaceId: z.string() }), output: view });
 export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({}), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });

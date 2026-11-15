@@ -15,7 +15,8 @@ export interface Port {
   paseo: {
     // My Paseo projects' GitHub repos [NXT-08].
     projectRepos(paseo: Paseo): Promise<string[]>;
-    archive(paseo: Paseo, agentIds: string[], confirm: boolean, terminals: string[]): Promise<ArchiveResult>;
+    // Archives sessions, and `worktrees` kept before, tried again on their own [ATT-22].
+    archive(paseo: Paseo, agentIds: string[], confirm: boolean, terminals: string[], worktrees: string[]): Promise<ArchiveResult>;
   };
   store: Store;
   now(): number;

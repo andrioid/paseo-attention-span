@@ -3,7 +3,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole } from "../shared/config";
 import { newIssueRepos } from "../shared/new-issue";
 import type { IssueField } from "../shared/setup";
-import type { ArchiveOutcome, ArchiveTarget } from "../shared/archive";
+import type { ArchiveOutcome, ArchiveTarget, KeptRow, KeptWorktree } from "../shared/archive";
 import { rememberGroups } from "../shared/wrap-up";
 import { acknowledge, ownClosed } from "./changes";
 import { classify, classifyHistory } from "./classify";
@@ -152,11 +152,48 @@ export class AttentionService {
 
   // Archive a Wrap up row's sessions; success acknowledges the events on that work, so they go to their week as cleared, not
   // History's unread notes [ATT-22, HIS-07]. A failure leaves the row to try again.
+  // A worktree that stayed keeps its row, as a kept row [ATT-22].
   async archive(paseo: PluginHandlerContext["paseo"], targets: ArchiveTarget[], confirm: boolean, terminals: string[] = []): Promise<ArchiveOutcome> {
-    const answer = await this.port.paseo.archive(paseo, targets.flatMap((target) => target.agentIds), confirm, terminals);
+    const answer = await this.port.paseo.archive(paseo, targets.flatMap((target) => target.agentIds), confirm, terminals, []);
     if (!answer.ok) return { ...answer, view: this.view() };
+    this.remember(answer.kept, (kept) => targets.find((target) => target.agentIds.some((id) => kept.sessionIds.includes(id))));
     const view = await this.acknowledge(targets.flatMap((target) => target.keys));
     return { ...answer, view };
+  }
+
+  // A kept worktree tried again on its own, with the same checks; it stays kept, perhaps for a new reason, until it goes.
+  async archiveWorktree(paseo: PluginHandlerContext["paseo"], workspaceId: string, confirm: boolean, terminals: string[] = []): Promise<ArchiveOutcome> {
+    const row = this.state.kept.find((kept) => kept.workspaceId === workspaceId);
+    const answer = await this.port.paseo.archive(paseo, [], confirm, terminals, [workspaceId]);
+    if (!answer.ok) return { ...answer, view: this.view() };
+    this.state.kept = this.state.kept.filter((kept) => kept.workspaceId !== workspaceId);
+    if (row) this.remember(answer.kept, () => row);
+    await this.save();
+    return { ...answer, view: this.view() };
+  }
+
+  // Dismiss on a kept row: the worktree stays, and so does Paseo's sidebar entry; Wrap up stops showing it [ATT-22].
+  async dismissKept(workspaceId: string): Promise<AttentionView> {
+    await this.forgetKept(workspaceId);
+    return this.view();
+  }
+
+  // A kept worktree archived anywhere, Paseo's sidebar included, takes its row with it [ATT-22].
+  async forgetKept(workspaceId: string): Promise<void> {
+    if (!this.state.kept.some((kept) => kept.workspaceId === workspaceId)) return;
+    this.state.kept = this.state.kept.filter((kept) => kept.workspaceId !== workspaceId);
+    await this.save();
+  }
+
+  private remember(kept: KeptWorktree[], rowOf: (kept: KeptWorktree) => Pick<KeptRow, "itemKey" | "title" | "repo" | "number" | "kind"> | undefined): void {
+    const at = new Date(this.port.now()).toISOString();
+    for (const found of kept) {
+      const row = rowOf(found);
+      if (!row) continue;
+      const { sessionIds, ...worktree } = found;
+      const { itemKey, title, repo, number, kind } = row;
+      this.state.kept = [...this.state.kept.filter((other) => other.workspaceId !== worktree.workspaceId), { ...worktree, itemKey, title, repo, number, kind, at }];
+    }
   }
 
   // Remember where an issue repo's code lives [SES-07].
@@ -456,6 +493,7 @@ export class AttentionService {
       config: this.config,
       pending: Object.keys(pending).length,
       newIssue: { repos: this.newIssueRepos(shown.attention), ...this.state.newIssue },
+      kept: this.state.kept,
       },
       this.state.changes,
       new Date(now),

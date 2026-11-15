@@ -1,7 +1,7 @@
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type AgentSummary, checkoutPr, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
-import { linkedSessions } from "../shared/linked-sessions";
+import { type AgentSummary, checkoutPr, isIdle, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
+import { linkedSessions, subAgentsOf } from "../shared/linked-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 import * as rpc from "../shared/rpc";
@@ -85,9 +85,16 @@ export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
   const labelled = [...byId.values()];
   const unlabelled = all.entries.map((entry) => entry.agent).filter((agent) => !labels.some((label) => agent.labels?.[label]));
   const byWorkspace = new Map(workspaces.entries.map((workspace) => [workspace.id, sessionWorkspace(workspace)]));
+  const everyone = all.entries.map((entry) => entry.agent);
   return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)].map((agent) => {
     const workspace = agent.workspaceId ? byWorkspace.get(agent.workspaceId) : undefined;
-    return workspace ? { ...agent, workspace } : agent;
+    // Its sub-agents go with it when it's archived, and one still working keeps its Wrap up row out [ATT-22].
+    const subAgents = subAgentsOf(everyone, [agent.id]);
+    return {
+      ...agent,
+      ...(workspace ? { workspace } : {}),
+      ...(subAgents.length ? { subAgents: { count: subAgents.length, working: subAgents.some((sub) => !isIdle(sub)) } } : {}),
+    };
   });
 }
 

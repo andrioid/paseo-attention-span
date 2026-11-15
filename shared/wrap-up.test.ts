@@ -52,6 +52,12 @@ describe("Wrap up membership", () => {
     expect(isIdle(session("a", "acme/shop#1"))).toBe(true);
   });
 
+  it("ATT-22: a sub-agent still working keeps its session's row out; an idle one doesn't", () => {
+    const done = [item("acme/shop#1", "done", 2)];
+    expect(wrapItems(view(done), [session("a", "acme/shop#1", { subAgents: { count: 1, working: true } })], now)).toEqual([]);
+    expect(wrapItems(view(done), [session("a", "acme/shop#1", { subAgents: { count: 1, working: false } })], now)).toHaveLength(1);
+  });
+
   it("ATT-22: a stack or issue group enters once, and only when every session it serves is done", () => {
     const issue = item("acme/shop#40", "done", 3, [{ key: "acme/shop#41", number: 41, title: "PR", url: "u", draft: false, chips: [], attention: false }]);
     const rows = wrapItems(view([issue]), [session("a", "acme/shop#40"), session("b", "acme/shop#41")], now);
