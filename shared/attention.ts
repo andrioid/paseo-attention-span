@@ -211,6 +211,9 @@ export interface SubRow {
   attention: boolean;
   // History only: who merged it, when it wasn't me [HIS-05].
   mergedBy?: string;
+  // History only: the branch it merged from, and when, so a session left on it finds its row in Wrap up [ATT-22].
+  headRefName?: string;
+  mergedAt?: string;
 }
 
 export interface Item {
@@ -423,6 +426,20 @@ export function itemSessions(agents: AgentSummary[], item: Pick<Item, "key" | "c
 
 // A session working on its turn, or starting up [ATT-07].
 export const isWorking = (agent: { status: string }): boolean => agent.status === "running" || agent.status === "initializing";
+
+// A sub-agent holds its session back while it runs or needs me, as for a permission. Finished or failed, it stays flagged
+// for attention nobody gives it, as reporting back is its parent's job, so those two don't count; any other flag, or one
+// with no reason, does [ATT-22].
+export function subAgentBusy(agent: { status: string; requiresAttention?: boolean; attentionReason?: string | null }): boolean {
+  return isWorking(agent) || (!!agent.requiresAttention && agent.attentionReason !== "finished" && agent.attentionReason !== "error");
+}
+
+// What holds a session back, in words: "Review PR 46 is still working", or "… is waiting on a permission" [ATT-22].
+export function busyWords(agent: { title?: string | null; requiresAttention?: boolean; attentionReason?: string | null }, again = false): string {
+  const who = agent.title ?? "A session";
+  if (agent.requiresAttention && agent.attentionReason === "permission") return `${who} is waiting on a permission`;
+  return `${who} is ${again ? "working again" : "still working"}`;
+}
 
 // A session is idle when it isn't working and doesn't need me; Wrap up and archiving both ask [ATT-22].
 export function isIdle(agent: { status: string; requiresAttention?: boolean }): boolean {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type Item, itemSessions, projectFilterIds, SECTIONS } from "../shared/attention";
-import { linkedSessions } from "../shared/linked-sessions";
+import { closedBranches, linkedSessions } from "../shared/linked-sessions";
 import { AttentionConfig, nextUpSources } from "../shared/config";
 import { changeItems, EMPTY_LEDGER } from "./changes";
 import { classify, classifyHistory } from "./classify";
@@ -735,6 +735,20 @@ describe("history", () => {
       merged: [{ ...merged(61, "dave"), closingIssuesReferences: { nodes: [{ number: 60, repository }] } }],
     }));
     expect(issue.children.map((child) => [child.number, child.mergedBy])).toEqual([[61, "dave"]]);
+  });
+
+  it("ATT-22: merged PRs carry their branch, alone or under their issue, so a session left on it finds its row", () => {
+    const repository = { nameWithOwner: REPO };
+    const items = classifyHistory(search({
+      closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
+      merged: [
+        { number: 61, title: "Verify", url: "u", headRefName: "verify-backups", mergedAt: daysAgo(3), repository, closingIssuesReferences: { nodes: [{ number: 60, repository }] } },
+        { number: 62, title: "Fix VAT", url: "u", headRefName: "fix-vat", mergedAt: daysAgo(2), repository, closingIssuesReferences: { nodes: [] } },
+      ],
+    }));
+    const branches = closedBranches({ history: items });
+    expect(branches.get(`${REPO}\0verify-backups`)).toBe(`${REPO}#61`);
+    expect(branches.get(`${REPO}\0fix-vat`)).toBe(`${REPO}#62`);
   });
 
   it("HIS-02, ATT-19: lists PRs I reviewed apart from my own work, with their author", () => {

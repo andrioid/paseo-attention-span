@@ -1,7 +1,8 @@
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type AgentSummary, checkoutPr, isIdle, type SessionWorkspace, sessionTitle, type Target } from "../shared/attention";
-import { linkedSessions, subAgentsOf } from "../shared/linked-sessions";
+import { type AgentSummary, type AttentionView, checkoutPr, sessionTitle, type Target } from "../shared/attention";
+import { closedBranches } from "../shared/linked-sessions";
+import { ITEM_LABEL, KIND_LABEL, LABEL, SESSION_LABELS, sessionsFrom } from "../shared/item-sessions";
 import { everyPage } from "../shared/paging";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
@@ -26,7 +27,8 @@ export function useItemAgents() {
     refetchInterval: 15_000,
     queryFn: async () => {
       const before = queryClient.getQueryData<AgentSummary[]>(AGENTS_QUERY_KEY);
-      const agents = await itemAgents(paseo);
+      // My merged and closed PRs' branches, from the list already loaded, for sessions Paseo no longer links [ATT-22].
+      const agents = await itemAgents(paseo, closedBranches(queryClient.getQueryData<AttentionView>(VIEW_QUERY_KEY) ?? {}));
       const now = new Set(agents.map((agent) => agent.id));
       if (before?.some((agent) => !now.has(agent.id))) {
         await fetchAttention({ cached: true })
@@ -38,66 +40,23 @@ export function useItemAgents() {
   });
 }
 
-// Labels tie an agent to the item it works on [ATT-07, SES-03].
-export const LABEL = "attention-span";
-export const ITEM_LABEL = "attention-span-item";
-// The action it was started for, so the sheet shows it in that action's line.
-export const KIND_LABEL = "attention-span-kind";
-// Sessions started under the plugin's earlier names, "GitHub attention" and "GitHub inbox".
-const OLD_LABELS = ["github-attention", "github-inbox"];
+// Labels tie an agent to the item it works on [ATT-07, SES-03]; kept with the rest of the session list in shared.
+export { ITEM_LABEL, KIND_LABEL, LABEL };
 
-// What Paseo knows about the workspace a session runs in, for Wrap up's unsaved-work check [ATT-22].
-function sessionWorkspace(workspace: (Awaited<ReturnType<Paseo["workspaces"]["list"]>>["entries"][number])): SessionWorkspace {
-  const git = workspace.gitRuntime;
-  return {
-    kind: workspace.workspaceKind,
-    name: workspace.title ?? workspace.name,
-    directory: workspace.workspaceDirectory ?? workspace.projectRootPath,
-    ...(git?.currentBranch ? { branch: git.currentBranch } : {}),
-    ...(typeof git?.isDirty === "boolean" ? { dirty: git.isDirty } : {}),
-    ...(typeof git?.aheadOfOrigin === "number" ? { ahead: git.aheadOfOrigin } : {}),
-  };
-}
-
-// Agents started from Attention Span, each with the item it was started on, and the agents
-// started outside it in a workspace that belongs to an item [SES-08].
-export async function itemAgents(paseo: Paseo): Promise<AgentSummary[]> {
-  const labels = [LABEL, ...OLD_LABELS];
-  // Every page, so a session or sub-agent past the first isn't missed [ATT-22].
+// Agents started from Attention Span, each with the item it was started on, and the agents started outside it in a
+// workspace that belongs to an item [SES-08]. Every page, so a session or sub-agent past the first isn't missed [ATT-22].
+export async function itemAgents(paseo: Paseo, branches = new Map<string, string>()): Promise<AgentSummary[]> {
   const [lists, all, workspaces] = await Promise.all([
-    Promise.all(labels.map((label) => everyPage((page) => paseo.agents.list({ filter: { labels: { [label]: "1" } }, page })))),
+    Promise.all(SESSION_LABELS.map((label) => everyPage((page) => paseo.agents.list({ filter: { labels: { [label]: "1" } }, page })))),
     everyPage((page) => paseo.agents.list({ page })),
     paseo.workspaces.list(),
   ]);
-  const byId = new Map<string, AgentSummary>();
-  for (const { agent } of lists.flat()) {
-    const itemKey = labels.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
-    if (!itemKey || agent.archivedAt) continue;
-    byId.set(agent.id, {
-      id: agent.id,
-      itemKey,
-      kind: SessionKind.safeParse(agent.labels?.[KIND_LABEL]).data,
-      status: agent.status,
-      requiresAttention: !!agent.requiresAttention,
-      title: agent.title ?? null,
-      workspaceId: agent.workspaceId ?? null,
-      lastActivityAt: agent.updatedAt ?? null,
-    });
-  }
-  const labelled = [...byId.values()];
-  const unlabelled = all.map((entry) => entry.agent).filter((agent) => !labels.some((label) => agent.labels?.[label]));
-  const byWorkspace = new Map(workspaces.entries.map((workspace) => [workspace.id, sessionWorkspace(workspace)]));
-  const everyone = all.map((entry) => entry.agent);
-  return [...labelled, ...linkedSessions(labelled, unlabelled, workspaces.entries)].map((agent) => {
-    const workspace = agent.workspaceId ? byWorkspace.get(agent.workspaceId) : undefined;
-    // Its sub-agents go with it when it's archived, and one still working keeps its Wrap up row out [ATT-22].
-    const subAgents = subAgentsOf(everyone, [agent.id]);
-    return {
-      ...agent,
-      ...(workspace ? { workspace } : {}),
-      ...(subAgents.length ? { subAgents: { count: subAgents.length, working: subAgents.some((sub) => !isIdle(sub)) } } : {}),
-    };
-  });
+  return sessionsFrom(
+    lists.flat().map((entry) => entry.agent),
+    all.map((entry) => entry.agent),
+    workspaces.entries,
+    branches,
+  );
 }
 
 export interface ProjectMatch {

@@ -120,11 +120,11 @@ function ended(pr: EndedPullRequest, me: string): OthersChange | null {
 export function ownClosed(data: Pick<LiveResult, "ended">, me: string): Item[] {
   return present(data.ended.nodes)
     .filter((pr) => !pr.merged && sameName(pr.timelineItems.nodes.at(-1)?.actor?.login, me))
-    .map((pr) => ({
-      ...baseItem({ key: prKey(pr), section: "done", kind: "pr", repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url }, pr.closedAt),
-      closedAt: pr.closedAt,
-      closedUnmerged: true as const,
-    }));
+    .map((pr) => {
+      const item = baseItem({ key: prKey(pr), section: "done", kind: "pr", repo: pr.repository.nameWithOwner, number: pr.number, title: pr.title, url: pr.url }, pr.closedAt);
+      // Its branch, so a session left on it finds its row in Wrap up [ATT-22].
+      return { ...item, target: { ...item.target, ...(pr.headRefName ? { headRefName: pr.headRefName } : {}) }, closedAt: pr.closedAt, closedUnmerged: true as const };
+    });
 }
 
 // An issue assigned to me someone else closed, as completed or not planned [HIS-07]. My own closes are mine.

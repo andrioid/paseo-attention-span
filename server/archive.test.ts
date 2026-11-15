@@ -24,7 +24,7 @@ interface FakeWorkspace {
 // Terminals are "id" in w1, or "id@w2" in another workspace.
 // An agent's `parent` is the session that started it, as Paseo labels it. Lists come `pageSize` agents a page, archived ones
 // only when asked for, and an agent archived here is listed as archived from then on.
-type FakeAgent = { id: string; workspaceId?: string; status?: string; title?: string; parent?: string; archivedAt?: string };
+type FakeAgent = { id: string; workspaceId?: string; status?: string; title?: string; parent?: string; archivedAt?: string; requiresAttention?: boolean; attentionReason?: string };
 function paseoFor(agents: FakeAgent[], workspaces: FakeWorkspace[], terminals: string[] = [], pageSize = 100) {
   const archivedAgents: string[] = [];
   const archivedWorkspaces: string[] = [];
@@ -232,6 +232,48 @@ describe("archive safety", () => {
           }
         : ref(id)) as typeof ref;
     await expect(archiveSessions(paseo, ["a1"], false)).rejects.toThrow("Couldn't archive Review PR 46: busy");
+    expect(archivedAgents).toEqual([]);
+  });
+
+  it("ATT-22: a finished sub-agent still flagged for attention doesn't stop the archive", async () => {
+    const { paseo, archivedAgents } = paseoFor(
+      [
+        { id: "a1", workspaceId: "w1" },
+        { id: "review", workspaceId: "w1", parent: "a1", requiresAttention: true, attentionReason: "finished" },
+      ],
+      [worktree({ workspaceDirectory: clone() })],
+    );
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [] });
+    expect(archivedAgents.sort()).toEqual(["a1", "review"]);
+  });
+
+  it("ATT-22: a sub-agent starting, or idle but waiting on a permission, stops the archive", async () => {
+    for (const busy of [{ status: "initializing" }, { status: "idle", requiresAttention: true, attentionReason: "permission" }, { status: "idle", requiresAttention: true }]) {
+      const { paseo, archivedAgents } = paseoFor(
+        [
+          { id: "a1", workspaceId: "w1" },
+          { id: "review", workspaceId: "w1", parent: "a1", title: "Review PR 46", ...busy },
+        ],
+        [worktree()],
+      );
+      expect(await archiveSessions(paseo, ["a1"], true)).toMatchObject({ ok: false, reason: "working", message: expect.stringMatching(/^Review PR 46 is (still working|waiting on a permission)$/) });
+      expect(archivedAgents).toEqual([]);
+    }
+  });
+
+  it("ATT-22: a sub-agent that starts during the checks stops the archive too", async () => {
+    const agents = [
+      { id: "a1", workspaceId: "w1" },
+      { id: "review", workspaceId: "w1", parent: "a1", title: "Review PR 46", status: "idle" },
+    ];
+    const { paseo, archivedAgents } = paseoFor(agents, [worktree({ workspaceDirectory: clone() })]);
+    const list = paseo.agents.list;
+    let calls = 0;
+    paseo.agents.list = (async (...args: Parameters<typeof list>) => {
+      if (++calls > 1) agents[1].status = "running";
+      return list(...args);
+    }) as typeof list;
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: false, reason: "working", message: "Review PR 46 is working again" });
     expect(archivedAgents).toEqual([]);
   });
 

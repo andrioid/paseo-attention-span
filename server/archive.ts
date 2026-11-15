@@ -1,7 +1,7 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { isIdle } from "../shared/attention";
+import { busyWords, isIdle, subAgentBusy } from "../shared/attention";
 import { type ArchiveResult, type KeptWorktree, type UnsavedSession, unsavedOf } from "../shared/archive";
 import { subAgentsOf } from "../shared/linked-sessions";
 import { listAll } from "./archived";
@@ -108,13 +108,12 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
       return workspace && !own ? [sessionOf(workspace, { agentId: `worktree:${id}`, title: nameOf(workspace), worktreeOnly: true })] : [];
     }),
   ];
-  // A session and its sub-agents: one still working stops the archive, whichever it is.
-  const working = (all: ListedAgent[]) => {
-    const ours = [...all.filter((agent) => wanted.includes(agent.id)), ...subAgentsOf(all, wanted)];
-    return ours.find((agent) => !agent.archivedAt && !isIdle(agent));
-  };
+  // A session, or one of its sub-agents, still busy stops the archive. A session that needs me counts as busy; a sub-agent
+  // while it runs or needs me, not once it's finished or failed (subAgentBusy).
+  const working = (all: ListedAgent[]) =>
+    all.find((agent) => wanted.includes(agent.id) && !agent.archivedAt && !isIdle(agent)) ?? subAgentsOf(all, wanted).find((agent) => !agent.archivedAt && subAgentBusy(agent));
   const busy = working(agentList);
-  if (busy) return { ok: false, reason: "working", message: `${busy.title ?? "A session"} is still working` };
+  if (busy) return { ok: false, reason: "working", message: busyWords(busy) };
   const unsaved = async () => {
     const dirty = new Map<string, UnsavedSession>();
     for (const session of sessions) {
@@ -129,7 +128,7 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
   // that moved into one of these worktrees meanwhile, is seen [ATT-22].
   const latest = await everyAgent();
   const resumed = working(latest);
-  if (resumed) return { ok: false, reason: "working", message: `${resumed.title ?? "A session"} is working again` };
+  if (resumed) return { ok: false, reason: "working", message: busyWords(resumed, true) };
   const subAgents = subAgentsOf(latest, wanted);
   const ours = new Set([...wanted, ...subAgents.map((agent) => agent.id)]);
 
