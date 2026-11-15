@@ -12,6 +12,7 @@ export interface ViewMeta {
   scopes: string[];
   sources: string[];
   projectFilter: string[];
+  unclaimedByRepo: boolean;
   historyFilter: HistoryFilter[];
   groups?: Record<string, string[]>;
   config: AttentionConfig;

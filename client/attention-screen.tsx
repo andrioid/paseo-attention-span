@@ -260,6 +260,8 @@ function AttentionList({
           projects={view.projects}
           selectedProjects={view.projectFilter}
           onFilter={(change) => act.filterNextUp(view, change)}
+          byRepo={view.unclaimedByRepo ?? false}
+          onByRepo={(on) => act.groupNextUp(view, on)}
           // Narrowed to one repository, a new issue starts there [ISS-01].
           onNewIssue={() => setNewIssue({ nextUp: view.sources.length === 1 && view.sources[0].startsWith("repo:") ? view.sources[0].slice(5) : undefined })}
           agents={actions.agents}

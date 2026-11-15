@@ -287,10 +287,11 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
         sources: ["org:acme"],
       },
       { ...pickable(162, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🔙 Backend"), 30, "Debt", "Merge the two import commands"), ...onBoard(TODO_BOARD, "Backlog"), sources: ["org:acme"] },
-      { ...pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour"), ...onBoard(TODO_BOARD, "Todo"), sources: ["org:acme"] },
+      // In another repository, so Unclaimed has some to group [NXT-14].
+      { ...pickable(163, fields("🏝 P3 Low", "🐇 Small (0.5-2d)", "🖌 Frontend"), 8, "Bug", "Moving a task in the calendar loses its colour", "acme/web"), ...onBoard(TODO_BOARD, "Todo"), sources: ["org:acme"] },
       { ...pickable(164, fields("🏝 P3 Low", "🦑 Large (1-2w)", "📱 Mobile app"), 60, "Feature", "Offline mode for time tracking"), ...onBoard(IDEAS_BOARD, "Exploring"), sources: ["org:acme"] },
       // On a board without a status yet.
-      { ...pickable(166, { Effort: "🐂 Medium (2-5d)", Scope: "🖌 Frontend" }, 150, "Feature", "Dark mode for the planner"), ...onBoard(IDEAS_BOARD), sources: ["org:acme"] },
+      { ...pickable(166, { Effort: "🐂 Medium (2-5d)", Scope: "🖌 Frontend" }, 150, "Feature", "Dark mode for the planner", "acme/web"), ...onBoard(IDEAS_BOARD), sources: ["org:acme"] },
       // On no board.
       { ...pickable(165, {}, 3, "Task", "Devcontainers for pull requests", "me/tool"), projectItems: { nodes: [] }, sources: ["mine"] },
     ],

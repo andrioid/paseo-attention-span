@@ -102,6 +102,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   const saveScopes = useRpc(rpc.setScopes);
   const saveSources = useRpc(rpc.setSources);
   const saveProjects = useRpc(rpc.setProjectFilter);
+  const saveByRepo = useRpc(rpc.setUnclaimedByRepo);
   const closeIssue = useRpc(rpc.closeIssue);
   const reopenIssue = useRpc(rpc.reopenIssue);
   const update = useRpc(rpc.updateBranch);
@@ -355,6 +356,13 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     if (change.sources) saveSources({ sources: change.sources }).catch(failedSaving);
     if (change.projectFilter) saveProjects({ projects: change.projectFilter }).catch(failedSaving);
   }
+  // Shown at once, and remembered; the saved view then wins over a refresh that started before it [NXT-14].
+  function groupNextUp(view: AttentionView, on: boolean) {
+    attention.setView({ ...view, unclaimedByRepo: on });
+    saveByRepo({ on })
+      .then((saved) => attention.setView(saved))
+      .catch((error: Error) => toast.error(`Saving the grouping failed: ${error.message}`));
+  }
 
   return {
     busy,
@@ -383,5 +391,6 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     issueActions,
     filterHistory,
     filterNextUp,
+    groupNextUp,
   };
 }

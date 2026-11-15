@@ -26,13 +26,25 @@ export function NumberText({ number }: { number: number }) {
 // "#160 · acme/shop", to lead a Meta line: the number on its own first, then the repo with its name standing out from its
 // owner, so cards from several repos scan.
 export function PlaceText({ place }: { place: Place }) {
-  const strong = useStrongText();
-  const label = repoLabel(place.repo, place.login);
-  const cut = label.lastIndexOf("/") + 1;
   return (
     <>
       <NumberText number={place.number} />
       {" · "}
+      <RepoText repo={place.repo} login={place.login} />
+    </>
+  );
+}
+
+// "acme/shop" with its name standing out from its owner; mine without the owner where `login` is given. Bold where it heads
+// a group [NXT-14].
+export function RepoText({ repo, login, bold }: { repo: string; login: string | null; bold?: boolean }) {
+  const { c } = useStyles();
+  const text = useStrongText();
+  const strong = bold ? { color: c.foreground, fontWeight: "600" as const } : text;
+  const label = repoLabel(repo, login);
+  const cut = label.lastIndexOf("/") + 1;
+  return (
+    <>
       {label.slice(0, cut)}
       <Text style={strong}>{label.slice(cut)}</Text>
     </>

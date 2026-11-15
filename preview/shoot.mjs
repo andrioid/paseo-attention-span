@@ -390,6 +390,30 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await modalShot("next-up-new-issue");
       await closeModal();
     },
+    // Unclaimed grouped by repository, the one with the P0 first, then back to one list [NXT-14]. Saved, so it's turned off
+    // again for the scenarios after.
+    "next-up-by-repo": async () => {
+      await tab("Next up");
+      const toggle = page.getByRole("button", { name: "Group by repo" });
+      await toggle.click();
+      const headings = page.getByRole("heading", { name: /^(acme\/|tool)/ });
+      await headings.first().waitFor({ timeout: 10000 });
+      await settled();
+      const names = await headings.allTextContents();
+      if (names.join(" | ") !== "acme/shop · 4 | acme/web · 2 | tool · 1") throw new Error(`Repo headings: ${names.join(" | ")}`);
+      if ((await toggle.getAttribute("aria-pressed")) !== "true") throw new Error("Group by repo isn't marked as on");
+      const unclaimed = page.locator("text=/^Unclaimed/ >> visible=true").first();
+      await unclaimed.evaluate((node) => node.scrollIntoView({ block: "start" }));
+      await settled();
+      await capture("next-up-by-repo", async () => {
+        const y = Math.max(0, Math.floor((await unclaimed.boundingBox()).y) - 16);
+        const { width, height } = page.viewportSize();
+        return { x: 0, y, width, height: Math.min(height - y, MAX_HEIGHT) };
+      });
+      await toggle.click();
+      await headings.first().waitFor({ state: "hidden", timeout: 10000 });
+      await settled();
+    },
     "next-up-filters": async () => {
       await tab("Next up");
       await filter(["🔙 Backend"]);

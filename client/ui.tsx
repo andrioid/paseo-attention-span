@@ -294,7 +294,7 @@ export function useHover() {
 }
 
 // Calm by default: accent text on a subtle surface. Solid accent is for confirmations.
-// Busy: a spinner in place of the icon, and no second press while it runs.
+// Busy: a spinner in place of the icon, and no second press while it runs. Pressed: a toggle, on or off, said as aria-pressed since React Native Web drops accessibilityState.
 export function Button({
   label,
   icon,
@@ -302,6 +302,7 @@ export function Button({
   variant = "plain",
   disabled,
   busy,
+  pressed,
   accessibilityLabel,
 }: {
   label?: string;
@@ -310,6 +311,7 @@ export function Button({
   variant?: Variant;
   disabled?: boolean;
   busy?: boolean;
+  pressed?: boolean;
   accessibilityLabel?: string;
 }) {
   const styles = useStyles();
@@ -321,6 +323,7 @@ export function Button({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label ?? icon}
       accessibilityState={{ disabled: disabled || busy, busy }}
+      aria-pressed={pressed}
       disabled={disabled || busy}
       onPress={onPress}
       {...hover}
