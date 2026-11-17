@@ -213,12 +213,16 @@ export function sessionTitle(kind: SessionKind, target: Pick<Target, "kind" | "n
   return (kind === "review" ? `Review ${item}` : item).slice(0, 120);
 }
 
+export type PrState = "OPEN" | "DRAFT" | "CLOSED" | "MERGED";
+
 export interface SubRow {
   key: string;
   number: number;
   title: string;
   url: string;
   draft: boolean;
+  // Optional for older saved groups; mergedAt and draft are the fallback.
+  state?: PrState;
   chips: Chip[];
   // Behind its parent, conflicting or failing CI: shown even when the stack is collapsed.
   attention: boolean;

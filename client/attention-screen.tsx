@@ -214,6 +214,7 @@ function AttentionList({
                   busy={act.busy}
                   login={view.login}
                   fixture={!!view.fixtureAgents}
+                  agents={agentsNow}
                   fetchDetails={act.fetchDetails}
                   openAgent={act.openAgent}
                   {...act.askActions}

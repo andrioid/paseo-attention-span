@@ -1,9 +1,9 @@
 import { TextInput } from "@getpaseo/plugin/client/ui";
 import { type ReactNode, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import type { Chip } from "../shared/attention";
+import type { Chip, GithubColor } from "../shared/attention";
 import type { IconName } from "./icons";
-import { type Place, PlaceText } from "./entity";
+import { githubColor, type Place, PlaceText } from "./entity";
 import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 
 // Every card in every list has this anatomy; tabs fill it in with data and slots, not layout [ATT-05].
@@ -14,7 +14,7 @@ import { Button, HintArea, Meta, TablerIcon, toneColor, useStyles } from "./ui";
 //           [actions]                                           ← phone, labelled
 //           confirm bar
 //
-// Colors come only from tones, so a card can't pick a theme color that some themes render plain.
+// Tones follow the theme; merged PRs use GitHub's theme-aware purple.
 
 export type Tone = Chip["tone"];
 
@@ -37,7 +37,7 @@ export interface ConfirmSpec {
 }
 
 export interface CardProps {
-  mark: { icon: IconName; tone: Tone };
+  mark: { icon: IconName; tone: Tone; color?: GithubColor };
   title: string;
   // "#number · repo", then when it happened, then signals [ATT-05, ATT-20].
   meta: { place: Place; when?: string; signals: Chip[] };
@@ -117,9 +117,9 @@ export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, 
 }
 
 // What the card is, as an icon on a softly tinted square.
-export function Mark({ icon, tone }: { icon: IconName; tone: Tone }) {
+export function Mark({ icon, tone, color: github }: CardProps["mark"]) {
   const styles = useStyles();
-  const color = toneColor(styles, tone);
+  const color = githubColor(styles, github) ?? toneColor(styles, tone);
   return (
     <View style={{ width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" }}>
       <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 8, backgroundColor: color, opacity: 0.16 }} />
