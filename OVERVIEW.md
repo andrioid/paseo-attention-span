@@ -1,166 +1,68 @@
-I made Attention Span because my attention was getting spread across too many repositories, reviews and agent sessions, and GitHub's answer to that is... more notifications.
+I made Attention Span because my attention was getting spread across too many repos, reviews and agent sessions, and GitHub's answer to that is... more notifications.
 
-So this is the opposite: one short list of the issues and pull requests that are actually waiting on you, grouped by *why*, with a button to start a Paseo agent session when you'd like help. The Attention entry in the sidebar shows a count, so you can ignore it with confidence.
+So this goes the other way. You get one short list of the issues and PRs that are actually waiting on you, grouped by *why*, and a button to start a Paseo agent session when you want help. The sidebar entry shows a count, so you can ignore it with confidence.
 
-There are four tabs. I think of them as a little story: what needs me now, what's out of my hands, what I'll pick up next, and what I actually got done.
+There are four tabs: what needs me now, what's out of my hands, what I'll pick up next, and what I actually got done.
 
-## Doing: what needs you now
+## Doing
 
-This is the one you'll live in. At the top is **Wrap up**: finished or handed-off work whose Paseo sessions are still open, waiting for you to put them away. Below that it's split by reason: someone's waiting for your reply, someone answered your question, a review's been requested, CI's failing, changes were requested, it's ready to merge, it needs upstream, nobody's been asked to review it yet, or it's one of your drafts. Only things you can act on, though. Nudging people lives in Waiting.
+This is the tab you'll live in. Items are grouped by reason: someone's waiting for your reply, a review was requested, CI is failing, it's ready to merge, and so on. Each item shows up once, under its most urgent reason. An issue and the PRs that close it count as one item, and so does a stack of PRs.
 
-Wrap up is the cleanup pass. A PR that merged, an issue that closed, work that left your hands, a review you finished on someone else's PR: if one of your sessions is still open on it, it sits here once the agent is idle, newest finish first. **Archive session** puts the session, the sub-agents it started and its worktree away. If anything is uncommitted or unpushed, or the worktree has terminals open, you get a sheet first, shaped like Paseo's own: "Uncommitted changes: 2 files (+12 −3)", "1 unpushed commit", the terminals it closes, with **Open session** beside **Archive**; several sessions get a list of their own. **Archive all clean** does the tidy ones in one go. A worktree another session still lives in stays, and so does its row, saying which session kept it, until the worktree goes or you dismiss it; a local checkout is never archived; and there's no Undo, which is exactly why it checks first. Archived work goes to History as already read, not as a new note.
-
-Sometimes all the PRs under an issue merge and the issue stays open anyway: they went into a feature branch, or the description only mentioned it. Wrap up asks about those too, session or not: "Close #12? #34 and #35 merged 2h ago". **Close #12** closes it as completed, with Undo. The × keeps it open until another PR of yours merges under it, which covers "first of three" plans. While it's asking, the issue stays in Next up with a "PRs merged" pill. A session open on that work joins the question's row, and becomes an ordinary Archive session row once you've answered.
+At the top is **Wrap up**. It lists merged, closed or handed-off work that still has a Paseo session open. Archive puts the session and its worktree away. It leaves alone worktrees another session still uses, and your own checkout. It also checks for uncommitted or unpushed work first, because there's no Undo.
 
 ![Doing](docs/screenshots/desktop-dark-doing.png)
 
-Each item shows up once, under whichever reason is most urgent. An issue and the PRs that close it count as one item, and so does a stack of PRs. A stack is one change wearing several PRs, so it shouldn't take up five rows.
-
-When there's nothing in it, you get a quiet horizon that follows the time of day instead of a blank page. It only shows up once a refresh has actually checked, so it never says you're clear when it doesn't know.
-
-![Doing, with nothing in it](docs/screenshots/desktop-dark-doing-clear.png)
-
-The other tabs get their own version when they're empty: a bench in History, an empty jetty in Waiting, a blank signpost in Next up. An empty Next up also points you to Settings, since it usually means it doesn't know where to look yet.
-
-![Next up, with nowhere to look](docs/screenshots/desktop-dark-next-up-setup.png)
-
-Mentions only count while the person is still waiting for you. Reply or react and it's gone. On your own issues and PRs, a new comment from the last 30 days shows up under **Answered** even if it doesn't tag you. On other people's threads only tags count. The point is to pick out the signal, and most of what happens in threads you once commented on isn't. If you do want those replies, turn on **Follow threads I've commented on** in Settings. Team mentions are left out entirely, because "@everyone-in-backend" is not really a question for *me*. And if something's just an FYI, dismiss it. It stays gone until something new happens on it.
-
-Sometimes other people move your work without asking: they merge your PR, close it, close an issue assigned to you, reopen a PR you'd seen closed, take work over, or unassign you. None of that is something to do, so it doesn't count, but it shouldn't happen behind your back either. Each one waits at the top of **History**, like "merged by dave 2h ago" or "phil took over", and the tab gets a little green dot until you tap its check, or **Mark all as read** to clear them all. If the work is already in Wrap up, archiving the session acknowledges it instead.
-
-Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item and you get every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
+Every item has one main button that matches why it's there: Reply, Review, Fix CI, Merge. Open the item to see every action, each with a line saying what it'll do. I wanted buttons you can press without wondering what's about to happen to your repo.
 
 ![An item's actions](docs/screenshots/desktop-dark-doing-sheet.png)
 
-Some actions start an agent session:
+Mentions clear when you reply or react. Team mentions don't count, because "@everyone-in-backend" isn't really a question for *me*. If something's just an FYI, dismiss it.
 
-- **Review** reviews a PR and tells you what it thinks. It doesn't post anything. You're still the one with opinions in public.
-- **Fix CI** and **Address comments** commit fixes but don't push.
-- **Rebase** rebases a PR or a whole stack, and pushes only if there were no conflicts.
-- **Refresh draft** rebases a stale draft and tells you what it still needs. Every draft I've abandoned thanks it.
+## Waiting
 
-The rest change GitHub right away: rerun failed jobs, update a branch, mark a draft ready, request a review, turn on auto-merge, merge, close a draft. Merge and close ask first. **Acknowledge** reacts 👍 to the comments waiting on you, but only after showing you them in full. Thumbs-upping things you haven't read is a hobby, not a workflow.
+This is your work where someone else has the next move: a review you asked for, CI running, a question nobody's answered. It's grouped by who you're waiting on. After three days an item turns amber, but only when a nudge would be fair. **Copy list** gives you that person's items as Markdown, ready to paste into a message.
 
-![Acknowledge](docs/screenshots/desktop-dark-doing-acknowledge.png)
-
-A PR you opened isn't waiting on anyone until you've asked someone to review it, so it stays here under **Needs a reviewer**. **Request review** offers GitHub's suggestions, whoever reviewed your other PRs in that repo, and its teams, or you can type a name. Marking a draft ready asks the same question. If nobody reviews in that repo, **Merge** is right there once CI is green.
-
-![Request review](docs/screenshots/desktop-dark-doing-reviewers.png)
-
-## Waiting: out of your hands
-
-This is your work where someone else has the next move: the review you asked for, the reviewer looking again, CI running, or a question you asked that nobody's answered yet. Only questions count: a comment that just tells people something, even one that tags them, isn't waiting on anyone.
-
-It's grouped by who you're waiting on, whoever blocks the most first, and each item says why and for how long. Work with a session that's running or needs you leads its group. Who counts only when it's on record: the reviewers you asked, the reviewer who asked for changes, or the people you tagged in your question. Work that waits on nobody in particular, like CI or a repo rule, sits at the bottom rather than under a guess.
-
-Your PRs in Doing show up here too while someone you asked still hasn't reviewed them, even once they're approved. Merging is your call, but you might still want to nudge the person you asked.
-
-After three days an item's age turns amber, with a little ⌛. Usually that means someone forgot, and sometimes the someone is me. It only does that when a nudge would be fair, so not while CI is failing or still running, or while there are conflicts, changes to make or a reply you owe. Point at it to see why.
-
-![Waited too long](docs/screenshots/desktop-dark-waiting-too-long.png)
-
-When someone needs a nudge, **Copy list** next to their name copies their items oldest first, one line each like "Review 2h: [title](link)", ready to paste into a message. Otherwise there's nothing to do here. That's the point. It's tracked, so you can stop holding it in your head.
+Otherwise there's nothing to do here, and that's kind of the point. It's tracked, so you can stop holding it in your head.
 
 ![Waiting](docs/screenshots/desktop-dark-waiting.png)
 
-## Next up: for when your plate is clear
+## Next up
 
-It does happen. Next up lists issues assigned to you first, because finishing what you've taken seems polite, and then open issues nobody's claimed. If your org uses issue fields for priority and effort, it ranks by those, so the important quick wins float to the top. Fields called Priority, Effort and Scope are picked up on their own; if yours are called something else, pick them in Settings. Each issue shows its repo, priority, effort and scope, and whether someone already has a PR open for it. That last one has saved me from duplicating a colleague's work more than once. Each fact sits in a small pill with an icon, so "Medium" never leaves you guessing whether it's priority or effort, and priority wears the color your org gave it.
+For when your plate is clear. It does happen. Issues assigned to you come first, then unclaimed ones from the repos you point it at. If your org uses issue fields for priority and effort, it ranks by those. It also shows whether someone already has a PR open, which has saved me from redoing a colleague's work more than once.
 
-If your issues live on GitHub project boards, Next up shows which board and column each one is in, and the filter lets you pick boards and their columns: only TODO's Todo, say, and leave Ideas out. That needs one more permission than `gh` asks for by default; Settings tells you the command (`gh auth refresh -s read:project`) and until then everything else works as before.
+**Start** launches an agent that reads the issue and proposes a plan. **New issue** (also in ⌘K) takes a line or two, and an agent turns that into a proper issue. It checks for duplicates and shows you the result before anything goes to GitHub.
 
 ![Next up](docs/screenshots/desktop-dark-next-up.png)
 
-Unclaimed issues come from wherever you point it: your own repos, your orgs, or single repos. Point it nowhere and it falls back to your Paseo projects' repos, so it never fills up with strangers' issues. You can filter by source or scope, and it remembers.
+## History
 
-![Next up filtered by scope](docs/screenshots/phone-light-next-up-filtered.png)
+What you finished in recent weeks, grouped by week. There's a copy button per week for a Markdown list, tagged 🐞 bug, 🚀 feature or 🔧 task. That's my standup prep now. It takes about four seconds.
 
-**Claim & start** (or just **Start**, if it's already yours) starts an agent that reads the issue and proposes a plan. You can also claim or give back an issue without starting anything, or close one as done or not planned, so the stuff that's never going to happen stops getting suggested to you.
-
-Thought of something that needs doing? **New issue** in Next up, or **New issue…** in Paseo's Command Center (⌘K) from anywhere, takes a line or two. An agent in your checkout then asks what it still needs, looks for duplicates, follows the repo's issue templates and labels, and shows you the whole issue before anything goes to GitHub. From inside a session, **New issue from this session…** brings along what that session was just talking about, so "file what we just found" works. Once it's posted, the agent puts itself away.
-
-Some orgs keep issues in a separate repo from the code. When that happens, the first Start asks where the code lives and remembers the answer.
-
-![Where the code lives](docs/screenshots/desktop-dark-next-up-code-repo.png)
-
-## History: what you got done
-
-The issues and PRs you finished in recent weeks, grouped by week, with what others did at the top until you've seen it. Reviews are work too, even if nobody counts them, so **Filter** can show them under each week, along with the changes by others you've cleared. Finished work is always there; the other two are off until you ask, and the button remembers.
-
-There's a copy button per week that gives you Markdown lists of what's shown, each line led by what kind of work it was: 🐞 bug, 🚀 feature, 🔧 task, or 🔀 for a PR that's none of those. The kind comes from the issue type, else the labels, else a title like "fix: …", so it works whether or not your repos use issue types. Cards show it too. Issues closed as not planned stay out of the list. A PR someone else merged says who, and so does an issue someone else closed. Work that left your hands (a PR someone closed or took over, an issue you were taken off) sits under **Changed by others** when that's shown, out of the list, even if its new owner merges it later. Changes by others are never copied. That's my standup prep now, and it takes about four seconds.
+Things other people did to your work, like merging your PR or taking an issue over, wait at the top until you've seen them. None of it is a to-do, but it shouldn't happen behind your back either.
 
 ![History](docs/screenshots/desktop-dark-history.png)
 
-![History filtered to Reviewed and changes](docs/screenshots/desktop-dark-history-filtered.png)
-
-![Both lists under a week](docs/screenshots/desktop-dark-history-groups.png)
-
 ## Agent sessions
 
-Actions with an agent icon start a session; the rest change GitHub right away. Where GitHub allows it, an Undo shows up afterwards, because I mis-tap more than I'd like to admit.
+Review reviews and reports back. It doesn't post anything, so you're still the one with opinions in public. Fix CI and Address comments commit but don't push. Rebase and Refresh draft push only if the rebase had no conflicts. Everything else (merge, rerun jobs, request review) changes GitHub right away, so merge and close ask first, and most actions offer an Undo. I mis-tap more than I'd like to admit.
 
-Sessions run in a worktree of the registered project, or pick up the existing workspace for that branch. They start with the item's context already in the prompt: failing checks, unresolved comments, the issue's discussion. Once an item has a session, its main button opens that session instead of starting another. Open the item and each session sits where the action that started it was, with its state: working, idle, or needs you. Starting another one is there too, on purpose and out of the way.
-
-![An item's sessions](docs/screenshots/desktop-dark-doing-issue-sheet.png)
-
-## However you use GitHub
-
-I've tried not to bake in one way of working. It needs no configuration to start with, and so far it copes with:
-
-- **Working alone:** with nothing configured, it covers everything on GitHub that involves you, and Next up looks at your Paseo projects' repos.
-- **A team that reviews everything:** review requests, changes requested, waiting on reviewers and ready to merge each get their own spot.
-- **Stacked PRs:** a stack is one item and rebases as one.
-- **Issues first:** an issue and the PRs that close it are one item, and your org's issue fields rank Next up.
-- **Issues kept apart from the code:** Start asks once where the code lives.
-- **Open source:** mentions clear when you reply or react, and work waiting on maintainers sits in Waiting until it's waited too long.
-
-If your setup breaks it, I'd honestly like to hear about it.
-
-## Turning off GitHub notifications
-
-Attention Span doesn't read your notifications at all. It searches GitHub for what needs you. So if notifications bury you, you can turn them off and not miss anything it would have shown you. They're at [github.com/settings/notifications](https://github.com/settings/notifications):
-
-- Turn off **Automatically watch repositories** and **Automatically watch teams**, so you don't get subscribed to every new repo you're given access to.
-- Under **Watching** and **Participating, @mentions and custom**, clear On GitHub, Email and CLI.
-- Under System, clear **Actions**, or keep only failed workflows if you can't quite let go.
-- Unwatch the repos you already watch at [github.com/watching](https://github.com/watching). There are probably more than you'd guess.
-- On your phone, turn off push in GitHub Mobile's settings.
-
-GitHub moves these settings around now and then. Their [notification docs](https://docs.github.com/en/account-and-profile/managing-subscriptions-and-notifications-on-github/setting-up-notifications/configuring-notifications) should be current.
+Sessions start in a worktree with the item's context already in the prompt. Once an item has a session, its button opens that session instead of starting another.
 
 ## Setup
 
-What it needs:
+- `gh` installed and signed in on the machine running the Paseo daemon. The plugin borrows that sign-in and keeps no token of its own.
+- Your repos registered as Paseo projects with their GitHub remote, so it can start sessions in them. Items from other repos still show up; you just open them on GitHub.
+- Paseo 0.13.0 or later. I've only tested it on Linux, so other platforms are either a pleasant surprise or a bug report.
 
-- The GitHub CLI, `gh`, installed and signed in on the machine that runs the Paseo daemon. The plugin uses that sign-in and doesn't keep a token of its own.
-- Your repos registered as Paseo projects, with their GitHub remote, so it can start sessions in them. Items from other repos still show up, and you can open them on GitHub.
-- Paseo 0.13.0 or later. I've only tested it on Linux, so other platforms are a pleasant surprise or a bug report.
+If `gh` is missing or signed out, or `config.json` won't parse, you get a checklist instead of the lists. You don't need to configure anything to start. The gear on the screen covers orgs, repos and where Next up looks. The rest (agent profiles, prompts, merge methods) lives in `~/.config/paseo-attention-span/config.json`, in JSON. Sorry.
 
-If `gh` is missing or signed out, or `config.json` won't parse, you get a setup checklist instead of the lists. It says what's missing, how to fix it, and has a button to check again. It also tells you what the plugin covers, how many of your projects it can start sessions in, and which agent the sessions will use.
-
-![Setup](docs/screenshots/desktop-dark-setup.png)
-
-To narrow things down, pick organizations and repos with the gear on the screen, or under Settings, Plugins, Attention Span. Each one is checked on GitHub as you add it, so typos show up straight away. Next up's unclaimed issues use these too, instead of your projects, unless you give Next up its own sources.
-
-![Settings](docs/screenshots/desktop-dark-settings.png)
-
-Everything else lives in `~/.config/paseo-attention-span/config.json` on the daemon host. The settings screen writes there too.
-
-- `profiles`: which Paseo agent profile each kind of session uses. Reviews use `review` and everything else uses `default`. A missing profile falls back to Paseo's defaults.
-- `prompts`: your own prompt template per session type, if you don't like mine.
-- `mergeMethods`: squash, merge or rebase, per repo.
-- `codeRepos`: where an issue repo's code lives. The screen asks and fills this in, so you probably won't touch it.
-- `nextUp`: where Next up picks from and which org issue fields mean priority, effort and scope, both also in Settings. A field's `order` (best first) is the one thing here only the file sets, for when the org's own option order isn't the ranking you want.
-- `refreshMinutes` (15), `waitingTooLongDays` (3), `staleDraftDays` (30), `mentionDays` (30) and `historyWeeks` (4).
+It doesn't read your GitHub notifications. It searches GitHub for what needs you, so you can [turn notifications off](https://github.com/settings/notifications) without missing anything it would have shown you. I did, and it's been nice.
 
 ## Your data
 
-- **GitHub:** it reads your PRs, review requests, mentions and issues through `gh`, limited to the orgs and repos you've configured. By default it refreshes every 15 minutes, which uses about 7% of GitHub's hourly API allowance. I checked.
-- **Local files:** a cache of what it shows, your dismissals and your Next up filter live in `~/.config/paseo-attention-span/state.json` on the daemon host. That's it.
-- **Paseo:** about twice a day it asks Paseo whether a newer version of Attention Span is out, the same check `paseo plugin update --check` makes. Paseo looks it up in its plugin registry, on npm or on GitHub, depending on how you installed it. If there is one, the screen says so, with a link to what changed. Update installs it and restarts Attention Span. Nothing updates until you tap it.
-- **Agent providers:** when a session starts, the item's context goes into the agent's prompt: descriptions, comments, review threads, failing CI logs. That prompt goes to whichever provider your agent profile uses, so it's worth knowing which one that is.
+- **GitHub:** it reads through `gh`, limited to what you've configured. The default 15-minute refresh uses about 7% of the hourly API allowance. I checked.
+- **Local:** a cache and your dismissals live in `~/.config/paseo-attention-span/state.json`. That's it.
+- **Updates:** about twice a day it asks Paseo whether there's a newer version. Nothing installs until you tap Update.
+- **Agent providers:** a session's prompt carries the item's context (comments, review threads, CI logs) to whichever provider your agent profile uses.
 
-## What it doesn't do (yet)
-
-- github.com only. No other forges and no GitHub Enterprise, for now.
-- Apart from orgs, repos and Next up, settings are edited by hand. Yes, in JSON. Sorry.
+It's github.com only for now. If your setup breaks it, I'd honestly like to hear about it.
