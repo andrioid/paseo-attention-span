@@ -593,7 +593,7 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     // height [ATT-18]. Then a quiet day: every other tab empty shows its own scene [HIS-08, WAI-04, NXT-13].
     clear: async () => {
       await tab("Doing");
-      // Keep open answers "Close #152?", leaving its PR's clean session to Archive all clean [ATT-24].
+      // Keep open answers "Close #152?"; its working session stays out of archive cleanup [ATT-24].
       await keepIssueOpen(152);
       await page.getByText("Kept #152 open").waitFor({ timeout: 10000 });
       await settled();
