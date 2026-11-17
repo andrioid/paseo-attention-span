@@ -214,6 +214,7 @@ function AttentionList({
                   busy={act.busy}
                   login={view.login}
                   fixture={!!view.fixtureAgents}
+                  fetchDetails={act.fetchDetails}
                   openAgent={act.openAgent}
                   {...act.askActions}
                   onArchive={(item, confirm, terminals) => act.archiveRows([item], confirm, item.key, terminals)}

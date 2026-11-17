@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
 import type { AgentSummary, WrapItem } from "../shared/attention";
@@ -7,8 +8,12 @@ import { allWrapBusy, wrapBusy } from "../shared/got-it";
 import { cleanSingle, sessionCleanliness, sessionUnsaved } from "../shared/wrap-up";
 import { CardList, CardRow } from "./card";
 import { stateMark } from "./mark";
-import { Dialog } from "./sheet";
-import { Button, SectionHeader, TablerIcon, useStyles } from "./ui";
+import { type FetchDetails, itemDetailsQuery } from "./item-actions";
+import { PlaceText } from "./entity";
+import { StackLine } from "./stack";
+import { sessionEntry } from "./session-menu";
+import { ActionSheet, DETAILS_STALE_MS, DetailLines, Dialog, githubEntry, type SheetEntry, usePrefetchOnRest } from "./sheet";
+import { Button, Meta, SectionHeader, useStyles } from "./ui";
 
 // Doing's Wrap up: finished or out-of-my-hands work whose sessions are still open, and archiving them [ATT-22]. The screen
 // assembles the rows and runs the archive; these draw them and ask before archiving anything unsaved or closing a terminal,
@@ -20,6 +25,7 @@ interface RowProps {
   // Previews have made-up sessions: their snapshot is the answer, as there's no daemon to ask.
   fixture: boolean;
   openAgent: (agentId: string) => void;
+  fetchDetails: FetchDetails;
   onArchive: (item: WrapItem, confirm: boolean, terminals?: string[]) => Promise<ArchiveOutcome | null>;
 }
 
@@ -71,7 +77,7 @@ export function WrapUp({
       <CardList>
         {items.map((item, index) =>
           item.wrap.ask ? (
-            <AskRow key={item.key} item={item} first={index === 0} busy={row.busy} login={row.login} openSession={row.openAgent} onCloseIssue={onCloseIssue} onKeepOpen={onKeepOpen} />
+            <AskRow key={item.key} item={item} first={index === 0} busy={row.busy} login={row.login} openSession={row.openAgent} fetchDetails={row.fetchDetails} onCloseIssue={onCloseIssue} onKeepOpen={onKeepOpen} />
           ) : (
             <WrapRow key={item.key} item={item} first={index === 0} {...row} />
           ),
@@ -101,9 +107,15 @@ function AskRow({
   busy,
   login,
   openSession,
+  fetchDetails,
   onCloseIssue,
   onKeepOpen,
-}: { item: WrapItem; first: boolean; busy: ReadonlySet<string>; login: string | null; openSession: (agentId: string) => void } & AskProps) {
+}: { item: WrapItem; first: boolean; busy: ReadonlySet<string>; login: string | null; openSession: (agentId: string) => void; fetchDetails: FetchDetails } & AskProps) {
+  const [sheet, setSheet] = useState(false);
+  const open = () => setSheet(true);
+  const prefetch = usePrefetchOnRest(itemDetailsQuery(item, fetchDetails));
+  const close = () => setSheet(false);
+  const blocked = wrapBusy(busy, item.key);
   const { sessions } = item.wrap;
   const still = sessions.length > 1 ? ` · ${sessions.length} sessions still open` : sessions.length ? " · your session's still open" : "";
   return (
@@ -112,10 +124,36 @@ function AskRow({
       mark={stateMark(item)}
       title={item.title}
       meta={{ place: { repo: item.repo, number: item.number, login }, when: `Close #${item.number}? ${item.wrap.finish}${still}`, signals: [] }}
-      onOpen={() => (sessions[0] ? openSession(sessions[0].id) : void openExternalUrl(item.url))}
-      busy={wrapBusy(busy, item.key)}
+      onOpen={open}
+      hover={prefetch}
+      busy={blocked}
       primary={{ label: `Close #${item.number}`, accessibilityLabel: `Close #${item.number} as completed`, icon: "issueClosed", onPress: () => onCloseIssue(item) }}
-      secondary={[{ label: "Keep open", icon: "close", accessibilityLabel: `Keep #${item.number} open`, onPress: () => onKeepOpen(item) }]}
+      secondary={[
+        { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
+        { label: "Keep open", icon: "close", accessibilityLabel: `Keep #${item.number} open`, onPress: () => onKeepOpen(item) },
+      ]}
+      overlay={
+        sheet ? (
+          <WrapItemSheet
+            item={item}
+            fetchDetails={fetchDetails}
+            openSession={openSession}
+            onClose={close}
+            entries={[
+              {
+                key: "close", label: `Close #${item.number}`, icon: "issueClosed",
+                detail: "Closes as completed, with Undo", disabled: blocked,
+                onPress: () => { close(); onCloseIssue(item); },
+              },
+              {
+                key: "keep", label: "Keep open", icon: "close",
+                detail: "Waits until another PR merges before asking again", housekeeping: true, disabled: blocked,
+                onPress: () => { close(); onKeepOpen(item); },
+              },
+            ]}
+          />
+        ) : null
+      }
     />
   );
 }
@@ -126,10 +164,11 @@ function wrapMeta({ wrap }: WrapItem): string {
   return `${wrap.finish} · ${still}`;
 }
 
-function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, onArchive }: { item: WrapItem; first: boolean } & RowProps) {
-  const styles = useStyles();
+function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, fetchDetails, onArchive }: { item: WrapItem; first: boolean } & RowProps) {
   const { sessions } = item.wrap;
-  const [sheet, setSheet] = useState<"multi" | "dirty" | null>(null);
+  const [sheet, setSheet] = useState<"item" | "dirty" | null>(null);
+  const open = () => setSheet("item");
+  const prefetch = usePrefetchOnRest(itemDetailsQuery(item, fetchDetails));
   const [unsaved, setUnsaved] = useState<UnsavedSession[]>([]);
   // The terminals the confirm sheet names, sent back with it: a terminal opened since brings the sheet back [ATT-22].
   const [terminals, setTerminals] = useState<string[]>([]);
@@ -137,7 +176,7 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
   const [leaving, setLeaving] = useState<string[]>([]);
   const dirty = sessions.some((session) => sessionCleanliness(session) === "dirty");
   const press = async () => {
-    if (sessions.length > 1) return setSheet("multi");
+    if (sessions.length > 1) return open();
     // A preview has no daemon to ask; its made-up snapshot is the answer. Elsewhere the server checks git too, so the sheet
     // can name the files and commits it found.
     if (sessionCleanliness(sessions[0]) !== "clean" && fixture) {
@@ -156,7 +195,7 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
       setSheet("dirty");
     }
   };
-  // The multi sheet asks the server first, like a single row; unsaved work or open terminals it finds get the confirm that
+  // The item's archive entry asks the server first; unsaved work or open terminals it finds get the confirm that
   // names them [ATT-22].
   const confirm = async (confirm: boolean) => {
     const outcome = await onArchive(item, confirm, confirm ? terminals : []);
@@ -173,7 +212,8 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
         when: wrapMeta(item),
         signals: dirty ? [{ text: "unsaved changes", tone: "warn" }] : [],
       }}
-      onOpen={() => (sessions.length > 1 ? setSheet("multi") : sessions[0] ? openSession(sessions[0].id) : undefined)}
+      onOpen={open}
+      hover={prefetch}
       busy={wrapBusy(busy, item.key)}
       primary={{
         label: sessions.length > 1 ? "Archive sessions" : "Archive session",
@@ -181,44 +221,29 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
         icon: "archive",
         onPress: () => void press(),
       }}
-      secondary={[{ label: `Details for #${item.number}`, icon: "chevronRight", onPress: () => (sessions.length > 1 ? setSheet("multi") : sessions[0] ? openSession(sessions[0].id) : undefined) }]}
+      secondary={[{ label: `Details for #${item.number}`, icon: "chevronRight", onPress: open }]}
       overlay={
-        sheet === "multi" ? (
-          <Dialog title={`Sessions on #${item.number}`} onClose={() => setSheet(null)}>
-            <Text style={styles.muted}>
-              {item.title} · {item.wrap.finish}
-            </Text>
-            <View style={[styles.card, { backgroundColor: styles.c.surface2 }]}>
-              {sessions.map((session, index) => (
-                <View key={session.id} style={[styles.row, { paddingVertical: 10, paddingHorizontal: 12 }, index > 0 ? styles.divider : null]}>
-                  <TablerIcon name="agent" size={16} />
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={styles.text}>{session.title ?? "Session"}</Text>
-                    <Text style={styles.muted}>{sessionStateText(session)}</Text>
-                    {session.subAgents?.count ? (
-                      <Text style={styles.muted}>
-                        +{session.subAgents.count} sub-agent{session.subAgents.count === 1 ? "" : "s"}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <Button label="Open" variant="ghost" onPress={() => openSession(session.id)} />
-                </View>
-              ))}
-            </View>
-            <Text style={styles.muted}>
-              Archives {sessions.length} sessions. Their worktrees go too when no other session lives in them, closing their terminals
-              {sessions.some((session) => sessionCleanliness(session) === "unknown") ? "; the one that couldn't be checked may hold unsaved work" : ""}.
-            </Text>
-            <View style={[styles.row, { justifyContent: "flex-end" }]}>
-              <Button label="Cancel" onPress={() => setSheet(null)} />
-              <Button label={sessions.length === 2 ? "Archive both" : `Archive ${sessions.length}`} variant="danger" onPress={() => void confirm(false)} />
-            </View>
-          </Dialog>
+        sheet === "item" ? (
+          <WrapItemSheet
+            item={item}
+            fetchDetails={fetchDetails}
+            openSession={openSession}
+            onClose={() => setSheet(null)}
+            entries={[{
+              key: "archive",
+              label: sessions.length === 2 ? "Archive both" : sessions.length > 1 ? `Archive ${sessions.length} sessions` : "Archive session",
+              icon: "archive",
+              detail: "Archives the sessions and their worktrees when no other session lives in them. Asks before losing unsaved work or closing terminals.",
+              housekeeping: true,
+              disabled: wrapBusy(busy, item.key),
+              onPress: () => { setSheet(null); void (sessions.length > 1 ? confirm(false) : press()); },
+            }]}
+          />
         ) : sheet === "dirty" ? (
           <ArchiveSheet
             title={leaving.length === 1 ? `Archive "${leaving[0]}"?` : sessions.length > 1 ? `Archive the sessions on #${item.number}?` : `Archive the session on #${item.number}?`}
             unsaved={unsaved.length ? unsaved : [readingOf(sessions[0])]}
-            onOpen={() => openSession(unsaved[0]?.agentId ?? sessions[0].id)}
+            onOpen={() => { setSheet(null); openSession(unsaved[0]?.agentId ?? sessions[0].id); }}
             onArchive={() => void confirm(true)}
             onClose={() => setSheet(null)}
           />
@@ -228,7 +253,51 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, on
   );
 }
 
-// What a session in Wrap up's multi sheet says about its worktree [ATT-22].
+// Wrap up owns its cleanup actions; the sheet uses the same details and entries as the other tabs [ATT-06, SES-03].
+function WrapItemSheet({ item, fetchDetails, openSession, entries, onClose }: {
+  item: WrapItem;
+  fetchDetails: FetchDetails;
+  openSession: (agentId: string) => void;
+  entries: SheetEntry[];
+  onClose: () => void;
+}) {
+  const details = useQuery({ ...itemDetailsQuery(item, fetchDetails), staleTime: DETAILS_STALE_MS });
+  const pr = item.children.find((child) => child.url === item.target.url) ?? item.children[0];
+  const shown = new Set(item.children.map((child) => child.url));
+  const extra = details.data && { ...details.data, linked: details.data.linked.filter((link) => !shown.has(link.url)) };
+  return (
+    <ActionSheet
+      title={item.title}
+      onClose={onClose}
+      top={
+        <>
+          <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={[item.wrap.finish]} chips={[]} />
+          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt || !!item.wrap.ask} links /> : null}
+        </>
+      }
+      entries={[
+        ...item.wrap.sessions.map((session) => ({
+          ...sessionEntry(session, "Continue session", (id) => { onClose(); openSession(id); }),
+          detail: [session.title, sessionStateText(session), session.subAgents?.count ? `+${session.subAgents.count} sub-agent${session.subAgents.count === 1 ? "" : "s"}` : null].filter(Boolean).join(" · "),
+        })),
+        githubEntry(item, (url) => { onClose(); void openExternalUrl(url); }, pr),
+        ...entries,
+      ]}
+      bottom={
+        <DetailLines
+          details={extra}
+          loading={details.isLoading}
+          error={details.error}
+          linkedLabel={item.kind === "issue" ? "PR" : "Closes"}
+          expected={item.target.kind === "pr" ? 1 : 0}
+          sizeOf={item.kind === "issue" && item.target.kind === "pr" ? item.target.number : undefined}
+        />
+      }
+    />
+  );
+}
+
+// What a session in Wrap up's item sheet says about its worktree [ATT-22].
 function sessionStateText(session: AgentSummary): string {
   const unsaved = sessionUnsaved(session);
   if (!unsaved) return "idle · nothing unsaved";
@@ -282,6 +351,8 @@ function KeptWorktreeRow({
   onArchive: KeptProps["onArchiveWorktree"];
   onDismiss: (row: KeptRow) => void;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const open = () => setDetailsOpen(true);
   const [sheet, setSheet] = useState<{ unsaved: UnsavedSession[]; terminals: string[] } | null>(null);
   const archive = async (confirm: boolean) => {
     const outcome = await onArchive(row, confirm, confirm ? (sheet?.terminals ?? []) : []);
@@ -298,12 +369,26 @@ function KeptWorktreeRow({
       mark={{ icon: "archive", tone: "neutral" }}
       title={row.title}
       meta={{ place: { repo: row.repo, number: row.number, login }, when: keptText(row), signals: [] }}
-      onOpen={primary.onPress}
+      onOpen={open}
       busy={busy}
       primary={{ ...primary, accessibilityLabel: `${primary.label}: ${row.name}` }}
-      secondary={[{ label: "Dismiss", icon: "close", accessibilityLabel: `Dismiss: keep ${row.name}`, onPress: () => onDismiss(row) }]}
+      secondary={[
+        { label: `Details for #${row.number}`, icon: "chevronRight", onPress: open },
+        { label: "Dismiss", icon: "close", accessibilityLabel: `Dismiss: keep ${row.name}`, onPress: () => onDismiss(row) },
+      ]}
       overlay={
-        sheet ? <ArchiveSheet title={`Archive "${row.name}"?`} unsaved={sheet.unsaved} onArchive={() => void archive(true)} onClose={() => setSheet(null)} /> : null
+        detailsOpen ? (
+          <ActionSheet
+            title={row.title}
+            onClose={() => setDetailsOpen(false)}
+            top={<Meta lead={<PlaceText place={{ repo: row.repo, number: row.number, login: null }} />} facts={[row.name, keptText(row)]} chips={[]} />}
+            entries={[
+              { key: "primary", ...primary, detail: row.reason === "session" ? "Opens the session keeping this worktree" : "Checks the worktree before archiving; asks before losing unsaved work or closing terminals", disabled: busy, onPress: () => { setDetailsOpen(false); primary.onPress(); } },
+              { key: "dismiss", label: "Dismiss", icon: "close", detail: "Keeps the worktree and removes this reminder", housekeeping: true, disabled: busy, onPress: () => { setDetailsOpen(false); onDismiss(row); } },
+            ]}
+            bottom={null}
+          />
+        ) : sheet ? <ArchiveSheet title={`Archive "${row.name}"?`} unsaved={sheet.unsaved} onArchive={() => void archive(true)} onClose={() => setSheet(null)} /> : null
       }
     />
   );
