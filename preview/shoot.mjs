@@ -229,6 +229,44 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await bandShot("doing-wrap", "Wrap up", "Waiting for your reply");
       await bandShot("doing-review", "Review requested", "CI failing");
     },
+    // Card bodies and chevrons open details without navigating or starting cleanup [ATT-06, ATT-22, ATT-24].
+    "wrap-details": async () => {
+      await tab("Doing");
+      for (const [number, title] of [
+        [186, "Split the invoice PDF job"], [172, "Fix VAT on credit notes"], [152, "Customer statements as PDF"],
+        [176, "Round prices per currency"], [178, "Cache the tax tables"], [179, "Drop the legacy exporter"],
+      ]) {
+        const details = page.getByRole("button", { name: `Details for #${number}`, exact: true });
+        // Start with the body; then check the chevron opens the same sheet.
+        await page.getByRole("button", { name: `${title}, more`, exact: true }).first().click();
+        const dialog = layout.isMobile ? page.getByRole("slider").filter({ hasText: title }).last() : page.getByRole("dialog");
+        await dialog.waitFor({ timeout: 10000 });
+        await closeModal();
+        await details.click();
+        await dialog.waitFor({ timeout: 10000 });
+        if (number === 186 || number === 172) {
+          await dialog.getByRole("button", { name: "Continue session", exact: true }).first().waitFor();
+          await dialog.getByRole("button", { name: "Open PR on GitHub", exact: true }).waitFor();
+        }
+        await settled();
+        if (number === 186) {
+          await modalShot("doing-wrap-sheet");
+          await dialog.getByRole("button", { name: "Archive session", exact: true }).click();
+          await page.getByText("Closes terminals: dev, shell").waitFor({ timeout: 10000 });
+          await settled();
+        }
+        if (number === 152) {
+          await dialog.getByRole("button", { name: "Close #152", exact: true }).waitFor();
+          for (const pr of [194, 195]) await dialog.getByRole("link", { name: `Open PR #${pr} on GitHub`, exact: true }).waitFor();
+          await modalShot("doing-wrap-ask-sheet");
+        }
+        if (number === 178) {
+          await dialog.getByRole("button", { name: "Archive worktree", exact: true }).waitFor();
+          await modalShot("doing-wrap-worktree-sheet");
+        }
+        await closeModal();
+      }
+    },
     // A dirty session asks first; several sessions list themselves. Neither archives until confirmed.
     "wrap-confirm": async () => {
       await tab("Doing");
@@ -564,11 +602,6 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await page.getByRole("button", { name: "Archive both" }).click();
       await settled();
       await tab("Doing");
-      await page.getByRole("button", { name: /^Details for #/ }).first().click();
-      await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
-      await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
-      await settled();
-      await shot("doing-dismissed");
       // Kept worktrees keep the horizon away too: dismiss them first [ATT-22].
       const keptRows = page.getByRole("button", { name: /^Dismiss: keep / });
       for (let left = await keptRows.count(); left > 0; left = await keptRows.count()) {
@@ -576,6 +609,11 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
         await keptRows.first().click();
         await until(async () => (await keptRows.count()) < left, `"${title}" to leave Doing`);
       }
+      await page.getByRole("button", { name: /^Details for #/ }).first().click();
+      await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
+      await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
+      await settled();
+      await shot("doing-dismissed");
       const details = page.getByRole("button", { name: /^Details for #/ });
       for (let left = await details.count(); left > 0; left = await details.count()) {
         const title = await details.first().getAttribute("aria-label");

@@ -9,6 +9,7 @@ export const LAYOUTS = ["phone-dark", "desktop-dark", "phone-light", "desktop-li
 export const SCENARIOS = [
   { name: "tabs", shots: ["doing", "history", "waiting", "next-up"] },
   { name: "doing-bands", shots: ["doing-needs-reviewer", "doing-ready", "doing-wrap", "doing-review"] },
+  { name: "wrap-details", shots: ["doing-wrap-sheet", "doing-wrap-ask-sheet", "doing-wrap-worktree-sheet"] },
   { name: "wrap-confirm", shots: ["doing-wrap-dirty", "doing-wrap-multi"] },
   { name: "wrap-ask", shots: ["doing-wrap-kept-open"] },
   { name: "hints", shots: ["doing-hint", "waiting-too-long"], desktop: true },
