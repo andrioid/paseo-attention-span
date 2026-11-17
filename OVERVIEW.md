@@ -8,7 +8,7 @@ There are four tabs: what needs me now, what's out of my hands, what I'll pick u
 
 This is the tab you'll live in. Items are grouped by reason: someone's waiting for your reply, a review was requested, CI is failing, it's ready to merge, and so on. Each item shows up once, under its most urgent reason. An issue and the PRs that close it count as one item, and so does a stack of PRs.
 
-At the top is **Wrap up**. It lists merged, closed or handed-off work that still has a Paseo session open. Archive puts the session and its worktree away, but it checks for uncommitted or unpushed work first, because there's no Undo.
+At the top is **Wrap up**. It lists merged, closed or handed-off work that still has a Paseo session open. Archive puts the session and its worktree away. It leaves alone worktrees another session still uses, and your own checkout. It also checks for uncommitted or unpushed work first, because there's no Undo.
 
 ![Doing](docs/screenshots/desktop-dark-doing.png)
 
@@ -20,7 +20,7 @@ Mentions clear when you reply or react. Team mentions don't count, because "@eve
 
 ## Waiting
 
-This is your work where someone else has the next move: a review you asked for, CI running, a question nobody's answered. It's grouped by who you're waiting on. After three days an item turns amber, but only when a nudge would be fair. **Copy list** gives you that person's items as Markdown, ready to paste into a slightly passive-aggressive message.
+This is your work where someone else has the next move: a review you asked for, CI running, a question nobody's answered. It's grouped by who you're waiting on. After three days an item turns amber, but only when a nudge would be fair. **Copy list** gives you that person's items as Markdown, ready to paste into a message.
 
 Otherwise there's nothing to do here, and that's kind of the point. It's tracked, so you can stop holding it in your head.
 
@@ -44,17 +44,17 @@ Things other people did to your work, like merging your PR or taking an issue ov
 
 ## Agent sessions
 
-Review reviews and reports back. It doesn't post anything, so you're still the one with opinions in public. Fix CI and Address comments commit but don't push. Everything else (merge, rerun jobs, request review) changes GitHub right away, so merge and close ask first, and most actions offer an Undo. I mis-tap more than I'd like to admit.
+Review reviews and reports back. It doesn't post anything, so you're still the one with opinions in public. Fix CI and Address comments commit but don't push. Rebase and Refresh draft push only if the rebase had no conflicts. Everything else (merge, rerun jobs, request review) changes GitHub right away, so merge and close ask first, and most actions offer an Undo. I mis-tap more than I'd like to admit.
 
 Sessions start in a worktree with the item's context already in the prompt. Once an item has a session, its button opens that session instead of starting another.
 
 ## Setup
 
 - `gh` installed and signed in on the machine running the Paseo daemon. The plugin borrows that sign-in and keeps no token of its own.
-- Your repos registered as Paseo projects, so it can start sessions in them.
+- Your repos registered as Paseo projects with their GitHub remote, so it can start sessions in them. Items from other repos still show up; you just open them on GitHub.
 - Paseo 0.13.0 or later. I've only tested it on Linux, so other platforms are either a pleasant surprise or a bug report.
 
-If something's missing, you get a checklist instead of the lists. You don't need to configure anything to start. To narrow it down to certain orgs or repos, use the gear on the screen. Everything else lives in `~/.config/paseo-attention-span/config.json`, in JSON. Sorry.
+If `gh` is missing or signed out, or `config.json` won't parse, you get a checklist instead of the lists. You don't need to configure anything to start. The gear on the screen covers orgs, repos and where Next up looks. The rest (agent profiles, prompts, merge methods) lives in `~/.config/paseo-attention-span/config.json`, in JSON. Sorry.
 
 It doesn't read your GitHub notifications. It searches GitHub for what needs you, so you can [turn notifications off](https://github.com/settings/notifications) without missing anything it would have shown you. I did, and it's been nice.
 

@@ -65,8 +65,10 @@ jobs:
         run: |
           base="https://cdn.jsdelivr.net/npm/@andrioid/paseo-attention-span@$VERSION/"
           sed -i -E "s#\]\((docs/screenshots/[^)]+)\)#](${base}\1)#g" OVERVIEW.md
-          if grep -nE '!\[[^]]*\]\((docs|\./|/)' OVERVIEW.md; then
-            echo "::error::OVERVIEW.md still has relative image paths."
+          # Every image must be inline with an https URL; reference-style
+          # images and <img> tags aren't checked, so they're refused too.
+          if grep -nP '!\[[^]]*\](?!\(https://)|<img\b' OVERVIEW.md; then
+            echo "::error::OVERVIEW.md has an image paseo.sh won't render: use docs/screenshots/… or an https URL."
             exit 1
           fi
 
