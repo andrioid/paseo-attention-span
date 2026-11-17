@@ -167,6 +167,11 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     else await page.keyboard.press("Escape");
     await settled();
   };
+  const keepIssueOpen = async (number) => {
+    await page.getByRole("button", { name: `Details for #${number}`, exact: true }).click();
+    await page.getByRole("button", { name: "Keep open", exact: true }).last().click();
+    await settled();
+  };
   const sheetOpen = () => page.getByText(/^Open (issue|PR)( on GitHub)?$/).last();
   const openSheet = async (title) => {
     await page.getByRole("button", { name: `${title}, more` }).first().click();
@@ -257,8 +262,15 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
         }
         if (number === 152) {
           await dialog.getByRole("button", { name: "Close #152", exact: true }).waitFor();
+          // The fixture models an already-started session: it remains reachable while working [SES-03, SES-10].
+          await dialog.getByRole("button", { name: "Continue session", exact: true }).waitFor();
+          await dialog.getByText("working", { exact: true }).waitFor();
           for (const pr of [194, 195]) await dialog.getByRole("link", { name: `Open PR #${pr} on GitHub`, exact: true }).waitFor();
           await modalShot("doing-wrap-ask-sheet");
+          await dialog.getByRole("button", { name: "Start another session…", exact: true }).click();
+          await page.getByText("Start session: Customer statements as PDF", { exact: true }).waitFor({ timeout: 10000 });
+          await page.getByRole("button", { name: "Start session", exact: true }).last().waitFor({ timeout: 10000 });
+          await settled();
         }
         if (number === 178) {
           await dialog.getByRole("button", { name: "Archive worktree", exact: true }).waitFor();
@@ -281,15 +293,15 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await modalShot("doing-wrap-multi");
       await closeModal();
     },
-    // "Close #152?": × keeps it open, with Undo, which brings the question back [ATT-24]. Close isn't pressed, since it
+    // "Close #152?": Keep open in its sheet has Undo, which brings the question back [ATT-24]. Close isn't pressed, since it
     // would call GitHub.
     "wrap-ask": async () => {
       await tab("Doing");
-      await page.getByRole("button", { name: "Keep #152 open" }).click();
+      await keepIssueOpen(152);
       await page.getByText("Kept #152 open").waitFor({ timeout: 10000 });
       await bandShot("doing-wrap-kept-open", "Kept #152 open", "Waiting for your reply");
       await page.getByRole("button", { name: "Undo" }).first().click();
-      await page.getByRole("button", { name: "Keep #152 open" }).waitFor({ timeout: 10000 });
+      await page.getByRole("button", { name: "Close #152 as completed", exact: true }).waitFor({ timeout: 10000 });
       await settled();
     },
     hints: async () => {
@@ -582,7 +594,7 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     clear: async () => {
       await tab("Doing");
       // Keep open answers "Close #152?", leaving its PR's clean session to Archive all clean [ATT-24].
-      await page.getByRole("button", { name: "Keep #152 open" }).click();
+      await keepIssueOpen(152);
       await page.getByText("Kept #152 open").waitFor({ timeout: 10000 });
       await settled();
       // Archive all clean takes the clean ones, then the dirty and multi rows ask first [ATT-22].
@@ -603,11 +615,12 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await settled();
       await tab("Doing");
       // Kept worktrees keep the horizon away too: dismiss them first [ATT-22].
-      const keptRows = page.getByRole("button", { name: /^Dismiss: keep / });
-      for (let left = await keptRows.count(); left > 0; left = await keptRows.count()) {
-        const title = await keptRows.first().getAttribute("aria-label");
-        await keptRows.first().click();
-        await until(async () => (await keptRows.count()) < left, `"${title}" to leave Doing`);
+      for (const number of [176, 178, 179]) {
+        const details = page.getByRole("button", { name: `Details for #${number}`, exact: true });
+        await details.click();
+        await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
+        await details.waitFor({ state: "detached" });
+        await settled();
       }
       await page.getByRole("button", { name: /^Details for #/ }).first().click();
       await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();

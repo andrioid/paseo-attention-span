@@ -346,7 +346,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     const parent = parentOf(pr);
     const facts = { pr, s, base: parent ? `#${parent.number}` : pr.baseRefName, now, own: isOwn(pr) };
     const chips = [...(stack.length > 1 ? [chip(`${index + 1}/${stack.length}`)] : []), ...chipsFor(SUB_CHIPS, facts)];
-    return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, chips, attention: s.outOfSync || s.conflicts || s.ciFailing };
+    return { key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: pr.isDraft, state: pr.isDraft ? "DRAFT" : "OPEN", chips, attention: s.outOfSync || s.conflicts || s.ciFailing };
   };
 
   const target = (pr: PullRequestNode, stack: PullRequestNode[]): Target => ({
@@ -485,7 +485,7 @@ export function classifyHistory(data: HistoryResult): Item[] {
     const linked = { repo: pr.repository.nameWithOwner, body: pr.body, linked: pr.closingIssuesReferences.nodes.map(prKey) };
     const issue = closed.get(issueFor([linked], (key) => closed.has(key)) ?? "");
     const head = pr.headRefName ? { headRefName: pr.headRefName } : {};
-    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, ...mergedBy(pr), ...head, mergedAt: pr.mergedAt });
+    if (issue) issue.children.push({ key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, state: "MERGED", chips: [], attention: false, ...mergedBy(pr), ...head, mergedAt: pr.mergedAt });
     else {
       const item = plain(pr, "pr", "done");
       items.push(kinded({ ...item, target: { ...item.target, ...head }, closedAt: pr.mergedAt, ...mergedBy(pr) }, pr));
@@ -515,7 +515,7 @@ export function classifyCloseAsks(data: HistoryResult): CloseAsk[] {
     // Its branch, so a session on it still finds its row once the issue is closed; who merged it, as History says [ATT-22, HIS-05].
     const by = pr.mergedBy?.login;
     ask.prs.push({
-      key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, chips: [], attention: false, mergedAt: pr.mergedAt,
+      key: prKey(pr), number: pr.number, title: pr.title, url: pr.url, draft: false, state: "MERGED", chips: [], attention: false, mergedAt: pr.mergedAt,
       ...(pr.headRefName ? { headRefName: pr.headRefName } : {}),
       ...(by && me && by.toLowerCase() !== me ? { mergedBy: by } : {}),
     });
