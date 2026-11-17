@@ -56,6 +56,20 @@ jobs:
           echo "next=$next" >> "$GITHUB_OUTPUT"
 
       - run: npm version "${{ steps.version.outputs.next }}" --no-git-tag-version
+
+      # paseo.sh only renders https images, so relative screenshot paths
+      # in the overview point at this version's files on jsDelivr instead.
+      - name: Point overview images at the published package
+        env:
+          VERSION: ${{ steps.version.outputs.next }}
+        run: |
+          base="https://cdn.jsdelivr.net/npm/@andrioid/paseo-attention-span@$VERSION/"
+          sed -i -E "s#\]\((docs/screenshots/[^)]+)\)#](${base}\1)#g" OVERVIEW.md
+          if grep -nE '!\[[^]]*\]\((docs|\./|/)' OVERVIEW.md; then
+            echo "::error::OVERVIEW.md still has relative image paths."
+            exit 1
+          fi
+
       - run: npm publish
 
       - name: Tag and write release notes
