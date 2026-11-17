@@ -439,7 +439,8 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-186", `${REPO}#186`, "fix", "idle", 40, false, { ...sessionWorkspace("split-invoice-pdf", true, 1, true, 2)!, dirtyLines: { added: 12, deleted: 3 }, terminals: ["dev", "shell"] }, "Split invoice PDF"),
   agent("agent-190", `${REPO}#190`, "review", "idle", 60, false, sessionWorkspace("add-vat-export", false, 0), "Review PR 190: Add the VAT export"),
   // On a PR under an issue Wrap up asks to close: it joins that row [ATT-24].
-  agent("agent-195", `${REPO}#195`, "fix", "idle", 10, false, sessionWorkspace("statement-pdf-download", false, 0), "Statement PDF download"),
+  // A session started from the close-issue prompt stays visible while working, even though it cannot be archived.
+  agent("agent-195", `${REPO}#195`, "fix", "running", 10, false, sessionWorkspace("statement-pdf-download", false, 0), "Statement PDF download"),
   // With a review sub-agent it started, archived along with it.
   { ...agent("agent-172", `${REPO}#172`, "fix", "idle", 240, false, sessionWorkspace("fix-vat-credit-notes", false, 0), "Fix VAT on credit notes"), subAgents: { count: 1, working: false } },
   agent("agent-172b", `${REPO}#172`, "address", "idle", 250, false, sessionWorkspace("credit-note-tests", undefined, undefined), "Credit note tests"),

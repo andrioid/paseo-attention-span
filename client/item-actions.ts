@@ -344,6 +344,10 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
 
   // Wrap up's "Close #12?": closes as completed, or keeps it open until another PR merges under it; each with Undo [ATT-24].
   const askActions = {
+    onStartSession: (item: WrapItem) => {
+      const target: Target = { kind: "issue", repo: item.repo, number: item.number, title: item.title, url: item.url };
+      setOptions({ itemKey: item.wrap.itemKey, title: `Start session: ${item.title}`, kind: "start", target });
+    },
     onCloseIssue: (item: WrapItem) => {
       const key = item.wrap.itemKey;
       const target: Target = { kind: "issue", repo: item.repo, number: item.number, title: item.title, url: item.url };

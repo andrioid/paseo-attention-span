@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { openExternalUrl } from "@getpaseo/plugin/client";
 import { Text, View } from "react-native";
-import type { AgentSummary, WrapItem } from "../shared/attention";
+import { type AgentSummary, isIdle, matchSessions, type WrapItem } from "../shared/attention";
 import { type ArchiveOutcome, type KeptRow, keptText, sheetLines, type UnsavedSession, unsavedWords } from "../shared/archive";
 import { allWrapBusy, wrapBusy } from "../shared/got-it";
 import { cleanSingle, sessionCleanliness, sessionUnsaved } from "../shared/wrap-up";
@@ -11,7 +11,7 @@ import { stateMark } from "./mark";
 import { type FetchDetails, itemDetailsQuery } from "./item-actions";
 import { PlaceText } from "./entity";
 import { StackLine } from "./stack";
-import { sessionEntry } from "./session-menu";
+import { sessionEntry, startAnotherEntry } from "./session-menu";
 import { ActionSheet, DETAILS_STALE_MS, DetailLines, Dialog, githubEntry, type SheetEntry, usePrefetchOnRest } from "./sheet";
 import { Button, Meta, SectionHeader, useStyles } from "./ui";
 
@@ -21,6 +21,7 @@ import { Button, Meta, SectionHeader, useStyles } from "./ui";
 
 interface RowProps {
   busy: ReadonlySet<string>;
+  agents: AgentSummary[];
   login: string | null;
   // Previews have made-up sessions: their snapshot is the answer, as there's no daemon to ask.
   fixture: boolean;
@@ -40,6 +41,8 @@ interface AskProps {
   // Close as completed, with Undo, or Keep open until another PR merges under it [ATT-24].
   onCloseIssue: (item: WrapItem) => void;
   onKeepOpen: (item: WrapItem) => void;
+  // The same session-options flow as the other item sheets [SES-02, SES-03].
+  onStartSession: (item: WrapItem) => void;
 }
 
 export function WrapUp({
@@ -50,6 +53,7 @@ export function WrapUp({
   onDismissKept,
   onCloseIssue,
   onKeepOpen,
+  onStartSession,
   ...row
 }: { items: WrapItem[]; onArchiveAll: () => Promise<void> } & RowProps & KeptProps & AskProps) {
   const styles = useStyles();
@@ -77,7 +81,7 @@ export function WrapUp({
       <CardList>
         {items.map((item, index) =>
           item.wrap.ask ? (
-            <AskRow key={item.key} item={item} first={index === 0} busy={row.busy} login={row.login} openSession={row.openAgent} fetchDetails={row.fetchDetails} onCloseIssue={onCloseIssue} onKeepOpen={onKeepOpen} />
+            <AskRow key={item.key} item={item} sessions={matchSessions(row.agents, item.wrap.keys)} first={index === 0} busy={row.busy} login={row.login} openSession={row.openAgent} fetchDetails={row.fetchDetails} onCloseIssue={onCloseIssue} onKeepOpen={onKeepOpen} onStartSession={onStartSession} />
           ) : (
             <WrapRow key={item.key} item={item} first={index === 0} {...row} />
           ),
@@ -99,10 +103,11 @@ export function WrapUp({
   );
 }
 
-// An open issue whose PRs of mine all merged: "Close #12? #34 and #35 merged 2h ago", Close #12, or × to keep it open until
-// another merges. A session open on the work waits for the usual row, which closing leaves behind [ATT-24].
+// An open issue whose PRs of mine all merged: Close #12, or Keep open in its sheet until another merges.
+// A session open on the work waits for the usual row, which closing leaves behind [ATT-24].
 function AskRow({
   item,
+  sessions,
   first,
   busy,
   login,
@@ -110,13 +115,13 @@ function AskRow({
   fetchDetails,
   onCloseIssue,
   onKeepOpen,
-}: { item: WrapItem; first: boolean; busy: ReadonlySet<string>; login: string | null; openSession: (agentId: string) => void; fetchDetails: FetchDetails } & AskProps) {
+  onStartSession,
+}: { item: WrapItem; sessions: AgentSummary[]; first: boolean; busy: ReadonlySet<string>; login: string | null; openSession: (agentId: string) => void; fetchDetails: FetchDetails } & AskProps) {
   const [sheet, setSheet] = useState(false);
   const open = () => setSheet(true);
   const prefetch = usePrefetchOnRest(itemDetailsQuery(item, fetchDetails));
   const close = () => setSheet(false);
   const blocked = wrapBusy(busy, item.key);
-  const { sessions } = item.wrap;
   const still = sessions.length > 1 ? ` · ${sessions.length} sessions still open` : sessions.length ? " · your session's still open" : "";
   return (
     <CardRow
@@ -128,18 +133,17 @@ function AskRow({
       hover={prefetch}
       busy={blocked}
       primary={{ label: `Close #${item.number}`, accessibilityLabel: `Close #${item.number} as completed`, icon: "issueClosed", onPress: () => onCloseIssue(item) }}
-      secondary={[
-        { label: `Details for #${item.number}`, icon: "chevronRight", onPress: open },
-        { label: "Keep open", icon: "close", accessibilityLabel: `Keep #${item.number} open`, onPress: () => onKeepOpen(item) },
-      ]}
+      secondary={[{ label: `Details for #${item.number}`, icon: "chevronRight", onPress: open }]}
       overlay={
         sheet ? (
           <WrapItemSheet
             item={item}
+            sessions={sessions}
             fetchDetails={fetchDetails}
             openSession={openSession}
             onClose={close}
             entries={[
+              { ...startAnotherEntry(sessions.length > 0, () => { close(); onStartSession(item); }), disabled: blocked },
               {
                 key: "close", label: `Close #${item.number}`, icon: "issueClosed",
                 detail: "Closes as completed, with Undo", disabled: blocked,
@@ -254,8 +258,10 @@ function WrapRow({ item, first, busy, login, fixture, openAgent: openSession, fe
 }
 
 // Wrap up owns its cleanup actions; the sheet uses the same details and entries as the other tabs [ATT-06, SES-03].
-function WrapItemSheet({ item, fetchDetails, openSession, entries, onClose }: {
+function WrapItemSheet({ item, sessions = item.wrap.sessions, fetchDetails, openSession, entries, onClose }: {
   item: WrapItem;
+  // Navigation includes working sessions on close prompts; archive eligibility stays in item.wrap.sessions.
+  sessions?: AgentSummary[];
   fetchDetails: FetchDetails;
   openSession: (agentId: string) => void;
   entries: SheetEntry[];
@@ -272,13 +278,15 @@ function WrapItemSheet({ item, fetchDetails, openSession, entries, onClose }: {
       top={
         <>
           <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={[item.wrap.finish]} chips={[]} />
-          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt || !!item.wrap.ask} links /> : null}
+          {item.children.length > 0 ? <StackLine rows={item.children} links /> : null}
         </>
       }
       entries={[
-        ...item.wrap.sessions.map((session) => ({
+        ...sessions.map((session) => ({
           ...sessionEntry(session, "Continue session", (id) => { onClose(); openSession(id); }),
-          detail: [session.title, sessionStateText(session), session.subAgents?.count ? `+${session.subAgents.count} sub-agent${session.subAgents.count === 1 ? "" : "s"}` : null].filter(Boolean).join(" · "),
+          ...(isIdle(session) ? {
+            detail: [session.title, sessionStateText(session), session.subAgents?.count ? `+${session.subAgents.count} sub-agent${session.subAgents.count === 1 ? "" : "s"}` : null].filter(Boolean).join(" · "),
+          } : {}),
         })),
         githubEntry(item, (url) => { onClose(); void openExternalUrl(url); }, pr),
         ...entries,
@@ -372,10 +380,7 @@ function KeptWorktreeRow({
       onOpen={open}
       busy={busy}
       primary={{ ...primary, accessibilityLabel: `${primary.label}: ${row.name}` }}
-      secondary={[
-        { label: `Details for #${row.number}`, icon: "chevronRight", onPress: open },
-        { label: "Dismiss", icon: "close", accessibilityLabel: `Dismiss: keep ${row.name}`, onPress: () => onDismiss(row) },
-      ]}
+      secondary={[{ label: `Details for #${row.number}`, icon: "chevronRight", onPress: open }]}
       overlay={
         detailsOpen ? (
           <ActionSheet

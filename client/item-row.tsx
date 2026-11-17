@@ -169,7 +169,7 @@ function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; 
             {item.person ? <PersonQuote person={item.person} expanded={false} /> : null}
             {waitingOn}
             {alsoOn}
-            {children.length > 0 ? <StackLine rows={children} merged={!!item.closedAt} target={targetRow?.key} /> : null}
+            {children.length > 0 ? <StackLine rows={children} target={targetRow?.key} /> : null}
           </>
         ) : null
       }
@@ -247,7 +247,7 @@ function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: 
           <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={[...waitChips, ...stackMetaChips(item, targetRow)]} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
           {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
-          {item.children.length > 0 ? <StackLine rows={item.children} merged={!!item.closedAt} links target={targetRow?.key} /> : null}
+          {item.children.length > 0 ? <StackLine rows={item.children} links target={targetRow?.key} /> : null}
         </>
       }
       entries={sheetEntries(item, sessions, actions, handlers, { data: details.data, isLoading: details.isLoading, arrived })}
