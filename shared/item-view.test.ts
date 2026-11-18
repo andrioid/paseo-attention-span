@@ -3,7 +3,7 @@ import type { ActionId, FailingChecks, Item, LastReview, SubRow, WaitingOn } fro
 import { actionDetail, actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, nudgeLead, rerunState, sessionBadge, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, tabCounts, waitChips } from "./item-view";
 import { AttentionConfig } from "./config";
 import { ACTION_SESSION } from "./prompts";
-import { agent, change, clock, item } from "./test-builders";
+import { agent, change, clock, issue, item, viewMeta } from "./test-builders";
 
 const { now, hoursAgo, daysAgo } = clock(new Date("2026-11-13T12:00:00Z"));
 
@@ -208,9 +208,25 @@ describe("tab counts", () => {
       waiting: [{ who: { login: "dave", team: false, since: hoursAgo(1) }, items: [shared] }, { who: { login: "erin", team: false, since: hoursAgo(1) }, items: [shared, item("o/r#6", "wait_review")] }],
       assigned: [],
       unclaimed: [],
+      projects: [],
+      ...viewMeta(),
     };
     const wrap = [{ ...item("wrap:o/r#1", "wrap"), section: "wrap" as const, wrap: { itemKey: "o/r#1", keys: ["o/r#1"], finish: "", sessions: [] } }];
     expect(tabCounts(view, wrap)).toEqual({ history: 1, doing: 3, waiting: 2, next: 0 });
+  });
+
+  it("NXT-03: Next up counts assigned issues and only the unclaimed ones its filter leaves", () => {
+    const view = {
+      count: 0,
+      history: [],
+      waiting: [],
+      assigned: [issue("o/r#1")],
+      unclaimed: [issue("o/r#2", { scope: "ui" }), issue("o/r#3", { scope: "api" }), issue("o/r#4", { scope: "ui" })],
+      projects: [],
+      ...viewMeta(),
+      scopes: ["ui"],
+    };
+    expect(tabCounts(view, []).next).toBe(3);
   });
 });
 

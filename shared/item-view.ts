@@ -2,9 +2,10 @@
 // [ATT-05, ATT-06].
 import { type ActionId, type AgentSummary, type AttentionView, type Chip, type FailingChecks, isWorking, type Item, looseSessions, ownStack, reviewAgain, SECTIONS, type SubRow, type TabId, type WaitingOn, type WrapItem } from "./attention";
 import { summarizeRerun } from "./checks";
-import type { SessionKind } from "./config";
+import { nextUpSources, type SessionKind } from "./config";
 import { ago } from "./format";
 import { sameName } from "./names";
+import { nextUpFilter } from "./next-up-filter";
 import { ACTION_SESSION } from "./prompts";
 import { doingCount, finishText } from "./wrap-up";
 
@@ -211,14 +212,19 @@ export function stackMetaChips(item: Item, targetRow: SubRow | undefined): Chip[
 
 // Each tab's count: History's finished work in the weeks it shows [HIS-01], Doing with Wrap up's rows [ATT-09, ATT-22], work
 // waiting on several people once, and every issue in Next up.
+function nextUpUnclaimed(view: Pick<AttentionView, "unclaimed" | "scopes" | "config" | "sources" | "projects" | "projectFilter">) {
+  return nextUpFilter({ unclaimed: view.unclaimed, selected: view.scopes, sources: nextUpSources(view.config), selectedSources: view.sources, projects: view.projects, selectedProjects: view.projectFilter }).shown;
+}
+
 export function tabCounts(
-  view: Pick<AttentionView, "history" | "count" | "waiting" | "assigned" | "unclaimed">,
+  view: Pick<AttentionView, "history" | "count" | "waiting" | "assigned" | "unclaimed" | "scopes" | "config" | "sources" | "projects" | "projectFilter">,
   wrap: WrapItem[],
 ): Record<TabId, number> {
   return {
     history: view.history.filter((item) => item.section === "done" && !!item.closedAt).length,
     doing: doingCount(view, wrap),
     waiting: new Set(view.waiting.flatMap((group) => group.items.map((item) => item.key))).size,
-    next: view.assigned.length + view.unclaimed.length,
+    // Unclaimed as its filter leaves it, so the tab says what the list shows [NXT-03, NXT-09].
+    next: view.assigned.length + nextUpUnclaimed(view).length,
   };
 }
