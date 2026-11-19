@@ -66,7 +66,7 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-waiting-copied.png` | After the Markdown copy on alice: the "Copied 3 links for alice" toast. `<layout>-waiting-clipboard.txt` holds what was copied |
    | `<layout>-waiting-sheet.png` | The sheet of "Invoice totals round wrong": alice and bob by name |
    | `<layout>-next-up.png` | Assigned, then all of Unclaimed. Cards: a tinted type badge, "#160 · acme/shop · 40d old" with the number and repo name brighter (my own `me/tool` shows as "#165 · tool"), then pills: the project with its status (TODO \| Todo in blue, Backlog plain because it's gray), priority in the org's color (P0 Urgent red, P1 High orange, P3 Low plain), effort and scope plain; "Dark mode for the planner" is on Ideas with no status, "Devcontainers" on no project. "PR by alice" on #161, "PRs merged" on #152 [ATT-24] |
-   | `<layout>-next-up-sheet.png` | The sheet of "Price list import skips quoted rows", assigned to me with no session: Start…, Unclaim, Open issue on GitHub, then Close issue apart in a block below, icons grey |
+   | `<layout>-next-up-sheet.png` | The sheet of "Price list import skips quoted rows", assigned to me with no session: Start… and Open issue on GitHub, then Unclaim and Close issue apart in a block below, icons grey |
    | `<layout>-next-up-close.png` | Close issue on "Merge the two import commands": the confirm bar with a comment field, Completed, Not planned, Cancel |
    | `<layout>-next-up-filter.png` | The Filter sheet: Source (My repos, acme) and Scope checkboxes, Backend ticked |
    | `<layout>-next-up-filtered.png` | Unclaimed filtered to the Backend scope; the button reads "Filter · 1" |
