@@ -1,18 +1,19 @@
-import type { PluginClientContext, PluginScreenProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
+import { type PluginClientContext, type PluginScreenProps, type PluginSidebarItemProps, useHosts } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
-import { Text } from "react-native";
+import { Text, View } from "react-native";
 import { AttentionScreen } from "./client/attention-screen";
 import { CoverageSettings } from "./client/coverage-settings";
 import { useAttention } from "./client/data";
 import { returnFromFeedback } from "./client/feedback";
 import { ICONS } from "./client/icons";
+import { tint } from "./client/ui";
 import { newIssueParams } from "./client/new-issue";
 import { useItemAgents } from "./client/sessions";
 import { withInProgress } from "./shared/in-progress";
 import { doingCount, wrapItems } from "./shared/wrap-up";
 
 // The count, visible from anywhere in Paseo [ATT-09].
-function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProps) {
+function SidebarItem({ theme, host, currentScreen, openScreen }: PluginSidebarItemProps) {
   const { data } = useAttention();
   // Wrap up's rows need the sessions, which live in Paseo [ATT-09, ATT-22].
   const agents = useItemAgents();
@@ -20,6 +21,11 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
   const wrap = data ? wrapItems(data, sessions) : [];
   // A started issue counts while its session waits on me, as on the screen [SES-11].
   const count = data ? doingCount(withInProgress(data, sessions, wrap), wrap) : 0;
+  // Paseo merges every host's row into one, showing the host picked last, so with more than one host a pill says whose
+  // count this is [REACH-02]. Paseo only lists the hosts I've configured, not which of them have Attention Span, so a host
+  // without it still counts. The pill gives way first, so "Attention" keeps its line in a narrow sidebar.
+  const hosts = useHosts();
+  const muted = theme.colors.foregroundMuted;
   return (
     <SidebarRow
       icon={ICONS.logo}
@@ -27,8 +33,17 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
       active={currentScreen?.screenId === "attention"}
       onPress={() => openScreen({ screenId: "attention" })}
       trailing={
-        count > 0 ? (
-          <Text style={{ color: data?.feeds.live.error ? theme.colors.statusDanger : theme.colors.foregroundMuted, fontSize: 12 }}>{count}</Text>
+        hosts.length > 1 || count > 0 ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1 }}>
+            {hosts.length > 1 ? (
+              <View style={{ flexShrink: 1, maxWidth: 72, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 9, backgroundColor: tint(theme.colors.foreground, 0.08) }}>
+                <Text numberOfLines={1} accessibilityLabel={`On ${host.label}`} style={{ color: muted, fontSize: 11, fontWeight: "500" }}>
+                  {host.label}
+                </Text>
+              </View>
+            ) : null}
+            {count > 0 ? <Text style={{ color: data?.feeds.live.error ? theme.colors.statusDanger : muted, fontSize: 12 }}>{count}</Text> : null}
+          </View>
         ) : undefined
       }
     />
