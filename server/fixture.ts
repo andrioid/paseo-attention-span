@@ -187,7 +187,7 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       pr(102, { title: "Retry webhook deliveries with backoff", reviewThreads: { nodes: [thread(alice, 1), thread(bot, 2)] } }),
       pr(103, { title: "Fetch supplier price files nightly", reviewDecision: "APPROVED", closingIssuesReferences: closes(90, "Supplier prices are a week out of date") }),
       pr(104, { title: "Move price-file login into a service", isDraft: true, baseRefName: "branch-103", headRefName: "branch-104" }),
-      // A stack GitHub links to no issue: its descriptions say which [ATT-03].
+      // A stack GitHub links to no issue: its top PR's description closes it [ATT-03].
       pr(105, { title: "Dialog focus returns to the trigger", body: "First of three stacked PRs for #132.", reviewDecision: "APPROVED", headRefName: "a11y-1" }),
       pr(106, { title: "Keyboard navigation for calendar cards", isDraft: true, baseRefName: "a11y-1", headRefName: "a11y-2", reviewDecision: "APPROVED" }),
       pr(107, { title: "Calendar: jump between weeks with keys", body: "Closes #132", isDraft: true, baseRefName: "a11y-2", headRefName: "a11y-3" }, "FAILURE"),
@@ -306,8 +306,8 @@ export function fixture(now: Date): { data: SearchResult; details: Details } {
       merged(179, "Move invoices to the new queue", 1),
       merged(173, "Speed up the order list", 9, 174),
       merged(175, "Remove the old importer", 16),
-      { ...merged(194, "Statement layout", 1), body: "First of two for #152" },
-      { ...merged(195, "Statement PDF download", 3 / 24), body: "Second of two for #152" },
+      { ...merged(194, "Statement layout", 1), body: "Fixes #152, first of two" },
+      { ...merged(195, "Statement PDF download", 3 / 24), body: "Closes #152" },
     ],
     reviewed: [
       { number: 190, title: "Add the VAT export", url: `https://github.com/${REPO}/pull/190`, mergedAt: daysAgo(1), mergedBy: { login: "alice" }, repository, author: alice, labels: labels("feature") },

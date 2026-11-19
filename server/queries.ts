@@ -257,7 +257,7 @@ export function reopenQuery(ids: string[]): string {
   return `query Reopened {\n${fields.join("\n")}\n}`;
 }
 
-// The issues my merged PRs refer to, a batch per request: whether each is still open, and the open PRs GitHub links to
+// The issues my merged PRs close, a batch per request: whether each is still open, and the open PRs GitHub links to
 // it, anyone's, as a PR still open means the work isn't done [ATT-24, GH-01]. PRs answer nothing.
 export const REFERENCED_BATCH = 50;
 export function referencedIssuesQuery(refs: IssueRef[]): string {

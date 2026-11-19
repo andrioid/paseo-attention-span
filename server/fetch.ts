@@ -109,8 +109,8 @@ export async function searchLive(gh: Gh, config: AttentionConfig, now: Date, unc
     return { unclaimed: { nodes: mergeUnclaimed(results) } };
   };
   const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
-  const forDetails = Promise.all([search("mine"), search("assigned"), searchUnclaimed()]);
-  const others = Promise.all([search("reviews"), search("mentions"), search("involved"), search("asked"), search("ended"), search("closedIssues")]);
+  const forDetails = Promise.all([search("mine"), search("reviews"), search("assigned"), searchUnclaimed()]);
+  const others = Promise.all([search("mentions"), search("involved"), search("asked"), search("ended"), search("closedIssues")]);
   const afterThem = forDetails.then((parts) => details(gh, config, merge(parts), projects.on, projects.problems));
   const [first, rest, found] = await Promise.all([forDetails, others, afterThem]);
   return { data: merge([...first, ...rest]), details: found };
@@ -123,14 +123,15 @@ function variables(config: AttentionConfig, names: readonly Exclude<SearchName, 
 
 // Behind counts [UPS-07], required checks [PRS-14], issue field option order [NXT-02] and colors [NXT-10], and the Status
 // options of the boards Next up's issues are on [NXT-03].
-async function details(gh: Gh, config: AttentionConfig, data: Pick<LiveResult, "mine" | "assigned" | "unclaimed">, projects: boolean, problems: string[]): Promise<Details> {
+async function details(gh: Gh, config: AttentionConfig, data: Pick<LiveResult, "mine" | "reviews" | "assigned" | "unclaimed">, projects: boolean, problems: string[]): Promise<Details> {
   const prs = data.mine.nodes.filter((pr) => pr?.headRefName && !pr.isCrossRepository);
   // Priority's colors tint its pill, so its options are asked for even when the config orders it.
   const effort = nextUpField(config, "effort");
   const needsOptions = !!nextUpField(config, "priority") || (!!effort && !effort.order);
   const issues = [...data.unclaimed.nodes, ...data.assigned.nodes];
   const orgs = needsOptions ? [...new Set(issues.map((issue) => issue?.repository?.nameWithOwner.split("/")[0]).filter(Boolean))] : [];
-  const refs = toLookUp(data.mine.nodes.filter((pr) => pr?.repository));
+  // Others' PRs too: one asking for my review can sit atop my stack and say which issue it closes [ATT-03].
+  const refs = toLookUp([...data.mine.nodes, ...data.reviews.nodes].filter((pr) => pr?.repository));
   const mergeState = mergeStates(gh, data.mine.nodes.filter((pr) => pr?.repository));
   const statuses = projects ? projectStatuses(gh, issueBoardIds(issues), problems) : Promise.resolve({});
   if (prs.length === 0 && orgs.length === 0 && refs.length === 0) return { ...readDetails({}, [], {}), mergeState: await mergeState, projectStatuses: await statuses };
@@ -182,7 +183,7 @@ export async function projectStatuses(gh: Gh, ids: string[], problems: string[])
   return Object.fromEntries([...found].flatMap(([id, board]) => (board?.field?.options ? [[id, board.field.options]] : [])));
 }
 
-// History's searches, then whether the issues my merged PRs refer to are still open, so Wrap up can offer to close one
+// History's searches, then whether the issues my merged PRs close are still open, so Wrap up can offer to close one
 // whose work is done [HIS-01, ATT-24]. A lookup that fails only leaves those out until the next fetch.
 async function searchHistory(gh: Gh, config: AttentionConfig, now: Date, timeZone: string): Promise<HistoryResult> {
   const data = await gh.graphql<HistoryResult>(searchQuery(HISTORY_SEARCHES, true), variables(config, HISTORY_SEARCHES, now, timeZone));
@@ -198,7 +199,7 @@ async function lookUpIssues(gh: Gh, refs: IssueRef[]): Promise<Record<string, Re
   if (refs.length === 0) return {};
   const found = await lookupBatches<IssueRef, { issueOrPullRequest: Partial<ReferencedIssue> | null }>(gh, refs, "i", referencedIssuesQuery, {
     size: REFERENCED_BATCH,
-    problem: (message) => console.error("Couldn't check the issues my merged PRs refer to:", message),
+    problem: (message) => console.error("Couldn't check the issues my merged PRs close:", message),
   });
   return Object.fromEntries([...found].flatMap(([, node]) => (node?.issueOrPullRequest?.repository ? [[prKey(node.issueOrPullRequest as ReferencedIssue), node.issueOrPullRequest as ReferencedIssue]] : [])));
 }

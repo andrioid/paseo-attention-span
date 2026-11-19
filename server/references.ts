@@ -9,7 +9,6 @@ export interface IssueRef {
 const REF = String.raw`(?:https://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)|(?<![\w/#&])(?:([\w.-]+/[\w.-]+))?#(\d+))(?![\w-])`;
 // GitHub's closing keywords [docs: linking a pull request to an issue].
 const CLOSING = new RegExp(String.raw`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+${REF}`, "gi");
-const ANY = new RegExp(REF, "gi");
 
 // What counts as said: not code, quoted replies or template comments.
 function prose(body: string): string {
@@ -21,9 +20,10 @@ function prose(body: string): string {
     .replace(/^\s*>.*$/gm, "");
 }
 
-function refs(body: string | undefined, repo: string, pattern: RegExp): IssueRef[] {
+// The issues a description closes with a keyword ("Closes #12"); plain mentions don't count.
+export function closingRefs(body: string | undefined, repo: string): IssueRef[] {
   const found = new Map<string, IssueRef>();
-  for (const match of prose(body ?? "").matchAll(pattern)) {
+  for (const match of prose(body ?? "").matchAll(CLOSING)) {
     const ref = { repo: match[1] ?? match[3] ?? repo, number: Number(match[2] ?? match[4]) };
     found.set(refKey(ref), ref);
   }
@@ -31,8 +31,6 @@ function refs(body: string | undefined, repo: string, pattern: RegExp): IssueRef
 }
 
 export const refKey = (ref: IssueRef) => `${ref.repo}#${ref.number}`;
-export const closingRefs = (body: string | undefined, repo: string) => refs(body, repo, CLOSING);
-export const mentionedRefs = (body: string | undefined, repo: string) => refs(body, repo, ANY);
 
 export interface LinkedPr {
   repo: string;
@@ -42,9 +40,9 @@ export interface LinkedPr {
 }
 
 // The issue for PRs listed bottom first, strongest evidence first: what GitHub links, then a closing keyword in a
-// description, then the one issue the bottom PR's description mentions. GitHub links only PRs into the default branch,
-// so a stack's upper PRs need their descriptions read. `isIssue` says whether a reference is an issue that counts, which
-// rules out PRs and closed issues; several mentioned issues are too ambiguous to pick from.
+// description. GitHub links only PRs into the default branch, so a stack's upper PRs need their descriptions read. A plain
+// mention ("follow-up to #12", "see #12") says nothing about resolving it, so it doesn't count. `isIssue` says whether a
+// reference is an issue that counts, which rules out PRs and closed issues.
 export function issueFor(prs: LinkedPr[], isIssue: (key: string) => boolean): string | undefined {
   for (const pr of prs) {
     const linked = pr.linked.find(isIssue);
@@ -54,29 +52,28 @@ export function issueFor(prs: LinkedPr[], isIssue: (key: string) => boolean): st
     const closing = closingRefs(pr.body, pr.repo).map(refKey).find(isIssue);
     if (closing) return closing;
   }
-  const mentioned = prs[0] ? mentionedRefs(prs[0].body, prs[0].repo).map(refKey).filter(isIssue) : [];
-  return mentioned.length === 1 ? mentioned[0] : undefined;
+  return undefined;
 }
 
-// The references in my PRs' descriptions to look up, at most `max`: my PRs themselves and what GitHub links are known.
+// The issues my PRs' descriptions close to look up, at most `max`: my PRs themselves and what GitHub links are known.
 type Node = { number: number; repository: { nameWithOwner: string } };
 const nodeKey = (node: Node) => `${node.repository.nameWithOwner}#${node.number}`;
 
 export function toLookUp(prs: (Node & { body?: string; closingIssuesReferences: { nodes: Node[] } })[], max = 100): IssueRef[] {
   const known = new Set(prs.flatMap((pr) => [pr, ...pr.closingIssuesReferences.nodes].map(nodeKey)));
   const wanted = new Map<string, IssueRef>();
-  for (const pr of prs) for (const ref of mentionedRefs(pr.body, pr.repository.nameWithOwner)) if (!known.has(refKey(ref))) wanted.set(refKey(ref), ref);
+  for (const pr of prs) for (const ref of closingRefs(pr.body, pr.repository.nameWithOwner)) if (!known.has(refKey(ref))) wanted.set(refKey(ref), ref);
   return [...wanted.values()].slice(0, max);
 }
 
-// The issues my merged PRs refer to that History doesn't know closed, at most `max`, to ask whether they're still open
+// The issues my merged PRs close that History doesn't know closed, at most `max`, to ask whether they're still open
 // [ATT-24]. My merged PRs themselves are known to be PRs.
 export function mergedToLookUp(merged: { number: number; body?: string; repository: { nameWithOwner: string }; closingIssuesReferences: { nodes: Node[] } }[], closed: Node[], max = 100): IssueRef[] {
   const known = new Set([...merged, ...closed].map(nodeKey));
   const wanted = new Map<string, IssueRef>();
   for (const pr of merged) {
     const linked = pr.closingIssuesReferences.nodes.map((node) => ({ repo: node.repository.nameWithOwner, number: node.number }));
-    for (const ref of [...linked, ...mentionedRefs(pr.body, pr.repository.nameWithOwner)]) if (!known.has(refKey(ref))) wanted.set(refKey(ref), ref);
+    for (const ref of [...linked, ...closingRefs(pr.body, pr.repository.nameWithOwner)]) if (!known.has(refKey(ref))) wanted.set(refKey(ref), ref);
   }
   return [...wanted.values()].slice(0, max);
 }
