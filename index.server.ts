@@ -36,7 +36,7 @@ export default function contribute(server: PluginServerContext) {
   const answers = FIXTURE ? fixtureAnswers : { reviewerChoices, itemDetails, defaultBranch, sessionContext, ghStatus, myOrgs, coverageOnGitHub };
   const updates = new UpdateCheck(FIXTURE ? fixtureUpdates : paseoUpdates);
   // Each view the screen gets; previews add their made-up sessions [ATT-22].
-  const shown: (view: AttentionView) => AttentionView = FIXTURE ? fixtureView : (view) => view;
+  const shown: (view: AttentionView) => AttentionView = FIXTURE ? fixtureView(DIR) : (view) => view;
   const archived = new ArchivedInPaseo({ groupKeysOf: (itemKey) => attention.groupKeysOf(itemKey), acknowledge: (keys, upTo) => attention.acknowledge(keys, upTo) });
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);

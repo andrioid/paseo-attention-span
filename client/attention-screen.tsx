@@ -3,7 +3,8 @@ import { useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { liftActive, type Section, type SectionId, TAB_FEED, type TabId, type WaitingGroup } from "../shared/attention";
+import { liftActive, type Section, type SectionId, SECTIONS, TAB_FEED, type TabId, type WaitingGroup } from "../shared/attention";
+import { inProgressEntries, type StartedIssue, withInProgress } from "../shared/in-progress";
 import { nextUpSources } from "../shared/config";
 import { ago, linkList } from "../shared/format";
 import { historyClear, isClear, nextUpClear, waitingClear } from "../shared/still";
@@ -16,7 +17,8 @@ import { useAttention } from "./data";
 import type { IconName } from "./icons";
 import { type Actions, useItemActions } from "./item-actions";
 import { Card } from "./item-row";
-import { NextUpList } from "./next-up";
+import { InProgress } from "./in-progress";
+import { type IssueRowProps, NextUpList } from "./next-up";
 import { CodeRepoPicker, SessionOptions } from "./pickers";
 import { Still } from "./still";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
@@ -122,6 +124,8 @@ function AttentionList({
   // Wrap up is made here from the sessions the screen and sidebar already poll; the server archives and acknowledges [ATT-22].
   const agentsNow = (view.fixtureAgents ?? agents.data ?? []).filter((agent) => !act.archivedSessions.has(agent.id));
   const wrap = wrapItems(view, agentsNow);
+  // Issues I started a session on leave Next up for In progress until a card of their own shows them [PRS-05, SES-11].
+  const shown = withInProgress(view, agentsNow, wrap);
   // Notes about work Already in Wrap up wait there; archiving acknowledges them [HIS-07, ATT-22].
   const notes = unreadChanges(view.history.filter((item) => item.section === "changed"), wrap);
   // Calm only once a refresh that worked says Doing is empty, Wrap up included [ATT-18, ATT-22].
@@ -129,19 +133,21 @@ function AttentionList({
   const sessionsKnown = !!view.fixtureAgents || (agents.isSuccess && !agents.isError);
   // A worktree that stayed after its sessions were archived lingers in Wrap up, uncounted, but keeps the calm away [ATT-22].
   const kept = view.kept ?? [];
-  const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length + kept.length);
+  const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length + kept.length + shown.started.length);
   // The other tabs' scenes, on the same terms [HIS-08, WAI-04, NXT-13].
   const calm = {
     history: historyClear(view, notes.length, !!attention.error),
     waiting: waitingClear(view, !!attention.error),
-    next: nextUpClear(view, !!attention.error),
+    next: nextUpClear(shown, !!attention.error),
   };
   // ⟳ turns for any refresh of this tab's feed, but only my own press locks it: the cached view can still say a background one runs after it's done.
   const pressed = attention.isRefreshing(TAB_FEED[tab]);
   const refreshing = feed.refreshing || attention.isFetching || pressed;
-  const counts = tabCounts(view, wrap);
+  const counts = tabCounts(shown, wrap);
 
   const actions = act.itemActions(view, agentsNow);
+  // A started issue's card is Next up's, with its sheet's Unclaim and Close issue [SES-11].
+  const issueRow: IssueRowProps = { agents: actions.agents, login: view.login, busy: act.busy, fetchDetails: act.fetchDetails, onOpenAgent: act.openAgent, ...act.issueActions };
 
   const switchTab = (id: TabId) => {
     setTab(id);
@@ -203,7 +209,7 @@ function AttentionList({
       ) : null}
       {tab === "doing" ? (
         <>
-          {clear ? <Still /> : wrap.length || kept.length || view.doing.length ? (
+          {clear ? <Still /> : wrap.length || kept.length || view.doing.length || shown.started.length ? (
             <>
               {wrap.length + kept.length > 0 ? (
                 <WrapUp
@@ -227,7 +233,7 @@ function AttentionList({
                   }}
                 />
               ) : null}
-              {view.doing.length > 0 ? <Sections sections={view.doing} actions={actions} /> : null}
+              {view.doing.length || shown.started.length ? <Sections sections={view.doing} started={shown.started} actions={actions} issueRow={issueRow} /> : null}
             </>
           ) : !feed.fetchedAt && !feed.error ? (
             <Loading text="Checking GitHub…" />
@@ -254,8 +260,8 @@ function AttentionList({
         <NextUpList
           calm={calm.next}
           openSettings={openSettings}
-          assigned={view.assigned}
-          unclaimed={view.unclaimed}
+          assigned={shown.assigned}
+          unclaimed={shown.unclaimed}
           unclaimedFrom={view.unclaimedFrom}
           selected={view.scopes}
           sources={nextUpSources(view.config)}
@@ -318,13 +324,22 @@ function Tab({ icon, label, count, active, dot, onPress }: { icon: IconName; lab
   );
 }
 
-function Sections({ sections, actions }: { sections: Section[]; actions: Actions }) {
-  return sections.map((section) => (
-    <View key={section.id}>
-      <SectionHeader icon={SECTION_ICONS[section.id]} title={section.title} count={section.items.length} />
-      <Card items={section.items} actions={actions} />
-    </View>
-  ));
+// In progress comes last and holds the started issues too, even with no drafts [PRS-05, SES-11].
+function Sections({ sections, started, actions, issueRow }: { sections: Section[]; started: StartedIssue[]; actions: Actions; issueRow: IssueRowProps }) {
+  const all = started.length && !sections.some((section) => section.id === "drafts") ? [...sections, { id: "drafts" as const, title: SECTIONS.drafts.title, items: [] }] : sections;
+  return all.map((section) =>
+    section.id === "drafts" ? (
+      <View key={section.id}>
+        <SectionHeader icon={SECTION_ICONS[section.id]} title={section.title} count={section.items.length + started.length} />
+        <InProgress entries={inProgressEntries(section.items, started, actions.agents)} actions={actions} issueRow={issueRow} />
+      </View>
+    ) : (
+      <View key={section.id}>
+        <SectionHeader icon={SECTION_ICONS[section.id]} title={section.title} count={section.items.length} />
+        <Card items={section.items} actions={actions} />
+      </View>
+    ),
+  );
 }
 
 // Waiting by who it waits on, each with a list to copy for a nudge, oldest first; a bot gets none, as there's nobody to send

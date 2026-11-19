@@ -13,6 +13,7 @@ import {
   type UnclaimedSource,
 } from "../shared/attention";
 import type { NextUpSource } from "../shared/config";
+import { sessionSignal } from "../shared/item-view";
 import { CLEAR_FILTER, type FilterChange, nextUpFilter, repoGroups } from "../shared/next-up-filter";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./item-actions";
@@ -61,6 +62,8 @@ interface Props {
   // The New issue sheet [ISS-01].
   onNewIssue: () => void;
 }
+
+export type IssueRowProps = RowProps;
 
 type RowProps = Omit<Props, "calm" | "openSettings" | "assigned" | "unclaimed" | "unclaimedFrom" | "selected" | "sources" | "selectedSources" | "projects" | "selectedProjects" | "onFilter" | "byRepo" | "onByRepo" | "onNewIssue">;
 
@@ -182,7 +185,7 @@ function prSignal(issue: NextUpIssue): Chip[] {
 }
 
 // What an issue's sheet fetches when it opens; resting the pointer on its card fetches the same ahead [ATT-06].
-function issueDetailsQuery(issue: NextUpIssue, fetchDetails: FetchDetails): DetailsQuery {
+export function issueDetailsQuery(issue: Pick<NextUpIssue, "repo" | "number">, fetchDetails: FetchDetails): DetailsQuery {
   const subject = { kind: "issue" as const, repo: issue.repo, number: issue.number };
   return { queryKey: detailsKey(subject, undefined, false), queryFn: () => fetchDetails({ subject, checks: false }) };
 }
@@ -191,7 +194,7 @@ function issueDetailsQuery(issue: NextUpIssue, fetchDetails: FetchDetails): Deta
 const TYPE_TONES: Record<string, Tone> = { bug: "bad", feature: "good", epic: "good", debt: "warn" };
 
 // Its main action and ›; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
-function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onOptions, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
+export function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onOptions, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
   const [sheet, setSheet] = useState(false);
   // The sheet opens at once; what it fetches fills in [ATT-06].
   const open = () => setSheet(true);
@@ -209,7 +212,7 @@ function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onSt
       mark={{ icon: TYPE_ICONS[type] ?? "issue", tone: TYPE_TONES[type] ?? "neutral" }}
       title={issue.title}
       accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
-      meta={{ place: { repo: issue.repo, number: issue.number, login }, when: `${ago(issue.createdAt)} old`, signals: prSignal(issue) }}
+      meta={{ place: { repo: issue.repo, number: issue.number, login }, when: `${ago(issue.createdAt)} old`, signals: sessions[0] ? [...prSignal(issue), sessionSignal(sessions[0])] : prSignal(issue) }}
       extra={<IssuePills issue={issue} />}
       onOpen={open}
       hover={prefetch}

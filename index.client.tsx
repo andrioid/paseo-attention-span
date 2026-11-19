@@ -8,6 +8,7 @@ import { returnFromFeedback } from "./client/feedback";
 import { ICONS } from "./client/icons";
 import { newIssueParams } from "./client/new-issue";
 import { useItemAgents } from "./client/sessions";
+import { withInProgress } from "./shared/in-progress";
 import { doingCount, wrapItems } from "./shared/wrap-up";
 
 // The count, visible from anywhere in Paseo [ATT-09].
@@ -15,8 +16,10 @@ function SidebarItem({ theme, currentScreen, openScreen }: PluginSidebarItemProp
   const { data } = useAttention();
   // Wrap up's rows need the sessions, which live in Paseo [ATT-09, ATT-22].
   const agents = useItemAgents();
-  const wrap = data ? wrapItems(data, data.fixtureAgents ?? agents.data ?? []) : [];
-  const count = data ? doingCount(data, wrap) : 0;
+  const sessions = data?.fixtureAgents ?? agents.data ?? [];
+  const wrap = data ? wrapItems(data, sessions) : [];
+  // A started issue counts while its session waits on me, as on the screen [SES-11].
+  const count = data ? doingCount(withInProgress(data, sessions, wrap), wrap) : 0;
   return (
     <SidebarRow
       icon={ICONS.logo}

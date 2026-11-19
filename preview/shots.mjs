@@ -8,7 +8,7 @@ export const LAYOUTS = ["phone-dark", "desktop-dark", "phone-light", "desktop-li
 // `desktop`: the scenario needs a pointer to hover with. Scenarios marked `last` change the daemon's state for good.
 export const SCENARIOS = [
   { name: "tabs", shots: ["doing", "history", "waiting", "next-up"] },
-  { name: "doing-bands", shots: ["doing-needs-reviewer", "doing-ready", "doing-wrap", "doing-review"] },
+  { name: "doing-bands", shots: ["doing-needs-reviewer", "doing-ready", "doing-wrap", "doing-review", "doing-in-progress"] },
   { name: "wrap-details", shots: ["doing-wrap-sheet", "doing-wrap-ask-sheet", "doing-wrap-worktree-sheet"] },
   { name: "wrap-confirm", shots: ["doing-wrap-dirty", "doing-wrap-multi"] },
   { name: "wrap-ask", shots: ["doing-wrap-kept-open"] },
@@ -17,6 +17,7 @@ export const SCENARIOS = [
   { name: "waiting-sheet", shots: ["waiting-sheet"] },
   { name: "doing-sheet", shots: ["doing-sheet"] },
   { name: "doing-issue-sheet", shots: ["doing-issue-sheet"] },
+  { name: "doing-in-progress-sheet", shots: ["doing-in-progress-sheet"] },
   { name: "doing-stack-issue-sheet", shots: ["doing-stack-issue-sheet"] },
   { name: "doing-review-sheet", shots: ["doing-review-sheet"] },
   { name: "doing-review-stack-sheet", shots: ["doing-review-stack-sheet"] },

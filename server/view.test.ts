@@ -24,7 +24,7 @@ describe("dismiss", () => {
   it("ATT-09: counts what is visible in Doing; other tabs get their own lists", () => {
     const view = buildView(attention([item("a", "reply"), item("b", "drafts"), item("c", "wait_ci")]), [item("d", "done")], {}, meta);
     expect(view.count).toBe(2);
-    expect(view.doing.map((section) => section.title)).toEqual(["Waiting for your reply", "My drafts"]);
+    expect(view.doing.map((section) => section.title)).toEqual(["Waiting for your reply", "In progress"]);
     expect(view.waiting.map((group) => group.items.map((i) => i.key))).toEqual([["c"]]);
     expect(view.history.map((h) => h.key)).toEqual(["d"]);
   });

@@ -118,7 +118,7 @@ type Sheet = "item" | "acknowledge" | "reviewers" | "reviewers-after-ready" | nu
 
 // A card that works collapsed: its main action and ›. Tapping it opens the sheet with everything else [ATT-05, ATT-06].
 // In Waiting, a card sits under one of whom it waits on: its group.
-function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; actions: Actions; group?: WaitingGroup }) {
+export function ItemRow({ item, first, actions, group }: { item: Item; first: boolean; actions: Actions; group?: WaitingGroup }) {
   const styles = useStyles();
   // An open session leads; without one, the item's own action does [SES-03].
   const sessions = itemSessions(actions.agents, item);

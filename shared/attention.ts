@@ -29,7 +29,8 @@ export const SECTIONS = {
   upstream: { tab: "doing", title: "Needs upstream" },
   // Nobody has the next move until I ask someone [PRS-12].
   needs_reviewer: { tab: "doing", title: "Needs a reviewer" },
-  drafts: { tab: "doing", title: "My drafts" },
+  // My drafts, and issues I started a session on that no other card shows yet [PRS-05, SES-11].
+  drafts: { tab: "doing", title: "In progress" },
   // Waiting groups these by who they wait on, not by section [WAI-01].
   wait_review: { tab: "waiting", title: "Waiting for review" },
   wait_reviewer: { tab: "waiting", title: "Waiting for the reviewer" },
