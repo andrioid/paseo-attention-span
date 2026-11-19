@@ -434,19 +434,18 @@ describe("issues", () => {
       expect(item.children.map((child) => child.number)).toEqual([10, 11]);
     });
 
-    it("ATT-03: groups it under the one issue its bottom PR mentions", () => {
-      expect(run({ mine: [bottom("First of two stacked PRs for #50."), top("")] }, { issues }).items[0]).toMatchObject({ kind: "issue", number: 50 });
+    it("ATT-03: leaves it alone when its descriptions only mention an open issue", () => {
+      expect(run({ mine: [bottom("First of two stacked PRs for #50."), top("")] }, { issues }).items[0]).toMatchObject({ kind: "pr", number: 10 });
+      expect(run({ mine: [bottom("Follow-up to #50"), top("See #50")] }, { issues }).items[0]).toMatchObject({ kind: "pr", number: 10 });
     });
 
-    it("ATT-03: leaves it alone when the reference isn't an open issue, or there are several", () => {
-      expect(run({ mine: [bottom("for #50"), top("")] }).items[0]).toMatchObject({ kind: "pr", number: 10 });
-      const more = { ...issues, [key(51)]: { ...issues[key(50)], number: 51 } };
-      expect(run({ mine: [bottom("for #50 and #51"), top("")] }, { issues: more }).items[0]).toMatchObject({ kind: "pr", number: 10 });
+    it("ATT-03: leaves it alone when what it closes isn't an open issue", () => {
+      expect(run({ mine: [bottom("Closes #50"), top("")] }).items[0]).toMatchObject({ kind: "pr", number: 10 });
     });
 
-    it("ATT-03: puts PRs that each refer to the issue under one item", () => {
-      const attention = run({ mine: [pr(1, { body: "Part 1 of #50" }), pr(2, { body: "Fixes #50" })] }, { issues });
-      expect(attention.items.map((item) => [item.number, item.children.map((child) => child.number)])).toEqual([[50, [1, 2]]]);
+    it("ATT-03: puts PRs that each close the issue under one item, and one that only mentions it beside them", () => {
+      const attention = run({ mine: [pr(1, { body: "Fixes #50" }), pr(2, { body: "Closes #50" }), pr(3, { body: "Follow-up to #50" })] }, { issues });
+      expect(attention.items.map((item) => [item.number, item.children.map((child) => child.number)])).toEqual([[50, [1, 2]], [3, []]]);
     });
   });
 });
@@ -754,28 +753,28 @@ describe("asking to close an issue", () => {
     [`${REPO}#${number}`]: { number, title: `Issue ${number}`, url: `u${number}`, state, repository, closedByPullRequestsReferences: { nodes: Array.from({ length: openPrs }, () => ({ state: "OPEN" })) } },
   });
 
-  it("ATT-24, ATT-03: asks about an open issue my merged PRs worked on, however they referred to it", () => {
+  it("ATT-24, ATT-03: asks about an open issue my merged PRs worked on, whether GitHub links it or a description closes it", () => {
     const asks = classifyCloseAsks({
-      ...search({ merged: [merged(62, 1, "Second of two for #60"), merged(61, 3, "", [60])] }),
+      ...search({ merged: [merged(62, 1, "Closes #60"), merged(61, 3, "", [60])] }),
       referenced: referenced(60, "OPEN"),
     });
     expect(asks.map((ask) => [ask.number, ask.prs.map((pr) => pr.number), ask.mergedAt])).toEqual([[60, [61, 62], daysAgo(1)]]);
   });
 
   it("ATT-24, ATT-22: the PRs under an issue asked about keep their branch, so a session on one finds its row once it's closed", () => {
-    const [ask] = classifyCloseAsks({ ...search({ merged: [{ ...merged(61, 1, "Part of #60"), headRefName: "export-csv", mergedBy: { login: "dave" } }] }), referenced: referenced(60, "OPEN") });
+    const [ask] = classifyCloseAsks({ ...search({ merged: [{ ...merged(61, 1, "Fixes #60"), headRefName: "export-csv", mergedBy: { login: "dave" } }] }), referenced: referenced(60, "OPEN") });
     const closed = { ...item(`${REPO}#60`, "done", { kind: "issue", closedAt: daysAgo(0), children: ask.prs }) };
     expect(closedBranches({ history: [closed] }).get(`${REPO}\0export-csv`)).toBe(`${REPO}#61`);
     expect(ask.prs[0].mergedBy).toBe("dave");
   });
 
-  it("ATT-24: doesn't ask while anyone's PR is open for it, once it's closed, or about an issue a PR only mentioned beside the one it closed", () => {
+  it("ATT-24: doesn't ask while anyone's PR is open for it, once it's closed, or about an issue a PR only mentioned", () => {
     const asks = classifyCloseAsks({
       ...search({
         closed: [{ number: 57, title: "Done", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
-        merged: [merged(63, 1, "Part of #59"), merged(64, 1, "Closes #58"), merged(65, 1, "Fixes #57, see #56")],
+        merged: [merged(63, 1, "Closes #59"), merged(64, 1, "Closes #58"), merged(65, 1, "Fixes #57, see #56"), merged(66, 1, "Follow-up to #55")],
       }),
-      referenced: { ...referenced(59, "OPEN", 1), ...referenced(58, "CLOSED"), ...referenced(56, "OPEN") },
+      referenced: { ...referenced(59, "OPEN", 1), ...referenced(58, "CLOSED"), ...referenced(56, "OPEN"), ...referenced(55, "OPEN") },
     });
     expect(asks).toEqual([]);
   });
@@ -796,12 +795,12 @@ describe("history", () => {
     ]);
   });
 
-  it("HIS-01, ATT-03: puts a merged PR under the closed issue its description refers to", () => {
+  it("HIS-01, ATT-03: puts a merged PR under the closed issue its description closes, not one it only mentions", () => {
     const repository = { nameWithOwner: REPO };
     const merged = (number: number, body: string) => ({ number, title: "Step", url: "u", body, mergedAt: daysAgo(1), repository, closingIssuesReferences: { nodes: [] } });
     const items = classifyHistory(search({
       closed: [{ number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository }],
-      merged: [merged(61, "First of two for #60"), merged(62, "Closes #60"), merged(63, "Follow-up to #59")],
+      merged: [merged(61, "Fixes #60"), merged(62, "Closes #60"), merged(63, "Follow-up to #60")],
     }));
     expect(items.map((item) => [item.number, item.children.map((c) => c.number)])).toEqual([[60, [61, 62]], [63, []]]);
   });

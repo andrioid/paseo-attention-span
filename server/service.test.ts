@@ -417,7 +417,7 @@ describe("kept worktrees", () => {
 describe("asking to close an issue", () => {
   const repository = { nameWithOwner: REPO };
   const ISSUE = `${REPO}#900`;
-  const merged = (number: number, mergedAt: string) => ({ number, title: `Step ${number}`, url: `u${number}`, body: `Part of #900`, mergedAt, repository, closingIssuesReferences: { nodes: [] } });
+  const merged = (number: number, mergedAt: string) => ({ number, title: `Step ${number}`, url: `u${number}`, body: `Closes #900`, mergedAt, repository, closingIssuesReferences: { nodes: [] } });
   const open = { number: 900, title: "Export to CSV", url: "u900", state: "OPEN", repository, closedByPullRequestsReferences: { nodes: [] as { state: string }[] } };
   // gh answering History's search with my merged PRs, and the lookup of the issue they refer to as `issue` says.
   const gh = (prs: ReturnType<typeof merged>[], issue = open): Gh => ({
@@ -511,7 +511,7 @@ describe("asking to close an issue", () => {
   it("ATT-24: closing an issue assigned to me keeps my merged PRs under it", async () => {
     // #152 is assigned to me in the fixture's live feed.
     const assigned = { ...structuredClone(open), number: 152, title: "Customer statements as PDF" };
-    const pr = { ...merged(901, "2026-11-12T10:00:00Z"), body: "Part of #152" };
+    const pr = { ...merged(901, "2026-11-12T10:00:00Z"), body: "Closes #152" };
     const { service, start } = harness({}, (config, now, timeZone) => gitHub(gh([pr], assigned)).history(config, now, timeZone));
     await start();
     const closed = await service.act(`${REPO}#152`, async () => {}, { kind: "finished" });

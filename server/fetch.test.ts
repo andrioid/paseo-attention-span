@@ -156,6 +156,26 @@ describe("requests", () => {
     expect(requests.sort()).toEqual([[], ["asked"], ["assigned"], ["closedIssues"], ["ended"], ["involved"], ["mentions"], ["mine"], ["reviews"], ["unclaimed"]]);
   });
 
+  it("ATT-03: the details request looks up the issue another's PR atop my stack closes, and not one my PR only mentions", async () => {
+    const { pr } = builders(now);
+    const mine = pr(30, { headRefName: "a", body: "First of two for #51" });
+    const theirs = pr(31, { baseRefName: "a", body: "Closes #50", author: { login: "alice", avatarUrl: "" } });
+    const queries: string[] = [];
+    const answer = (query: string, variables: Record<string, unknown> = {}) => {
+      if (Object.keys(variables).length === 0) queries.push(query);
+      const nodes = (name: string) => (name === "mine" ? [mine] : name === "reviews" ? [theirs] : []);
+      return { viewer: { login: "me", id: "U_me" }, ...Object.fromEntries(Object.keys(variables).map((name) => [name, { nodes: nodes(name) }])) };
+    };
+    const gh = {
+      graphql: async (query: string, variables?: Record<string, unknown>) => answer(query, variables),
+      graphqlResult: async (query: string, variables?: Record<string, unknown>) => ({ data: answer(query, variables), errors: [], failures: [] }),
+    } as never;
+    await gitHub(gh).live(config, now, unclaimedSearches(config, [], null).searches, { on: false, problems: [], failed: () => {} });
+    const details = queries.find((query) => query.startsWith("query Details")) ?? "";
+    expect(details).toContain("issueOrPullRequest(number: 50)");
+    expect(details).not.toContain("issueOrPullRequest(number: 51)");
+  });
+
   it("GH-01, HIS-01: History's three searches go in one request", async () => {
     const { gh, requests } = recordingGh();
     await gitHub(gh).history(config, now, "UTC");

@@ -502,7 +502,7 @@ export function classifyHistory(data: HistoryResult): Item[] {
 // feed, so the view leaves those out.
 export function classifyCloseAsks(data: HistoryResult): CloseAsk[] {
   const referenced = new Map(Object.entries(data.referenced ?? {}));
-  // Closed issues count as issues too, so a PR that worked on one isn't put under another it mentions.
+  // Closed issues count as issues too, so a PR that closed one isn't put under another it also closes.
   const closed = new Set(compact(data.closed.nodes).map(prKey));
   const me = data.viewer?.login.toLowerCase();
   const asks = new Map<string, CloseAsk>();
