@@ -27,6 +27,8 @@ const configPath = `${process.env.HOME}/.config/paseo-attention-span/config.json
 const originalConfig = await readFile(configPath, "utf8");
 // While this exists, the fixture has nothing in it: a quiet day, for the empty tabs' scenes.
 const quietPath = `${process.env.HOME}/.config/paseo-attention-span/fixture-quiet`;
+// While this exists, the sessions started on issues are gone, as if archived, so Doing can clear [SES-11].
+const noStartedPath = `${process.env.HOME}/.config/paseo-attention-span/fixture-no-started`;
 const seconds = (since) => `${((Date.now() - since) / 1000).toFixed(1)}s`;
 
 const browser = await chromium.launch({ executablePath: "/usr/bin/chromium", args: ["--no-sandbox"] });
@@ -130,6 +132,7 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
   const start = async () => {
     await writeFile(configPath, originalConfig);
     await rm(quietPath, { force: true });
+    await rm(noStartedPath, { force: true });
     // The container's daemon serves the web app and is the only host it knows.
     await page.goto("http://127.0.0.1:6767/", { waitUntil: "domcontentloaded" });
     await openAttention();
@@ -229,10 +232,12 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     // on the PR its workspace is linked to [SES-08].
     "doing-bands": async () => {
       await tab("Doing");
-      await bandShot("doing-needs-reviewer", "Needs a reviewer", "My drafts");
+      await bandShot("doing-needs-reviewer", "Needs a reviewer", "In progress");
       await bandShot("doing-ready", "Ready to merge", "Needs upstream");
       await bandShot("doing-wrap", "Wrap up", "Waiting for your reply");
       await bandShot("doing-review", "Review requested", "CI failing");
+      // My drafts and the issues I started, one of them on someone else's issue Next up doesn't know [PRS-05, SES-11].
+      await bandShot("doing-in-progress", "In progress", "Enjoying Attention Span");
     },
     // Card bodies and chevrons open details without navigating or starting cleanup [ATT-06, ATT-22, ATT-24].
     "wrap-details": async () => {
@@ -426,7 +431,9 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await done();
       await toastGone(/^Copied \d+ links? /);
     },
-    "next-up-sheet": sheet("Next up", "Orders export times out for big shops", "next-up-sheet"),
+    "next-up-sheet": sheet("Next up", "Price list import skips quoted rows", "next-up-sheet"),
+    // A started issue Next up doesn't know: its sessions and the issue on GitHub [ATT-06, SES-11].
+    "doing-in-progress-sheet": sheet("Doing", "Plan single sign-on for partners", "doing-in-progress-sheet"),
     // Close asks first, on the card: reason and an optional comment [NXT-11]. Cancelled, since it would call GitHub.
     "next-up-close": async () => {
       await tab("Next up");
@@ -627,6 +634,11 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await page.getByText("Undo", { exact: true }).waitFor({ timeout: 10000 });
       await settled();
       await shot("doing-dismissed");
+      // In progress's started issues leave only when their sessions are archived, which happens in Paseo [SES-11].
+      await writeFile(noStartedPath, "");
+      await page.getByRole("button", { name: "Refresh now" }).click();
+      await page.getByText("Plan single sign-on for partners").waitFor({ state: "detached", timeout: 15000 });
+      await settled();
       const details = page.getByRole("button", { name: /^Details for #/ });
       for (let left = await details.count(); left > 0; left = await details.count()) {
         const title = await details.first().getAttribute("aria-label");
@@ -662,6 +674,7 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
         } finally {
           await writeFile(configPath, originalConfig);
           await rm(quietPath, { force: true });
+          await rm(noStartedPath, { force: true });
         }
         // Both feeds back to the full fixture: History's too, as Wrap up in later layouts is made from its finished work.
         await tab("History");

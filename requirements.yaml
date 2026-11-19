@@ -58,7 +58,7 @@ functional:
       PRS-02: see my pull requests with requested changes or unresolved review comments; so that I finish ongoing work, since I can only handle so many tasks at once.
       PRS-03: see my pull requests that are ready to merge; so that finished work ships.
       PRS-04: merge a ready pull request once its checks pass against its current base; so that what merges was tested against what it merges into.
-      PRS-05: see my drafts after everything that isn't a draft; so that I finish or close my drafts before picking up new work.
+      PRS-05: see my work in progress last in Doing, my drafts and the issues I started without a pull request together, whatever waits on me first; so that I finish what I started before picking up new work.
       PRS-06: see other people's drafts only where they ask something of me, like a review or a mention; so that their unfinished work stays out of my list otherwise.
       PRS-07: refresh or close a draft that has gone stale; so that old drafts don't linger.
       PRS-08: have my pull requests that are assigned to someone else left out; so that pull requests I've handed over don't count as mine.
@@ -90,6 +90,7 @@ functional:
       SES-08: see sessions started outside Attention Span on the item of the pull request their workspace is linked to, or of the session whose worktree they share, or of my merged or closed pull request whose branch their worktree is on, as "Continue session", including finished work in Wrap up; so that I don't start duplicate work and can clean up what I left open.
       SES-09: tell sessions reviewing someone else's pull request from work on my own in Paseo's sidebar, by a name like "Review PR 123: title"; so that I know which kind of work a workspace holds.
       SES-10: stay where I am when I start a session on an item, told it started, with the item offering to open it; so that I can start several in a row without finding my place again.
+      SES-11: see an issue I started a session on in Doing's In progress instead of Next up, until a card of its own shows it, like a pull request that closes it, or I archive its last session, counted only while its session waits on me; so that started work doesn't hide in Next up.
   next_up:
     As a developer, I can:
       NXT-01: see open issues nobody is assigned to, apart from the work that needs me; so that I can get an idea of what to do next.

@@ -426,7 +426,9 @@ export const FIXTURE_AGENTS: AgentSummary[] = [
   agent("agent-101", `${REPO}#101`, "fix", "running", 4),
   agent("agent-102", `${REPO}#102`, "address", "idle", 30, true),
   agent("agent-108", `${REPO}#108`, "rebase", "error", 90),
-  agent("agent-150", `${REPO}#150`, "start", "idle", 300),
+  // Started on assigned #150, and on someone else's issue Next up doesn't know, which needs me: In progress [SES-11].
+  agent("agent-150", `${REPO}#150`, "start", "idle", 300, false, undefined, "Orders export times out for big shops"),
+  agent("agent-205", "acme/platform#205", "start", "idle", 8, true, undefined, "Plan single sign-on for partners"),
   agent("agent-90", `${REPO}#90`, undefined, "idle", 120, true),
   agent("agent-103", `${REPO}#103`, "rebase", "running", 6),
   agent("agent-113", `${REPO}#113`, "fix", "running", 2),
@@ -531,12 +533,15 @@ export const FIXTURE_KEPT: KeptRow[] = [
 const dismissedKept = new Set<string>();
 export const fixtureDismissKept = (workspaceId: string) => void dismissedKept.add(workspaceId);
 
-// A view with the made-up sessions, as the preview daemon has no agents, and kept worktrees for it to show [ATT-22].
-export const fixtureView = (view: AttentionView): AttentionView => ({
-  ...view,
-  fixtureAgents: FIXTURE_AGENTS,
-  kept: [...(view.kept ?? []), ...FIXTURE_KEPT.filter((row) => !dismissedKept.has(row.workspaceId))],
-});
+// A view with the made-up sessions, as the preview daemon has no agents, and kept worktrees for it to show [ATT-22]. While
+// `fixture-no-started` exists in `dir`, the sessions started on issues are as good as archived, so Doing can clear [SES-11].
+export const fixtureView =
+  (dir: string) =>
+  (view: AttentionView): AttentionView => ({
+    ...view,
+    fixtureAgents: existsSync(join(dir, "fixture-no-started")) ? FIXTURE_AGENTS.filter((agent) => agent.kind !== "start") : FIXTURE_AGENTS,
+    kept: [...(view.kept ?? []), ...FIXTURE_KEPT.filter((row) => !dismissedKept.has(row.workspaceId))],
+  });
 
 // The sheet's, picker's, session's and setup's asks, answered from made-up data; gh counts as signed in.
 export const fixtureAnswers = {
