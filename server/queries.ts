@@ -5,8 +5,8 @@ import type { IssueRef } from "./references";
 
 // An issue or PR with its last conversation comments [ATT-16], rendered too for who my questions tag [WAI-02].
 const THREAD = `__typename
-      ... on Issue { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment bodyHTML } } }
-      ... on PullRequest { number title url createdAt author { ...author } repository { nameWithOwner } comments(last: 10) { nodes { ...comment bodyHTML } } }`;
+      ... on Issue { number title url createdAt bodyHTML author { ...author } repository { nameWithOwner } comments(last: 10) { totalCount nodes { ...comment bodyHTML } } }
+      ... on PullRequest { number title url createdAt bodyHTML author { ...author } repository { nameWithOwner } comments(last: 10) { totalCount nodes { ...comment bodyHTML } } }`;
 
 // Each search with how many results it asks for and what it reads of each.
 const SEARCHES = {
@@ -26,6 +26,8 @@ const SEARCHES = {
   involved: { first: 100, nodes: THREAD },
   // My own issues where I commented, for questions nobody answered however old [ATT-11].
   asked: { first: 50, nodes: THREAD },
+  // My own issues I haven't commented on, for an opening that tags someone or asks, however old [WAI-01].
+  opened: { first: 50, nodes: THREAD },
   assigned: { first: 50, nodes: "...pickable" },
   unclaimed: { first: 100, nodes: "...pickable" },
   // My PRs closed lately, with who merged or closed them, for Changed by others [HIS-07]. Who closed one comes from its last
@@ -225,8 +227,11 @@ export function searchVariables(config: AttentionConfig, now: Date, timeZone?: s
     closedIssues: `is:issue is:closed assignee:@me closed:>=${since} sort:updated-desc ${scope}`,
     // Threads I opened, commented on, was assigned or mentioned in, active lately: answers, and fresh questions [ATT-16].
     involved: `is:open involves:@me updated:>=${since} sort:updated-desc ${scope}`,
-    // On my own issues a question nobody answered stays however old [ATT-11]. Newest first, so old ones go last.
+    // On my own issues a question or tag nobody answered stays however old [ATT-11, WAI-01]. Newest first, so old ones go last.
     asked: `is:issue is:open author:@me commenter:@me sort:updated-desc ${scope}`,
+    // And the rest of my own issues, where my opening may still be my last words, as only bots commented: `asked` can't find
+    // them before I comment [WAI-01]. Kept apart, so they don't crowd out the questions above.
+    opened: `is:issue is:open author:@me -commenter:@me sort:updated-desc ${scope}`,
     // History [HIS-01, HIS-02]
     merged: `is:pr is:merged author:@me merged:>=${history} ${scope}`,
     reviewed: `is:pr is:merged reviewed-by:@me -author:@me merged:>=${history} ${scope}`,

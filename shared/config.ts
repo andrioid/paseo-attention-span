@@ -40,6 +40,8 @@ export const AttentionConfig = z.object({
   // Follow threads I've commented on: a recent reply after mine on someone else's thread shows without a tag.
   // Off: only my own threads and mentions [ATT-17].
   followThreads: z.boolean().default(false),
+  // Only questions wait: my words that tag someone wait on them only if they ask something. Off: a tag alone waits [WAI-01].
+  onlyQuestionsWait: z.boolean().default(false),
   // How many weeks History shows [HIS-01].
   historyWeeks: z.number().int().positive().default(4),
   // Unclaimed issues to pick from [NXT-04]. With no sources chosen, Next up looks in `orgs` and `repos` [NXT-08].

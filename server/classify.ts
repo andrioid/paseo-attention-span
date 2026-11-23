@@ -194,9 +194,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     if (waiting) mentions.set(prKey(node), waiting);
   }
 
-  // What each thread I'm in is waiting for: an answer, or me [ATT-16]. Both searches can find one; it's the same thread.
+  // What each thread I'm in is waiting for: an answer, or me [ATT-16]. Several searches can find one; it's the same thread.
   const threads = new Map<string, IssueNode>();
-  for (const node of [...compact(data.involved.nodes), ...compact(data.asked.nodes)]) threads.set(prKey(node), node);
+  for (const node of [...compact(data.involved.nodes), ...compact(data.asked.nodes), ...compact(data.opened.nodes)]) threads.set(prKey(node), node);
   const answers = new Map<string, NonNullable<ReturnType<typeof threadState>>>();
   for (const [key, node] of threads) {
     const found = threadState(node, me, now, config);
@@ -436,7 +436,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       ...plain(issue, kind, section),
       person,
       waitingOn: section !== "answered" && tagged.length > 0 ? tagged : undefined,
-      wait: section === "answered" ? undefined : { reason: "question", since, ...(tooLong ? { tooLong } : {}) },
+      wait: section === "answered" ? undefined : { reason: flags.question ? "question" : "tagged", since, ...(tooLong ? { tooLong } : {}) },
       actions: section === "answered" ? replyActions(person) : [],
       // A new answer brings back a dismissed one [ATT-08].
       othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
@@ -525,37 +525,41 @@ export function classifyCloseAsks(data: HistoryResult): CloseAsk[] {
   return [...asks.values()].map((ask) => ({ ...ask, prs: ask.prs.sort((a, b) => a.mergedAt!.localeCompare(b.mergedAt!)) }));
 }
 
-// Whether my last comment on a thread is the last one from a person, and if not, the recent comments since that I haven't 👍'd.
-// On a thread I opened, my opening counts as my last word until I comment. Bots don't count [MEN-05]. Only the last comments
+// Whether my last words on a thread are the last from a person, and if not, the recent comments since that I haven't 👍'd.
+// On a thread I opened, its opening is my first words: when every comment was fetched, it's in my words since someone else
+// last spoke, and its tags and questions count as a comment's do. Bots don't count [MEN-05, WAI-01]. Only the last comments
 // are fetched: on someone else's thread, once mine is out of them the conversation has moved on.
 export function threadState(
   thread: IssueNode,
   me: string,
   now: Date,
-  config: Pick<AttentionConfig, "mentionDays" | "followThreads">,
+  config: Pick<AttentionConfig, "mentionDays" | "followThreads" | "onlyQuestionsWait">,
 ): { flags: IssueState; person?: Person; mine: string; tagged: WaitingOn[] } | null {
   const authored = thread.author?.login.toLowerCase() === me;
-  const people = thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot");
+  const all = thread.comments.totalCount === undefined || thread.comments.totalCount <= thread.comments.nodes.length;
+  const opening: Comment[] = authored && all ? [{ author: thread.author, bodyHTML: thread.bodyHTML, createdAt: thread.createdAt }] : [];
+  const people = [...opening, ...thread.comments.nodes.filter((c) => c.author && c.author.__typename !== "Bot")];
   const index = people.findLastIndex((c) => c.author?.login.toLowerCase() === me);
   if (index < 0 && !authored) return null;
   const mine = index < 0 ? thread.createdAt : people[index].createdAt;
   const after = people.slice(index + 1);
   const recent = (at: string) => daysSince(at, now) < config.mentionDays;
   const unread = after.filter((c) => recent(c.createdAt) && !c.reactionGroups?.some((group) => group.viewerHasReacted));
-  // My comments since someone else last spoke; bots don't end the run.
+  // My words since someone else last spoke; bots don't end the run.
   let first = index;
   while (first > 0 && people[first - 1].author?.login.toLowerCase() === me) first -= 1;
   const run = index >= 0 ? people.slice(first, index + 1) : [];
+  const tagged = index >= 0 && after.length === 0 ? taggedSince(run, me, thread.url) : [];
   const flags: IssueState = {
     authored,
     follow: config.followThreads,
-    // Opening a thread isn't asking a question; a comment is.
     mineLast: index >= 0 && after.length === 0,
     question: run.some((comment) => asksQuestion(comment.bodyHTML)),
+    tags: tagged.length > 0,
+    onlyQuestions: config.onlyQuestionsWait,
     answered: unread.length > 0,
     fresh: recent(mine),
   };
-  const tagged = flags.mineLast ? taggedSince(run, me, thread.url) : [];
   const last = unread.at(-1);
   if (!last?.author) return { flags, mine, tagged };
   return {
@@ -574,7 +578,7 @@ export function threadState(
   };
 }
 
-// Who my comments since someone else last spoke tag, each from the first comment that tags them; only the fetched comments
+// Who my words since someone else last spoke tag, each from the first that tags them; only the fetched comments
 // count. A tag gives just a name, so a person's picture is GitHub's for that name [WAI-02].
 function taggedSince(run: Comment[], me: string, url: string): WaitingOn[] {
   const origin = new URL(url).origin;

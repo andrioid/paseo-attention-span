@@ -89,11 +89,14 @@ export interface IssueNode {
   __typename?: "Issue" | "PullRequest";
   createdAt: string;
   author: Actor | null;
+  // GitHub's rendering of its opening, where tags of real accounts are links [WAI-01, WAI-02].
+  bodyHTML?: string;
   number: number;
   title: string;
   url: string;
   repository: Repo;
-  comments: Nodes<Comment>;
+  // How many conversation comments there are, to tell whether the fetched ones reach back to the opening.
+  comments: Nodes<Comment> & { totalCount?: number };
 }
 
 export interface PickableNode {
@@ -129,6 +132,7 @@ export interface LiveResult {
   mentions: Nodes<MentionNode>;
   involved: Nodes<IssueNode>;
   asked: Nodes<IssueNode>;
+  opened: Nodes<IssueNode>;
   assigned: Nodes<PickableNode>;
   unclaimed: Nodes<PickableNode>;
   // My PRs closed lately [HIS-07].

@@ -110,7 +110,7 @@ export async function searchLive(gh: Gh, config: AttentionConfig, now: Date, unc
   };
   const merge = (parts: Partial<LiveResult>[]) => Object.assign({}, ...parts) as LiveResult;
   const forDetails = Promise.all([search("mine"), search("reviews"), search("assigned"), searchUnclaimed()]);
-  const others = Promise.all([search("mentions"), search("involved"), search("asked"), search("ended"), search("closedIssues")]);
+  const others = Promise.all([search("mentions"), search("involved"), search("asked"), search("opened"), search("ended"), search("closedIssues")]);
   const afterThem = forDetails.then((parts) => details(gh, config, merge(parts), projects.on, projects.problems));
   const [first, rest, found] = await Promise.all([forDetails, others, afterThem]);
   return { data: merge([...first, ...rest]), details: found };

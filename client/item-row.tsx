@@ -9,7 +9,7 @@ import type { SessionKind } from "../shared/config";
 import { failingList, groupLabel, rerunHistory, summarizeRerun } from "../shared/checks";
 import { ago } from "../shared/format";
 import { noteBusy } from "../shared/got-it";
-import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, rerunState, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, targetUrl, waitChips } from "../shared/item-view";
+import { actionLabel, alsoWaitingOn, cardStack, cardWhen, copiesLink, rerunState, sessionSignal, type SheetStep, sheetPlan, soleStep, stackMetaChips, targetUrl, waitChips, waitedSince } from "../shared/item-view";
 import { CardList, CardRow } from "./card";
 import { PlaceText } from "./entity";
 import type { IconName } from "./icons";
@@ -125,7 +125,7 @@ export function ItemRow({ item, first, actions, group }: { item: Item; first: bo
   const waits = waitChips(item, !!group, actions.config.waitingTooLongDays);
   // The group names one; the card names the rest [WAI-01].
   const others = alsoWaitingOn(item, group?.who);
-  const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded={false} /> : null;
+  const waitingOn = group ? null : item.waitingOn ? <WaitingOnLine people={item.waitingOn} reason={item.wait?.reason} expanded={false} /> : null;
   const alsoOn = others.length ? <Text style={styles.muted}>also waiting on {others.join(", ")}</Text> : null;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [confirm, setConfirm] = useState<"merge" | "close" | null>(null);
@@ -246,7 +246,7 @@ function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: 
           {/* Number first, as on the card; the sheet always names the owner, even of my own repos [ATT-20]. */}
           <Meta lead={<PlaceText place={{ repo: item.repo, number: item.number, login: null }} />} facts={meta} chips={[...waitChips, ...stackMetaChips(item, targetRow)]} />
           {item.person ? <PersonQuote person={item.person} expanded /> : null}
-          {item.waitingOn ? <WaitingOnLine people={item.waitingOn} asked={item.wait?.reason === "question"} expanded /> : null}
+          {item.waitingOn ? <WaitingOnLine people={item.waitingOn} reason={item.wait?.reason} expanded /> : null}
           {item.children.length > 0 ? <StackLine rows={item.children} links target={targetRow?.key} /> : null}
         </>
       }
@@ -351,7 +351,7 @@ const MAX_FACES = 5;
 
 // Who my work waits on: one by name, several by picture, named on hover, and each by name in the sheet [WAI-02].
 // On an issue they're who my question tagged; on a PR, reviewers since my last push or reply [WAI-02, ATT-19].
-function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked: boolean; expanded: boolean }) {
+function WaitingOnLine({ people, reason, expanded }: { people: WaitingOn[]; reason: string | undefined; expanded: boolean }) {
   const styles = useStyles();
   const [hovered, setHovered] = useState<string | null>(null);
   const name = (login: string) => (
@@ -360,7 +360,7 @@ function WaitingOnLine({ people, asked, expanded }: { people: WaitingOn[]; asked
     </Text>
   );
   const since = (at: string) => <Text style={styles.muted}>· {ago(at)}</Text>;
-  const explain = (logins: string[], at: string) => `Waiting on ${logins.join(", ")} since ${asked ? "you asked" : "your last push or reply"}, ${ago(at)} ago`;
+  const explain = (logins: string[], at: string) => `Waiting on ${logins.join(", ")} since ${waitedSince(reason)}, ${ago(at)} ago`;
   if (expanded || people.length === 1) {
     return (
       <View style={{ gap: 6 }}>

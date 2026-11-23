@@ -254,6 +254,12 @@ export class AttentionService {
     await this.refresh("live").catch(() => {});
   }
 
+  // Only questions wait [WAI-01]. Only the live feed has threads.
+  async setOnlyQuestionsWait(on: boolean): Promise<void> {
+    this.config = await this.port.store.saveOnlyQuestionsWait(on);
+    await this.refresh("live").catch(() => {});
+  }
+
   async setScopes(scopes: string[]): Promise<void> {
     this.state.scopes = scopes;
     await this.save();

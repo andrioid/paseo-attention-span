@@ -20,7 +20,7 @@ Mentions clear when you reply or react. Team mentions don't count, because "@eve
 
 ## Waiting
 
-This is your work where someone else has the next move: a review you asked for, CI running, a question nobody's answered. It's grouped by who you're waiting on. After three days an item turns amber, but only when a nudge would be fair. **Copy list** gives you that person's items as Markdown, ready to paste into a message.
+This is your work where someone else has the next move: a review you asked for, CI running, a question nobody's answered, someone you tagged who hasn't replied. It's grouped by who you're waiting on. After three days an item turns amber, but only when a nudge would be fair. **Copy list** gives you that person's items as Markdown, ready to paste into a message.
 
 Otherwise there's nothing to do here, and that's kind of the point. It's tracked, so you can stop holding it in your head.
 

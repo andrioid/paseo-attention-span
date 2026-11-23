@@ -96,10 +96,13 @@ export function asksQuestion(html: string | undefined): boolean {
 
 // People and teams tagged in a comment, from GitHub's rendering of it: GitHub links a tag only to an account that exists and
 // a team I can see, and never in code. Tags in quoted replies are someone else's words, so they don't count [WAI-02].
+// Bots don't count either: GitHub links no app like @github-actions or @copilot, links @dependabot and @coderabbitai to an
+// organization, which is nobody to nudge, and @renovate[bot] to the user before its "[bot]" [WAI-02].
 export function taggedIn(html: string | undefined): { login: string; team: boolean }[] {
   const text = ownWords(html);
   const tags: { login: string; team: boolean }[] = [];
-  for (const [, attributes] of text.matchAll(/<a\b([^>]*)>/g)) {
+  for (const [, attributes, bot] of text.matchAll(/<a\b([^>]*)>[\s\S]*?<\/a>(\[bot\])?/g)) {
+    if (bot || /\bdata-hovercard-type="organization"/.test(attributes)) continue;
     const kind = /\bclass="[^"]*\b(user|team)-mention\b/.exec(attributes)?.[1];
     const path = /\bhref="(?:https?:\/\/[^/"]+)?([^"?#]*)/.exec(attributes)?.[1] ?? "";
     const team = /^\/orgs\/([^/]+)\/teams\/([^/]+)\/?$/.exec(path);

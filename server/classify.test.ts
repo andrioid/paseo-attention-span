@@ -30,6 +30,7 @@ function run(parts: Parameters<typeof search>[0], { config: given, behind = {}, 
 }
 const asked = { nodes: [{ requestedReviewer: bob }] };
 const follow = AttentionConfig.parse({ orgs: ["acme"], followThreads: true });
+const onlyQuestions = AttentionConfig.parse({ orgs: ["acme"], onlyQuestionsWait: true });
 const doing = (attention: ReturnType<typeof run>) => attention.items.filter((item) => SECTIONS[item.section].tab === "doing");
 
 describe("doing", () => {
@@ -565,12 +566,30 @@ describe("waiting", () => {
     expect(item.person).toBeUndefined();
   });
 
-  it("WAI-01: a statement waits on nobody, even one that tags someone; a question in an earlier comment of mine still counts", () => {
+  it("WAI-01, WAI-02: a statement that tags someone waits on them, unless only questions wait", () => {
     const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
     const stated = issue(70, [comment(me, "@bob deployed to staging", 1, { bodyHTML: `<p>${tag("bob")} deployed to staging</p>` })]);
-    expect(run({ involved: [stated] }).items).toEqual([]);
+    expect(run({ involved: [stated] }).items[0]).toMatchObject({ section: "wait_answer", waitingOn: [{ login: "bob" }], wait: { reason: "tagged", since: daysAgo(1) } });
+    expect(run({ involved: [stated] }, { config: onlyQuestions }).items).toEqual([]);
+    expect(run({ involved: [issue(72, [comment(me, "deployed to staging", 1)])] }).items).toEqual([]);
     const both = issue(71, [comment(me, "@bob which shops?", 2, { bodyHTML: `<p>${tag("bob")} which shops?</p>` }), comment(me, "found the logs", 1)]);
-    expect(run({ involved: [both] }).items[0]).toMatchObject({ section: "wait_answer", waitingOn: [{ login: "bob" }] });
+    expect(run({ involved: [both] }, { config: onlyQuestions }).items[0]).toMatchObject({ section: "wait_answer", waitingOn: [{ login: "bob" }], wait: { reason: "question" } });
+  });
+
+  it("WAI-01, WAI-02: an issue I opened waits on whom its opening tags, until someone comments", () => {
+    const tag = (login: string) => `<a class="user-mention notranslate" data-hovercard-type="user" href="https://github.com/${login}">@${login}</a>`;
+    const opened = (comments: ReturnType<typeof comment>[], body: string, extra = {}) =>
+      issue(70, comments, "Mine", { author: me, createdAt: daysAgo(2), bodyHTML: `<p>${body}</p>`, comments: { nodes: comments, totalCount: comments.length }, ...extra });
+    const tagged = opened([], `${tag("bob")} please take a look`);
+    expect(run({ opened: [tagged] }).items[0]).toMatchObject({ section: "wait_answer", waitingOn: [{ login: "bob", since: daysAgo(2) }], wait: { reason: "tagged", since: daysAgo(2) } });
+    expect(run({ asked: [tagged] }, { config: onlyQuestions }).items).toEqual([]);
+    expect(run({ asked: [opened([], `${tag("bob")} can you take a look?`)] }, { config: onlyQuestions }).items[0]).toMatchObject({ wait: { reason: "question" } });
+    // My comment after it keeps my words going; someone else's ends them.
+    expect(run({ asked: [opened([comment(me, "logs attached", 1)], `${tag("bob")} please take a look`)] }).items[0]).toMatchObject({ waitingOn: [{ login: "bob" }] });
+    expect(run({ asked: [opened([comment(bob, "on it", 1, { reactionGroups: [{ viewerHasReacted: true }] })], `${tag("bob")} please take a look`)] }).items).toEqual([]);
+    // When older comments weren't fetched, the opening isn't next to my last words.
+    const cut = opened([comment(me, "logs attached", 1)], `${tag("bob")} please take a look`);
+    expect(run({ asked: [{ ...cut, comments: { ...cut.comments, totalCount: 12 } }] }).items).toEqual([]);
   });
 
   it("WAI-02: a question that tags nobody waits on nobody", () => {
@@ -616,7 +635,7 @@ describe("answered", () => {
     expect(item.othersActivityAt).toBe(daysAgo(0.5));
   });
 
-  it("ATT-16, MEN-02, WAI-01: replying with a question makes it wait again, a statement doesn't; a 👍 on the answer clears it", () => {
+  it("ATT-16, MEN-02, WAI-01: replying with a question makes it wait again, an untagged statement doesn't; a 👍 on the answer clears it", () => {
     const replied = issue(70, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, which version?", 0.5)]);
     expect(sections(run({ involved: [replied] }).items)).toEqual([[70, "wait_answer"]]);
     const stated = issue(72, [comment(me, "which shops?", 2), comment(alice, "Danish", 1), comment(me, "thanks, looking", 0.5)]);
@@ -665,6 +684,9 @@ describe("answered", () => {
     expect(item.wait).toEqual({ reason: "question", since: daysAgo(45), tooLong: true });
     expect(run({ involved: [issue(71, [comment(me, "still needed?", 45)])] }).items).toEqual([]);
     expect(searchVariables(config, NOW).asked).not.toContain("updated:");
+    expect(searchVariables(config, NOW).asked).toContain("commenter:@me");
+    expect(searchVariables(config, NOW).opened).toContain("-commenter:@me");
+    expect(searchVariables(config, NOW).opened).not.toContain("updated:");
     expect(searchVariables(config, NOW).involved).toContain("involves:@me updated:>=");
   });
 

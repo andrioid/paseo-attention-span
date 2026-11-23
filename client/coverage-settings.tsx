@@ -34,6 +34,7 @@ function Coverage() {
   const save = useRpc(rpc.setCoverage);
   const saveNextUp = useRpc(rpc.setNextUpSources);
   const saveFollow = useRpc(rpc.setFollowThreads);
+  const saveOnlyQuestions = useRpc(rpc.setOnlyQuestionsWait);
   const saveFields = useRpc(rpc.setNextUpFields);
   const coverage = useQuery({ queryKey: COVERAGE_QUERY_KEY, queryFn: () => fetchCoverage({}) });
   const [saving, setSaving] = useState(false);
@@ -47,7 +48,7 @@ function Coverage() {
         </SettingsCard>
       </SettingsSection>
     );
-  const { orgs, repos, nextUp, fields, followThreads } = coverage.data;
+  const { orgs, repos, nextUp, fields, followThreads, onlyQuestionsWait } = coverage.data;
   // A file that doesn't parse is left for the person who edited it.
   if (coverage.data.error)
     return (
@@ -129,6 +130,24 @@ function Coverage() {
           {followThreads
             ? "Recent replies after your comment on other people's threads show under Answered."
             : "Only tags bring other people's threads back. Your own issues and PRs show any recent reply."}
+        </Text>
+      </View>
+      <View style={{ gap: 8 }}>
+        <SettingsSection title="Waiting">
+          <SettingsCard>
+            <SettingsSwitch
+              label="Only questions wait"
+              hint="A comment that tags someone waits on them only if it asks a question"
+              value={onlyQuestionsWait}
+              disabled={saving}
+              onValueChange={(on) => void write({ onlyQuestionsWait: on }, () => saveOnlyQuestions({ on }))}
+            />
+          </SettingsCard>
+        </SettingsSection>
+        <Text style={[styles.muted, CAPTION]}>
+          {onlyQuestionsWait
+            ? "Your issues and comments wait on someone only when they ask a question. Tagging someone without asking waits on nobody."
+            : "Your issues and comments wait on whoever they tag, and on an answer to any question, until someone replies."}
         </Text>
       </View>
       <View style={{ gap: 4 }}>

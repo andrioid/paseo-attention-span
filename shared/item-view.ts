@@ -153,6 +153,11 @@ export function rerunState(details: { data?: { failing: FailingChecks[] }; isLoa
   return { state: "ready", failing, runIds: summary.runIds };
 }
 
+// What a wait counts from, in words: my question, my tag, or my last push or reply [WAI-01].
+export function waitedSince(reason: string | undefined): string {
+  return reason === "question" ? "you asked" : reason === "tagged" ? "you tagged them" : "your last push or reply";
+}
+
 // Why it waits and how long, in Waiting only; Doing says what's mine to do. Once it has waited too long, where nudging is
 // fair, the age itself turns amber with ⌛ and says so in words [WAI-01, ATT-11].
 export function waitChips(item: Item, inWaiting: boolean, tooLongDays: number, now = new Date()): Chip[] {
@@ -161,7 +166,7 @@ export function waitChips(item: Item, inWaiting: boolean, tooLongDays: number, n
   const age = ago(wait.since, now);
   const reason: Chip[] = wait.reason ? [{ text: wait.reason, tone: "neutral" }] : [];
   if (!wait.tooLong) return [...reason, { text: age, tone: "neutral" }];
-  const since = wait.reason === "question" ? "you asked" : "your last push or reply";
+  const since = waitedSince(wait.reason);
   const limit = `${tooLongDays} day${tooLongDays === 1 ? "" : "s"}`;
   return [...reason, { text: age, tone: "warn", icon: "hourglass", hint: `Waited too long: ${age} since ${since}, more than ${limit}` }];
 }
