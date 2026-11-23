@@ -57,6 +57,13 @@ describe("markdown", () => {
     expect(taggedIn(undefined)).toEqual([]);
   });
 
+  it("WAI-02: bots aren't tags: an app GitHub doesn't link, an organization, or a user followed by [bot]", () => {
+    // As GitHub's markdown API renders them.
+    const linked = (login: string, type: string) => `<a class="user-mention notranslate" data-hovercard-type="${type}" href="https://github.com/${login}">@${login}</a>`;
+    const html = `<p>${linked("dependabot", "organization")} ${linked("coderabbitai", "organization")} @github-actions ${linked("renovate", "user")}[bot] ${linked("bob", "user")} thanks</p>`;
+    expect(taggedIn(html)).toEqual([{ login: "bob", team: false }]);
+  });
+
   it("WAI-01: a question is a ? in my own words, as GitHub rendered them: not in quotes, code or links", () => {
     const tag = '<a class="user-mention notranslate" href="https://github.com/bob">@bob</a>';
     expect(asksQuestion(`<p>${tag} which shops?</p>`)).toBe(true);

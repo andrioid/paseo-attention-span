@@ -111,7 +111,7 @@ export interface WaitingOn {
 // What my work waits for: on items in Waiting, and on my PRs in Doing that wait on reviewers too, which Waiting lists as
 // well [WAI-01, PRS-15].
 export interface Wait {
-  // In a word or two: "review", "re-review", "question". None where the chips already say, like blocked by repo rules.
+  // In a word or two: "review", "re-review", "question", "tagged". None where the chips already say, like blocked by repo rules.
   reason?: string;
   // Since I asked, tagged, pushed or replied.
   since: string;

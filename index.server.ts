@@ -87,6 +87,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.issueFields, () => ready(async () => ({ fields: await attention.issueFields() })));
   server.handle(rpc.setNextUpFields, (fields) => ready(() => attention.setNextUpFields(fields)).then(() => ({ ok: true as const })));
   server.handle(rpc.setFollowThreads, ({ on }) => ready(() => attention.setFollowThreads(on)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setOnlyQuestionsWait, ({ on }) => ready(() => attention.setOnlyQuestionsWait(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.myOrgs, async () => ({ orgs: await answers.myOrgs() }));
   server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
   server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));

@@ -68,6 +68,8 @@ const fieldChoice = z.string().nullable().optional();
 export const setNextUpFields = defineRpc({ name: "config.set-next-up-fields", input: z.object({ priority: fieldChoice, effort: fieldChoice, scope: fieldChoice }), output: done });
 // Replies on others' threads without a tag, from settings [ATT-17].
 export const setFollowThreads = defineRpc({ name: "config.set-follow-threads", input: z.object({ on: z.boolean() }), output: done });
+// Only questions wait, from settings [WAI-01].
+export const setOnlyQuestionsWait = defineRpc({ name: "config.set-only-questions-wait", input: z.object({ on: z.boolean() }), output: done });
 export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), output: z.object({ orgs: z.array(z.string()) }) });
 // Remember the scopes and sources ticked in Next up's filter [NXT-03, NXT-09].
 export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });

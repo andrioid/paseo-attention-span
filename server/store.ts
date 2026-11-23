@@ -162,6 +162,11 @@ export function createStore(dir: string, oldDir?: string) {
     return updateConfig((file) => ({ ...file, followThreads }));
   }
 
+  // Whether only questions wait, from settings [WAI-01].
+  function saveOnlyQuestionsWait(onlyQuestionsWait: boolean): Promise<AttentionConfig> {
+    return updateConfig((file) => ({ ...file, onlyQuestionsWait }));
+  }
+
   // What the screen writes changes only its own keys; everything else in the file is kept as it is.
   // A file that doesn't read or parse is left alone.
   async function updateConfig(change: (file: Record<string, unknown>) => Record<string, unknown>): Promise<AttentionConfig> {
@@ -192,6 +197,6 @@ export function createStore(dir: string, oldDir?: string) {
     await writeAtomically(state, JSON.stringify(saved, null, 2));
   }
 
-  return { moveOldFiles, loadConfig, saveCodeRepo, saveCoverage, saveNextUpSources, saveNextUpFields, saveFollowThreads, loadState, saveState };
+  return { moveOldFiles, loadConfig, saveCodeRepo, saveCoverage, saveNextUpSources, saveNextUpFields, saveFollowThreads, saveOnlyQuestionsWait, loadState, saveState };
 }
 export type Store = ReturnType<typeof createStore>;

@@ -104,8 +104,12 @@ export interface IssueState {
   follow: boolean;
   // My comment is the last one from a person; bots don't count [MEN-05].
   mineLast: boolean;
-  // My comments since someone else last spoke ask something; a statement, tagged or not, waits on nobody [WAI-01].
+  // My words since someone else last spoke ask something [WAI-01].
   question: boolean;
+  // My words since someone else last spoke tag someone [WAI-01, WAI-02].
+  tags: boolean;
+  // Only questions wait: a statement waits on nobody, even one that tags someone. The onlyQuestionsWait setting [WAI-01].
+  onlyQuestions: boolean;
   // A person commented after me (or after I opened it) within mentionDays, and I haven't 👍'd it [MEN-02].
   answered: boolean;
   // My last comment is within mentionDays.
@@ -118,7 +122,7 @@ export const ISSUE_RULES: Rules<IssueState> = {
   // A recent comment after mine, without mentioning me: mine until I reply, 👍 it or dismiss it [ATT-16].
   // On someone else's thread only when I've allowed replies without a tag [ATT-17].
   answered: { when: (s) => s.answered && (s.authored || s.follow) },
-  // My question waits on an answer: on my own issues however long ago, on others' only while fresh. Waiting says when it's
-  // waited too long [WAI-01, ATT-11].
-  wait_answer: { when: (s) => s.mineLast && s.question && (s.authored || s.fresh) },
+  // My question, or a tag unless only questions wait, waits on an answer: on my own issues however long ago, on others' only
+  // while fresh. Waiting says when it's waited too long [WAI-01, ATT-11].
+  wait_answer: { when: (s) => s.mineLast && (s.question || (s.tags && !s.onlyQuestions)) && (s.authored || s.fresh) },
 };

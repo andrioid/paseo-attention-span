@@ -153,7 +153,7 @@ describe("requests", () => {
     const { gh, requests } = recordingGh();
     const { searches } = unclaimedSearches(config, [], null);
     await gitHub(gh).live(config, now, searches, { on: false, problems: [], failed: () => {} });
-    expect(requests.sort()).toEqual([[], ["asked"], ["assigned"], ["closedIssues"], ["ended"], ["involved"], ["mentions"], ["mine"], ["reviews"], ["unclaimed"]]);
+    expect(requests.sort()).toEqual([[], ["asked"], ["assigned"], ["closedIssues"], ["ended"], ["involved"], ["mentions"], ["mine"], ["opened"], ["reviews"], ["unclaimed"]]);
   });
 
   it("ATT-03: the details request looks up the issue another's PR atop my stack closes, and not one my PR only mentions", async () => {

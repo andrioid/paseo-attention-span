@@ -611,6 +611,20 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
         if (withFields.nextUp?.scope?.field !== "Team" || "priority" in withFields.nextUp || withFields.nextUp.effort?.order?.length !== 4)
           throw new Error(`config.json after picking a field: ${JSON.stringify(withFields)}`);
         await capture("settings-fields-picked", fieldsBand);
+        // Only questions wait: off by default, saved on its own when switched, then switched back [WAI-01].
+        const waitingHeading = page.getByText("Replies", { exact: true });
+        // Paseo draws the switch beside its label; Waiting's is the last on the page.
+        const onlyQuestions = page.getByRole("switch").last();
+        await onlyQuestions.click();
+        await until(async () => (await config()).onlyQuestionsWait === true, "config.json to save onlyQuestionsWait");
+        await page.getByText(/only when they ask a question/).waitFor({ timeout: 10000 });
+        await settled();
+        await capture("settings-waiting", async () => {
+          const box = await waitingHeading.boundingBox();
+          return { ...fold(), y: Math.max(0, box.y - 24), height: 420 };
+        });
+        await onlyQuestions.click();
+        await until(async () => (await config()).onlyQuestionsWait === false, "config.json to save onlyQuestionsWait off");
       } finally {
         // Out of Paseo's settings: phones have only a back arrow, so start over from the app.
         await start();

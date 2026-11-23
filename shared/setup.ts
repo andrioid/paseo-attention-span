@@ -14,6 +14,8 @@ export interface ConfigStatus {
   fields: Partial<Record<FieldRole, string | null>>;
   // Replies on others' threads count without a tag [ATT-17].
   followThreads: boolean;
+  // A tag waits only if it asks a question [WAI-01].
+  onlyQuestionsWait: boolean;
 }
 
 export interface SetupStatus {

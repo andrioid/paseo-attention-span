@@ -32,7 +32,7 @@ export const SCENARIOS = [
   { name: "next-up-new-issue", shots: ["next-up-new-issue"] },
   { name: "next-up-by-repo", shots: ["next-up-by-repo"] },
   { name: "next-up-filters", shots: ["next-up-filter", "next-up-filtered", "next-up-source", "next-up-cleared", "next-up-filter-projects", "next-up-projects"] },
-  { name: "settings", shots: ["settings-typo", "settings", "settings-next-up", "settings-org-picker", "settings-fields", "settings-fields-picked"] },
+  { name: "settings", shots: ["settings-typo", "settings", "settings-next-up", "settings-org-picker", "settings-fields", "settings-fields-picked", "settings-waiting"] },
   { name: "setup", shots: ["setup"] },
   { name: "clear", shots: ["doing-dismissed", "doing-clear", "waiting-clear", "history-clear", "next-up-clear", "next-up-setup"], last: true },
   { name: "code-repo", shots: ["next-up-code-repo", "next-up-code-repo-after", "next-up-code-repo-again"], last: true },
