@@ -179,7 +179,8 @@ function AttentionList({
           </Hint>
           {openSettings ? (
             <Hint text="Settings" inline>
-              <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
+              {/* Padding, not hitSlop: native only reaches as far as the hint's wrapper, which hugs the icon. */}
+              <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} style={{ padding: 8, margin: -8 }}>
                 <TablerIcon name="settings" size={16} />
               </Pressable>
             </Hint>

@@ -151,12 +151,13 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     await page.evaluate(`(${scroller})()?.scrollTo(0, 0)`);
     await settled();
   };
+  // to: the header that ends the band, or a function from the band's top to where it ends.
   const band = async (from, to) => {
     const header = (title) => page.locator(`text=/^${title}/ >> visible=true`).first();
     await header(from).scrollIntoViewIfNeeded();
     await settled();
     const y = Math.max(0, Math.floor((await header(from).boundingBox()).y) - 24);
-    const end = Math.ceil((await header(to).boundingBox()).y) - 16;
+    const end = typeof to === "function" ? await to(y) : Math.ceil((await header(to).boundingBox()).y) - 16;
     // Just the list's column, with even margins: the sidebar on desktops is 320 px wide.
     const sidebar = layout.isMobile ? 0 : 320;
     const x = Math.max(sidebar, Math.floor((await header(from).boundingBox()).x) - 48);
@@ -440,7 +441,16 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await page.getByRole("checkbox", { name: "Changed by others", exact: true }).click();
       await done();
       await shot("history-filtered");
-      await bandShot("history-groups", "Reviewed", "Last week");
+      // Down to the next week's header: which week Reviewed falls in depends on the day, so it's found, not named.
+      await bandShot("history-groups", "Reviewed", async (top) => {
+        const below = [];
+        for (const copy of await page.getByRole("button", { name: /^Copy links from / }).all()) {
+          const box = await copy.boundingBox();
+          if (box && box.y > top + 24) below.push(box.y);
+        }
+        const bottom = await page.evaluate(`(${scroller})()?.firstElementChild?.getBoundingClientRect().bottom ?? 0`);
+        return Math.ceil(below.length ? Math.min(...below) : bottom) - 16;
+      });
       const read = await clipboard();
       // The newest week with work in it: on a Monday, "This week" has none yet.
       await page.getByRole("button", { name: /^Copy links from / }).first().click();
