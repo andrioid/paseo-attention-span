@@ -50,7 +50,8 @@ export const archiveWorktree = defineRpc({
   output: z.custom<ArchiveOutcome>(),
 });
 export const dismissKept = defineRpc({ name: "attention.dismiss-kept", input: z.object({ workspaceId: z.string() }), output: view });
-export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({}), output: view });
+// One tab's dismissed items back, or every tab's [ATT-08].
+export const restoreDismissed = defineRpc({ name: "attention.restore-dismissed", input: z.object({ tab: z.enum(["doing", "waiting"]).optional() }), output: view });
 // Adds one entry to codeRepos in config.json [SES-07].
 export const setCodeRepo = defineRpc({ name: "config.set-code-repo", input: z.object({ issueRepo: z.string(), codeRepo: z.string() }), output: view });
 // What the setup checklist shows when nothing loads [SET-01].

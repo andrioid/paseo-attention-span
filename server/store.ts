@@ -19,8 +19,8 @@ export const OLD_DIR = CHOSEN_DIR ? undefined : join(homedir(), ".config", "pase
 const knownSections = (items: unknown): boolean => Array.isArray(items) && items.every((item) => Object.hasOwn(SECTIONS, (item as Item)?.section));
 
 export const State = z.object({
-  // Item key -> others' activity and section when dismissed [ATT-08].
-  dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>() })).default({}),
+  // Item key -> others' activity, section, and my latest words or push, when dismissed [ATT-08].
+  dismissed: z.record(z.string(), z.object({ at: z.string(), section: z.custom<SectionId>(), mine: z.string().optional() })).default({}),
   // Item key -> what I just changed on GitHub, until a fetch shows it [FRESH-02].
   pending: z.record(z.string(), z.custom<Pending>((value) => typeof (value as Pending)?.at === "string" && !!(value as Pending)?.effect)).default({}).catch({}),
   // Scopes ticked in Next up's filter; none means all [NXT-03].

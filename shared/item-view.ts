@@ -125,7 +125,8 @@ export function sheetPlan(item: Item, sessions: AgentSummary[]): SheetStep[] {
   steps.push({ kind: "github", ...(pr ? { pr } : {}) });
   // Nothing's left to start on once it's merged or closed, or out of my hands; a note is cleared with Got it, not dismissed [HIS-07].
   if (!item.closedAt && !item.change) steps.push({ kind: "start", any: sessions.length > 0, session: fallbackKind(item) });
-  if (SECTIONS[item.section].tab === "doing" && !item.change) steps.push({ kind: "dismiss" });
+  // Doing and Waiting can be dismissed, apart at the bottom; History and Next up can't [ATT-08].
+  if ((SECTIONS[item.section].tab === "doing" || SECTIONS[item.section].tab === "waiting") && !item.change) steps.push({ kind: "dismiss" });
   return steps;
 }
 

@@ -85,17 +85,18 @@ describe("an item's sheet", () => {
     expect(lines(sheetPlan(note, []))).toEqual(["Got it", "Open on GitHub"]);
   });
 
-  it("ATT-06: Dismiss and closing a draft sit apart below the work; Dismiss only in Doing", () => {
+  it("ATT-06, ATT-08: Dismiss and closing a draft sit apart below the work; Dismiss in Doing and Waiting only", () => {
     expect(lines(sheetPlan(item("o/r#5", "drafts", { actions: ["refresh", "close"] }), []))).toEqual(["Refresh draft…", "Close draft [apart]", "Open on GitHub", "Start a session…", "Dismiss [apart]"]);
-    expect(lines(sheetPlan(item("o/r#5", "wait_review"), []))).not.toContain("Dismiss [apart]");
+    expect(lines(sheetPlan(item("o/r#5", "wait_review"), []))).toEqual(["Open on GitHub", "Start a session…", "Dismiss [apart]"]);
+    expect(lines(sheetPlan(item("o/r#5", "done", { closedAt: hoursAgo(1) }), []))).not.toContain("Dismiss [apart]");
   });
 
   it("ATT-06: the card shows the sheet's one action in place of ›, not counting a quiet start", () => {
-    const waiting = soleStep(sheetPlan(item("o/r#5", "wait_review"), []));
-    expect(waiting && lines([waiting])).toEqual(["Open on GitHub"]);
-    expect(soleStep(sheetPlan(item("o/r#5", "done", { closedAt: hoursAgo(1) }), []))?.kind).toBe("github");
-    // Doing always has Dismiss too; a note has Got it.
+    const done = soleStep(sheetPlan(item("o/r#5", "done", { closedAt: hoursAgo(1) }), []));
+    expect(done && lines([done])).toEqual(["Open on GitHub"]);
+    // Doing and Waiting always have Dismiss too, so their cards show ›; a note has Got it.
     expect(soleStep(sheetPlan(item("o/r#5", "ci"), []))).toBeUndefined();
+    expect(soleStep(sheetPlan(item("o/r#5", "wait_review"), []))).toBeUndefined();
     expect(soleStep(sheetPlan(item("o/r#5", "changed", { actions: ["got_it"], change: change("merged", "o/r#5") }), []))).toBeUndefined();
   });
 });

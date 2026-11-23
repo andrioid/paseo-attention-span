@@ -19,7 +19,7 @@ const view = (fields: { doing?: Section[]; waiting?: { items: Item[] }[]; histor
   unclaimed: fields.unclaimed ?? [],
   unclaimedFrom: "own" as const,
   projects: [],
-  dismissedCount: 0,
+  dismissed: { doing: 0, waiting: 0 },
   login: "me",
 });
 type View = ReturnType<typeof view>;

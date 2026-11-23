@@ -138,11 +138,16 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     await openAttention();
     await page.getByRole("button", { name: "Refresh now" }).click(); // reloads config.json
     await settled();
-    // An earlier layout's dismissal lives on in the daemon; bring it back.
-    const restore = page.getByText(/dismissed · show them again/);
-    if (await restore.isVisible()) {
-      await restore.click();
+    // An earlier layout's or failed scenario's dismissals live on in the daemon; bring back each tab's.
+    for (const name of ["Waiting", "Doing"]) {
+      await page.getByRole("tab", { name: new RegExp(name) }).first().click();
       await settled();
+      const restore = page.getByText(/dismissed · show them again/);
+      if (await restore.isVisible()) {
+        await restore.click();
+        await restore.waitFor({ state: "detached", timeout: 10000 });
+        await settled();
+      }
     }
   };
   // A tab, scrolled to its top, so a scenario looks the same whether or not others ran before it.
@@ -362,6 +367,28 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await shot("waiting-copied");
       await writeFile(`/out/${prefix}-waiting-clipboard.txt`, `${await read()}\n`);
       await toastGone(/^Copied \d+ links? for alice$/);
+    },
+    // Dismiss from a Waiting card's sheet; once the Undo row goes with a tab change, Waiting's own "show them again" brings it
+    // back, so later scenarios see it [ATT-08].
+    "waiting-dismiss": async () => {
+      await tab("Waiting");
+      const details = page.getByRole("button", { name: /^Retire the v1 orders endpoint, more$/ }).first();
+      await details.click();
+      await page.getByRole("button", { name: "Dismiss", exact: true }).last().click();
+      await page.getByText(/^Dismissed “Retire the v1 orders endpoint”/).waitFor({ timeout: 10000 });
+      await details.waitFor({ state: "detached" });
+      await settled();
+      await shot("waiting-dismissed");
+      await tab("Doing");
+      await tab("Waiting");
+      const again = page.getByText("1 dismissed · show them again", { exact: true });
+      await again.scrollIntoViewIfNeeded();
+      await settled();
+      await capture("waiting-show-dismissed", () => around(again));
+      await again.click();
+      await page.getByText("Retire the v1 orders endpoint").first().waitFor({ timeout: 10000 });
+      await again.waitFor({ state: "detached" });
+      await settled();
     },
     // Who a question waits on, each by name in its sheet [WAI-02].
     "waiting-sheet": sheet("Waiting", "Invoice totals round wrong", "waiting-sheet"),

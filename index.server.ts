@@ -77,7 +77,7 @@ export default function contribute(server: PluginServerContext) {
     return ready(() => attention.dismissKept(workspaceId)).then(shown);
   });
   server.on("workspace.archived", ({ workspace }) => void ready(() => attention.forgetKept(workspace.id)));
-  server.handle(rpc.restoreDismissed, () => ready(() => attention.restoreDismissed()).then(shown));
+  server.handle(rpc.restoreDismissed, ({ tab }) => ready(() => attention.restoreDismissed(tab)).then(shown));
   server.handle(rpc.setCodeRepo, ({ issueRepo, codeRepo }) => ready(() => attention.setCodeRepo(issueRepo, codeRepo)).then(shown));
   server.handle(rpc.setupStatus, () => setupStatus(store, answers.ghStatus));
   server.handle(rpc.getCoverage, () => configStatus(store));

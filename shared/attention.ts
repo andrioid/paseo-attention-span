@@ -254,6 +254,9 @@ export interface Item {
   target: Target;
   // Latest activity by someone else, for bringing back dismissed items [ATT-08].
   othersActivityAt: string;
+  // My latest words or push on it, which bring back a dismissed wait too: my comments on a thread, or a push, review reply or
+  // conversation comment on my PR [ATT-08].
+  mineAt?: string;
   // History only: when it merged or closed.
   closedAt?: string;
   // History only: what kind of work it was, when that can be told [HIS-04].
@@ -515,6 +518,9 @@ export interface FeedStatus {
   error: string | null;
 }
 
+// The tabs whose items can be dismissed [ATT-08].
+export type DismissTab = "doing" | "waiting";
+
 // What the client renders: dismissed items removed, grouped per tab.
 export interface AttentionView {
   feeds: Record<FeedId, FeedStatus>;
@@ -537,7 +543,8 @@ export interface AttentionView {
   unclaimedFrom: UnclaimedSource;
   // The projects Next up's issues are on [NXT-03, NXT-12].
   projects: ProjectInfo[];
-  dismissedCount: number;
+  // How many of each tab's items are dismissed, for its "show them again" [ATT-08].
+  dismissed: Record<DismissTab, number>;
   // Scopes ticked in Next up's filter; none means all [NXT-03].
   scopes: string[];
   // Sources ticked in Next up's filter; none means all [NXT-09].

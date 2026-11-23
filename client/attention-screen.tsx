@@ -15,7 +15,7 @@ import { cleanSingle, unreadChanges, wrapItems } from "../shared/wrap-up";
 import { nudgeLead, tabCounts } from "../shared/item-view";
 import { useAttention } from "./data";
 import type { IconName } from "./icons";
-import { type Actions, useItemActions } from "./item-actions";
+import { type Actions, type Undoable, useItemActions } from "./item-actions";
 import { Card } from "./item-row";
 import { InProgress } from "./in-progress";
 import { type IssueRowProps, NextUpList } from "./next-up";
@@ -247,19 +247,14 @@ function AttentionList({
           ) : !sessionsKnown ? (
             <Loading text="Checking your sessions…" />
           ) : null}
-          {view.dismissedCount > act.undoable.filter((row) => row.dismissal).length ? (
-            <Pressable
-              accessibilityRole="button"
-              style={clear ? { alignSelf: "center", opacity: 0.7 } : undefined}
-              onPress={act.restoreDismissed}
-            >
-              <Text style={styles.muted}>{view.dismissedCount} dismissed · show them again</Text>
-            </Pressable>
-          ) : null}
+          <ShowDismissed count={view.dismissed.doing} undoable={act.undoable} centered={clear} onPress={() => act.restoreDismissed("doing")} />
         </>
       ) : null}
       {tab === "waiting" ? (
-        calm.waiting ? <Still shore="jetty" title="Nobody's holding you up." line="Nothing to chase." /> : <Waiting groups={view.waiting} actions={actions} />
+        <>
+          {calm.waiting ? <Still shore="jetty" title="Nobody's holding you up." line="Nothing to chase." /> : <Waiting groups={view.waiting} actions={actions} />}
+          <ShowDismissed count={view.dismissed.waiting} undoable={act.undoable} centered={calm.waiting} onPress={() => act.restoreDismissed("waiting")} />
+        </>
       ) : null}
       {tab === "next" ? (
         <NextUpList
@@ -344,6 +339,18 @@ function Sections({ sections, started, actions, issueRow }: { sections: Section[
         <Card items={section.items} actions={actions} />
       </View>
     ),
+  );
+}
+
+// A tab's dismissed items, to bring back; not while the Undo of one just dismissed is still offered. Undo rows go when
+// the tab changes, so the ones showing are this tab's [ATT-08].
+function ShowDismissed({ count, undoable, centered, onPress }: { count: number; undoable: Undoable[]; centered: boolean; onPress: () => void }) {
+  const styles = useStyles();
+  if (count <= undoable.filter((row) => row.dismissal).length) return null;
+  return (
+    <Pressable accessibilityRole="button" style={centered ? { alignSelf: "center", opacity: 0.7 } : undefined} onPress={onPress}>
+      <Text style={styles.muted}>{count} dismissed · show them again</Text>
+    </Pressable>
   );
 }
 
