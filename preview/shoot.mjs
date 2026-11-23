@@ -314,20 +314,38 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       const face = page.getByLabel(/^Waiting on bob since/).first();
       await face.scrollIntoViewIfNeeded();
       await face.hover();
+      // Hints show after a rest longer than settled() waits, so wait for the words.
+      await page.getByText(/^Waiting on bob since/).first().waitFor({ timeout: 5000 });
       await settled();
       await capture("doing-hint", () => around(face));
+      await page.mouse.move(0, 0);
+      // Icon-only buttons say what they do: a card's ›, and the settings gear.
+      const details = page.getByRole("button", { name: /^Details for #\d+$/ }).first();
+      await details.scrollIntoViewIfNeeded();
+      await details.hover();
+      await page.getByText(/^Details for #\d+$/).first().waitFor({ timeout: 5000 });
+      await settled();
+      await capture("doing-details-hint", () => around(details));
+      await page.mouse.move(0, 0);
+      const gear = page.getByRole("button", { name: "Attention Span settings" });
+      await gear.scrollIntoViewIfNeeded();
+      await gear.hover();
+      await page.getByText("Settings", { exact: true }).waitFor({ timeout: 5000 });
+      await settled();
+      await capture("settings-hint", () => around(gear));
       await page.mouse.move(0, 0);
       await tab("Waiting");
       const age = page.getByLabel(/^Waited too long:/).first();
       await age.scrollIntoViewIfNeeded();
       await age.hover();
+      await page.getByText(/^Waited too long:/).first().waitFor({ timeout: 5000 });
       await settled();
       await capture("waiting-too-long", () => around(age));
       await page.mouse.move(0, 0);
       // The icon-only copy button says what it copies [WAI-03].
       const nudge = page.getByRole("button", { name: "Copy what waits on alice" });
       await nudge.hover();
-      await page.getByText("Copy as Markdown", { exact: true }).waitFor({ timeout: 5000 });
+      await page.getByText("Copy what waits on alice", { exact: true }).waitFor({ timeout: 5000 });
       await settled();
       await capture("waiting-copy-hint", () => around(nudge));
       await page.mouse.move(0, 0);

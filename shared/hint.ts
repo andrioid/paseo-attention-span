@@ -5,6 +5,8 @@
 export const HINT_GAP = 8;
 // Less room than this beside the content, and the hint goes above it instead.
 export const HINT_MIN_WIDTH = 160;
+// Above content near the area's right edge, it may shift left this far, so a button's label fits on a line.
+export const HINT_ABOVE_WIDTH = 240;
 
 export type HintPlacement =
   | { side: "beside"; width: number }
@@ -16,6 +18,6 @@ export function hintPlacement(x: number, width: number, left: number, right: num
   if (beside >= HINT_MIN_WIDTH) return { side: "beside", width: beside };
   // From the content's left edge to the area's right; where that's too narrow, as wide as needed by shifting left, but never
   // wider than the area.
-  const span = Math.min(Math.max(HINT_MIN_WIDTH, right - x), right - left);
+  const span = Math.min(Math.max(HINT_ABOVE_WIDTH, right - x), right - left);
   return { side: "above", width: span, offset: Math.min(0, right - span - x) };
 }

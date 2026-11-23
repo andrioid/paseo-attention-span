@@ -11,9 +11,9 @@ describe("hint placement", () => {
   });
 
   it("ATT-19: near the right edge it shifts left to fit, never past either edge of the area", () => {
-    // Content ends 60px before the right edge: 160 wide, 100 to the left of the content.
+    // Content ends 60px before the right edge: 240 wide, 180 to the left of the content.
     const near = hintPlacement(440, 20, 0, 500);
-    expect(near).toEqual({ side: "above", width: 160, offset: -100 });
+    expect(near).toEqual({ side: "above", width: 240, offset: -180 });
     // An area narrower than a hint: as wide as the area, starting at its left edge.
     expect(hintPlacement(50, 20, 40, 140)).toEqual({ side: "above", width: 100, offset: -10 });
   });

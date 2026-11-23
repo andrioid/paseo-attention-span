@@ -28,7 +28,7 @@ import { History } from "./history";
 import { WrapUp } from "./wrap-up";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
-import { Avatar, Button, Loading, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, tint, useCopy, useStyles } from "./ui";
+import { Avatar, Button, Hint, Loading, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, tint, useCopy, useStyles } from "./ui";
 
 const SECTION_ICONS: Record<SectionId, IconName> = {
   reply: "reply",
@@ -164,21 +164,25 @@ function AttentionList({
           ))}
         </View>
         <View style={[styles.row, { gap: 16 }]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh now"
-            accessibilityState={{ busy: refreshing, disabled: pressed }}
-            disabled={pressed}
-            style={styles.row}
-            onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}
-          >
-            <SpinningIcon name="update" size={14} spinning={refreshing} />
-            <Text style={styles.muted}>{feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
-          </Pressable>
-          {openSettings ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
-              <TablerIcon name="settings" size={16} />
+          <Hint text="Refresh now" inline>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Refresh now"
+              accessibilityState={{ busy: refreshing, disabled: pressed }}
+              disabled={pressed}
+              style={styles.row}
+              onPress={() => void attention.refreshNow(TAB_FEED[tab]).catch(() => {})}
+            >
+              <SpinningIcon name="update" size={14} spinning={refreshing} />
+              <Text style={styles.muted}>{feed.fetchedAt ? `${ago(feed.fetchedAt)} ago` : "never"}</Text>
             </Pressable>
+          </Hint>
+          {openSettings ? (
+            <Hint text="Settings" inline>
+              <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} hitSlop={8}>
+                <TablerIcon name="settings" size={16} />
+              </Pressable>
+            </Hint>
           ) : null}
         </View>
       </View>
@@ -362,7 +366,7 @@ function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions
           action={
             who && !who.bot ? (
               <View style={styles.overCard}>
-                <Button icon="copy" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} hint="Copy as Markdown" onPress={() => nudge(who.login)} />
+                <Button icon="copy" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
               </View>
             ) : null
           }
