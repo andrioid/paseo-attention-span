@@ -254,6 +254,9 @@ export interface Item {
   target: Target;
   // Latest activity by someone else, for bringing back dismissed items [ATT-08].
   othersActivityAt: string;
+  // My latest words or push on it, which bring back a dismissed wait too: my comments on a thread, or a push, review reply or
+  // conversation comment on my PR [ATT-08].
+  mineAt?: string;
   // History only: when it merged or closed.
   closedAt?: string;
   // History only: what kind of work it was, when that can be told [HIS-04].

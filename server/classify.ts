@@ -46,6 +46,7 @@ interface Part {
   waitingOn?: WaitingOn[];
   wait?: Item["wait"];
   othersActivityAt: string;
+  mineAt?: string;
 }
 
 const EPOCH = "1970-01-01T00:00:00Z";
@@ -137,6 +138,8 @@ function prState(
     // Requested changes stay mine until I push after them.
     changes: onMe.length > 0 || (pr.reviewDecision === "CHANGES_REQUESTED" && !(lastCommitAt > changesRequestedAt)),
     repliedAt: latest(...unresolved.filter((thread) => isMe(last(thread)?.author)).map((thread) => last(thread)?.createdAt)),
+    // My last conversation comment, like a nudge: it brings a dismissed PR back, but doesn't restart its wait [ATT-08].
+    commentedAt: latest(...pr.comments.nodes.filter((c) => isMe(c.author)).map((c) => c.createdAt)),
     lastCommitAt,
     behindBy,
     // A stacked PR no longer builds on its parent's latest version [UPS-02].
@@ -296,6 +299,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
         (section === "changes" && s.botThreadsOnly ? { login: "review bot", bot: true, since: s.lastCommitAt, role: "changes" as const } : undefined),
       waitingOn: waitingOn.length > 0 ? waitingOn : undefined,
       othersActivityAt: latest(...stack.map((pr) => state(pr).othersActivityAt), waiting?.since, answer?.since),
+      mineAt: latest(waitingSince, ...stack.map((pr) => state(pr).commentedAt)),
     };
   };
 
@@ -337,6 +341,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       wait: lead.wait ?? other?.wait,
       chips: [...lead.chips, ...(stack.length > 1 ? [chip(`stack of ${stack.length}`)] : [])],
       othersActivityAt: latest(lead.othersActivityAt, other?.othersActivityAt),
+      mineAt: latest(lead.mineAt, other?.mineAt),
     };
   });
   type Unit = (typeof units)[number];
@@ -408,6 +413,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       // Actions on GitHub act on my PRs, from my bottom one; Review checks out the top of the stack [ATT-04].
       target: target(unit.own[0] ?? bottom, unit.stack),
       othersActivityAt: latest(...grouped.map((u) => u.othersActivityAt), issueWaiting?.since),
+      mineAt: latest(...grouped.map((u) => u.mineAt)),
     });
   }
 
@@ -438,8 +444,9 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
       waitingOn: section !== "answered" && tagged.length > 0 ? tagged : undefined,
       wait: section === "answered" ? undefined : { reason: flags.question ? "question" : "tagged", since, ...(tooLong ? { tooLong } : {}) },
       actions: section === "answered" ? replyActions(person) : [],
-      // A new answer brings back a dismissed one [ATT-08].
+      // A new answer brings back a dismissed one, and so do my new words [ATT-08].
       othersActivityAt: person ? latest(...(person.comments ?? []).map((c) => c.createdAt)) : EPOCH,
+      mineAt: mine,
     });
   }
 

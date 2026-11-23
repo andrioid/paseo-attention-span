@@ -138,11 +138,16 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     await openAttention();
     await page.getByRole("button", { name: "Refresh now" }).click(); // reloads config.json
     await settled();
-    // An earlier layout's dismissal lives on in the daemon; bring it back.
-    const restore = page.getByText(/dismissed · show them again/);
-    if (await restore.isVisible()) {
-      await restore.click();
+    // An earlier layout's or failed scenario's dismissals live on in the daemon; bring back each tab's.
+    for (const name of ["Waiting", "Doing"]) {
+      await page.getByRole("tab", { name: new RegExp(name) }).first().click();
       await settled();
+      const restore = page.getByText(/dismissed · show them again/);
+      if (await restore.isVisible()) {
+        await restore.click();
+        await restore.waitFor({ state: "detached", timeout: 10000 });
+        await settled();
+      }
     }
   };
   // A tab, scrolled to its top, so a scenario looks the same whether or not others ran before it.

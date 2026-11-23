@@ -93,11 +93,11 @@ export function applyPending(attention: Attention | null, history: Item[], pendi
   return { attention: { ...attention, items, assigned, unclaimed }, history: [...done, ...history] };
 }
 
-// A dismissed item stays hidden until someone else does something on it, its reason changes, or what it waits on begins
-// again, like my new words on a thread [ATT-08].
+// A dismissed item stays hidden until someone else does something on it, its reason changes, or I add words or push to it
+// [ATT-08].
 export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean {
   const entry = dismissed[item.key];
-  return !!entry && entry.section === item.section && item.othersActivityAt <= entry.at && !(entry.since && item.wait && item.wait.since > entry.since);
+  return !!entry && entry.section === item.section && item.othersActivityAt <= entry.at && !(entry.mine && item.mineAt && item.mineAt > entry.mine);
 }
 
 // The keys of a tab's dismissed items: Doing's, or Waiting's, where my Doing PRs that wait on others are too [ATT-08, PRS-15].

@@ -2,7 +2,7 @@ import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useToast } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ActionId, AgentSummary, AttentionView, DismissTab, HistoryFilter, IssueCloseReason, Item, NextUpIssue, Target, WrapItem } from "../shared/attention";
 import type { AttentionConfig, SessionKind } from "../shared/config";
 import { summarizeRerun } from "../shared/checks";
@@ -124,6 +124,8 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   // makes a Wrap up row go away after its screenshot [ATT-22].
   const [archivedSessions, setArchivedSessions] = useState<ReadonlySet<string>>(new Set());
   const [undoable, setUndoable] = useState<Undoable[]>([]);
+  // Bumped when the tab changes and its Undo rows go, so a change still running then adds none to the next tab [ATT-08].
+  const undoTab = useRef(0);
   const [placing, setPlacing] = useState<Placing | null>(null);
   const [options, setOptions] = useState<OptionsSpec | null>(null);
   const view = attention.data;
@@ -142,9 +144,11 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   // A change from one tap, without confirming: Undo instead, where it can be taken back [SAFE-01, ATT-08, ATT-14].
   // The server answers each with the list after it, so nothing needs a refresh.
   function change(key: string, label: string, work: () => Promise<AttentionView>, done: string, undo?: () => Promise<AttentionView>, dismissal?: boolean) {
+    const tab = undoTab.current;
     void run(key, label, async () => {
       attention.setView(await work());
       if (!undo) return toast.show(done, { variant: "success" });
+      if (tab !== undoTab.current) return;
       const id = Date.now() + Math.random();
       setUndoable((rows) => [...rows, { id, text: done, undo: async () => attention.setView(await undo()), dismissal }]);
     });
@@ -386,7 +390,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     busy,
     archivedSessions,
     undoable,
-    clearUndo: () => setUndoable([]),
+    clearUndo: () => ((undoTab.current += 1), setUndoable([])),
     undo: (row: Undoable) =>
       void run(String(row.id), "Undo", async () => {
         await row.undo();

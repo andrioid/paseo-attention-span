@@ -102,7 +102,7 @@ export class AttentionService {
   async dismiss(key: string): Promise<AttentionView> {
     const item = this.items().find((candidate) => candidate.key === key);
     if (item) {
-      this.state.dismissed[key] = { at: item.othersActivityAt, section: item.section, ...(item.wait ? { since: item.wait.since } : {}) };
+      this.state.dismissed[key] = { at: item.othersActivityAt, section: item.section, ...(item.mineAt ? { mine: item.mineAt } : {}) };
       await this.save();
     }
     return this.view();

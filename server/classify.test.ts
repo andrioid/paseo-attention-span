@@ -609,6 +609,16 @@ describe("waiting", () => {
     expect(fresh.wait).toEqual({ reason: "review", since: daysAgo(2) });
   });
 
+  it("ATT-08, ATT-11: a nudge on my PR is my latest activity, which brings back a dismissal, but its wait still counts from my push", () => {
+    const nudged = { reviewRequests: asked, commits: commit("SUCCESS", 4), comments: { nodes: [comment(me, "@bob any update?", 1)] } };
+    const [item] = run({ mine: [pr(1, nudged)] }).items;
+    expect(item).toMatchObject({ section: "wait_review", mineAt: daysAgo(1), wait: { since: daysAgo(4), tooLong: true } });
+    const [quiet] = run({ mine: [pr(1, { reviewRequests: asked, commits: commit("SUCCESS", 4) })] }).items;
+    expect(quiet.mineAt).toBe(daysAgo(4));
+    const [thread] = run({ involved: [issue(70, [comment(me, "@bob which shops?", 2)])] }).items;
+    expect(thread.mineAt).toBe(daysAgo(2));
+  });
+
   it("ATT-11, PRS-15: my PR in Doing waits too long on whom I asked only when nudging them is fair", () => {
     const old = (ci: string) => ({ reviewRequests: asked, commits: commit(ci, 5) });
     const approved = run({ mine: [pr(1, { ...old("SUCCESS"), reviewDecision: "APPROVED" })] }).items[0];

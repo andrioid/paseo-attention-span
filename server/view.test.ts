@@ -21,10 +21,10 @@ describe("dismiss", () => {
     expect(newReason.doing.map((section) => section.id)).toEqual(["ci"]);
   });
 
-  it("ATT-08, WAI-01: a dismissed wait stays hidden until what it waits on begins again, like my new words", () => {
+  it("ATT-08, WAI-01: a dismissed wait stays hidden until I add words or push to it", () => {
     const at = "2026-10-01T00:00:00Z";
-    const dismissed = { q: { at: "1970-01-01T00:00:00Z", section: "wait_answer" as const, since: at } };
-    const asked = (since: string) => item("q", "wait_answer", { othersActivityAt: "1970-01-01T00:00:00Z", wait: { reason: "tagged", since } });
+    const dismissed = { q: { at: "1970-01-01T00:00:00Z", section: "wait_answer" as const, mine: at } };
+    const asked = (mineAt: string) => item("q", "wait_answer", { othersActivityAt: "1970-01-01T00:00:00Z", mineAt, wait: { reason: "tagged", since: mineAt } });
     expect(buildView(attention([asked(at)]), [], dismissed, meta)).toMatchObject({ waiting: [], dismissed: { doing: 0, waiting: 1 } });
     expect(buildView(attention([asked("2026-10-03T00:00:00Z")]), [], dismissed, meta).waiting.flatMap((group) => group.items.map((i) => i.key))).toEqual(["q"]);
   });
