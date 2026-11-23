@@ -12,7 +12,7 @@ export const SCENARIOS = [
   { name: "wrap-details", shots: ["doing-wrap-sheet", "doing-wrap-ask-sheet", "doing-wrap-worktree-sheet"] },
   { name: "wrap-confirm", shots: ["doing-wrap-dirty", "doing-wrap-multi"] },
   { name: "wrap-ask", shots: ["doing-wrap-kept-open"] },
-  { name: "hints", shots: ["doing-hint", "waiting-too-long"], desktop: true },
+  { name: "hints", shots: ["doing-hint", "waiting-too-long", "waiting-copy-hint"], desktop: true },
   { name: "waiting-copy", shots: ["waiting-copied"] },
   { name: "waiting-sheet", shots: ["waiting-sheet"] },
   { name: "doing-sheet", shots: ["doing-sheet"] },
