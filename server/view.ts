@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, baseItem, type Chip, type CloseAsk, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type Chip, type CloseAsk, type DismissTab, type FeedId, type FeedStatus, type HistoryFilter, type Item, type NextUpIssue, type Section, SECTION_ORDER, SECTIONS, type TabId, type WaitingGroup } from "../shared/attention";
 import type { AttentionConfig } from "../shared/config";
 import type { KeptRow } from "../shared/archive";
 import type { NewIssueInfo } from "../shared/new-issue";
@@ -93,10 +93,17 @@ export function applyPending(attention: Attention | null, history: Item[], pendi
   return { attention: { ...attention, items, assigned, unclaimed }, history: [...done, ...history] };
 }
 
-// A dismissed item stays hidden until someone else does something on it or its reason changes [ATT-08].
+// A dismissed item stays hidden until someone else does something on it, its reason changes, or what it waits on begins
+// again, like my new words on a thread [ATT-08].
 export function isDismissed(item: Item, dismissed: State["dismissed"]): boolean {
   const entry = dismissed[item.key];
-  return !!entry && entry.section === item.section && item.othersActivityAt <= entry.at;
+  return !!entry && entry.section === item.section && item.othersActivityAt <= entry.at && !(entry.since && item.wait && item.wait.since > entry.since);
+}
+
+// The keys of a tab's dismissed items: Doing's, or Waiting's, where my Doing PRs that wait on others are too [ATT-08, PRS-15].
+export function dismissedIn(items: Item[], dismissed: State["dismissed"], tab: DismissTab): string[] {
+  const inTab = tab === "doing" ? (item: Item) => SECTIONS[item.section].tab === "doing" : inWaiting;
+  return items.filter((item) => inTab(item) && isDismissed(item, dismissed)).map((item) => item.key);
 }
 
 // Waiting by who it waits on, so I know whom to nudge: whoever blocks the most first, ties by the longest wait, then bots, who
@@ -185,6 +192,6 @@ export function buildView(attention: Attention | null, fetched: Item[], dismisse
     unclaimed: marked(attention?.unclaimed ?? []),
     unclaimedFrom: attention?.unclaimedFrom ?? "config",
     projects: attention?.projects ?? [],
-    dismissedCount: items.filter((item) => isDismissed(item, dismissed)).length,
+    dismissed: { doing: dismissedIn(items, dismissed, "doing").length, waiting: dismissedIn(items, dismissed, "waiting").length },
   };
 }

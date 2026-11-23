@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { agent, issue, item, viewMeta } from "../shared/test-builders";
-import { applyPending, buildView, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
+import { applyPending, buildView, dismissedIn, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
 const meta = viewMeta({ feed: { fetchedAt: null, refreshing: false, error: null } });
 
@@ -12,13 +12,33 @@ describe("dismiss", () => {
   it("ATT-08: hides a dismissed item until someone else acts on it or its reason changes", () => {
     const dismissed = { a: { at: "2026-10-01T00:00:00Z", section: "reply" as const } };
     const hidden = buildView(attention([item("a", "reply", { othersActivityAt: "2026-10-01T00:00:00Z" })]), [], dismissed, meta);
-    expect(hidden).toMatchObject({ count: 0, dismissedCount: 1, doing: [] });
+    expect(hidden).toMatchObject({ count: 0, dismissed: { doing: 1, waiting: 0 }, doing: [] });
 
     const newActivity = buildView(attention([item("a", "reply", { othersActivityAt: "2026-10-02T00:00:00Z" })]), [], dismissed, meta);
     expect(newActivity.count).toBe(1);
 
     const newReason = buildView(attention([item("a", "ci", { othersActivityAt: "2026-10-01T00:00:00Z" })]), [], dismissed, meta);
     expect(newReason.doing.map((section) => section.id)).toEqual(["ci"]);
+  });
+
+  it("ATT-08, WAI-01: a dismissed wait stays hidden until what it waits on begins again, like my new words", () => {
+    const at = "2026-10-01T00:00:00Z";
+    const dismissed = { q: { at: "1970-01-01T00:00:00Z", section: "wait_answer" as const, since: at } };
+    const asked = (since: string) => item("q", "wait_answer", { othersActivityAt: "1970-01-01T00:00:00Z", wait: { reason: "tagged", since } });
+    expect(buildView(attention([asked(at)]), [], dismissed, meta)).toMatchObject({ waiting: [], dismissed: { doing: 0, waiting: 1 } });
+    expect(buildView(attention([asked("2026-10-03T00:00:00Z")]), [], dismissed, meta).waiting.flatMap((group) => group.items.map((i) => i.key))).toEqual(["q"]);
+  });
+
+  it("ATT-08, PRS-15: each tab counts its own dismissed items; my Doing PR that waits on others counts in both", () => {
+    const at = "2026-10-01T00:00:00Z";
+    const items = [
+      item("d", "ci", { othersActivityAt: at }),
+      item("w", "wait_answer", { othersActivityAt: at }),
+      item("both", "ready", { othersActivityAt: at, wait: { reason: "review", since: at }, waitingOn: [{ login: "bob", team: false, since: at }] }),
+    ];
+    const dismissed = Object.fromEntries(items.map((i) => [i.key, { at, section: i.section }]));
+    expect(buildView(attention(items), [], dismissed, meta).dismissed).toEqual({ doing: 2, waiting: 2 });
+    expect(dismissedIn(items, dismissed, "waiting").sort()).toEqual(["both", "w"]);
   });
 
   it("ATT-09: counts what is visible in Doing; other tabs get their own lists", () => {

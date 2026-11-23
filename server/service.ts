@@ -1,4 +1,4 @@
-import { type Attention, type AttentionView, baseItem, type CloseAsk, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
+import { type Attention, type AttentionView, baseItem, type CloseAsk, type DismissTab, type FeedId, type FeedStatus, type HistoryFilter, type Item, memberKeys, type ProjectsAccess, type Reviewer } from "../shared/attention";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { AttentionConfig, type FieldRole } from "../shared/config";
 import { newIssueRepos } from "../shared/new-issue";
@@ -12,7 +12,7 @@ import type { Port } from "./port";
 import { historySince, isTimeZone, type UnclaimedSearch, unclaimedSearches } from "./queries";
 import type { Details, LiveResult, ReferencedIssue } from "./github-types";
 import { State } from "./store";
-import { applyPending, buildView, doneItem, type Effect, isPending, type Pending, SETTLE_MS } from "./view";
+import { applyPending, buildView, dismissedIn, doneItem, type Effect, isPending, type Pending, SETTLE_MS } from "./view";
 import { keySet, uniqueKeys } from "../shared/names";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
@@ -102,7 +102,7 @@ export class AttentionService {
   async dismiss(key: string): Promise<AttentionView> {
     const item = this.items().find((candidate) => candidate.key === key);
     if (item) {
-      this.state.dismissed[key] = { at: item.othersActivityAt, section: item.section };
+      this.state.dismissed[key] = { at: item.othersActivityAt, section: item.section, ...(item.wait ? { since: item.wait.since } : {}) };
       await this.save();
     }
     return this.view();
@@ -133,8 +133,10 @@ export class AttentionService {
     return this.view();
   }
 
-  async restoreDismissed(): Promise<AttentionView> {
-    this.state.dismissed = {};
+  // A tab's dismissed items, or all of them [ATT-08].
+  async restoreDismissed(tab?: DismissTab): Promise<AttentionView> {
+    if (!tab) this.state.dismissed = {};
+    else for (const key of dismissedIn(this.items(), this.state.dismissed, tab)) delete this.state.dismissed[key];
     await this.save();
     return this.view();
   }

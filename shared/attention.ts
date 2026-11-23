@@ -515,6 +515,9 @@ export interface FeedStatus {
   error: string | null;
 }
 
+// The tabs whose items can be dismissed [ATT-08].
+export type DismissTab = "doing" | "waiting";
+
 // What the client renders: dismissed items removed, grouped per tab.
 export interface AttentionView {
   feeds: Record<FeedId, FeedStatus>;
@@ -537,7 +540,8 @@ export interface AttentionView {
   unclaimedFrom: UnclaimedSource;
   // The projects Next up's issues are on [NXT-03, NXT-12].
   projects: ProjectInfo[];
-  dismissedCount: number;
+  // How many of each tab's items are dismissed, for its "show them again" [ATT-08].
+  dismissed: Record<DismissTab, number>;
   // Scopes ticked in Next up's filter; none means all [NXT-03].
   scopes: string[];
   // Sources ticked in Next up's filter; none means all [NXT-09].

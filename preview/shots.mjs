@@ -15,6 +15,7 @@ export const SCENARIOS = [
   { name: "hints", shots: ["doing-hint", "doing-details-hint", "settings-hint", "waiting-too-long", "waiting-copy-hint"], desktop: true },
   { name: "waiting-copy", shots: ["waiting-copied"] },
   { name: "waiting-sheet", shots: ["waiting-sheet"] },
+  { name: "waiting-dismiss", shots: ["waiting-dismissed", "waiting-show-dismissed"] },
   { name: "doing-sheet", shots: ["doing-sheet"] },
   { name: "doing-issue-sheet", shots: ["doing-issue-sheet"] },
   { name: "doing-in-progress-sheet", shots: ["doing-in-progress-sheet"] },

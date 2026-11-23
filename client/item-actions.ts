@@ -3,7 +3,7 @@ import { openExternalUrl, type PluginScreenProps, usePaseo, useRpc } from "@getp
 import { useToast } from "@getpaseo/plugin/client/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import type { ActionId, AgentSummary, AttentionView, HistoryFilter, IssueCloseReason, Item, NextUpIssue, Target, WrapItem } from "../shared/attention";
+import type { ActionId, AgentSummary, AttentionView, DismissTab, HistoryFilter, IssueCloseReason, Item, NextUpIssue, Target, WrapItem } from "../shared/attention";
 import type { AttentionConfig, SessionKind } from "../shared/config";
 import { summarizeRerun } from "../shared/checks";
 import { ALL_NOTES, ALL_WRAP } from "../shared/got-it";
@@ -392,7 +392,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
         await row.undo();
         setUndoable((rows) => rows.filter((other) => other.id !== row.id));
       }),
-    restoreDismissed: () => void run("restore", "Restore", async () => (attention.setView(await restore({})), setUndoable([]))),
+    restoreDismissed: (tab: DismissTab) => void run("restore", "Restore", async () => (attention.setView(await restore({ tab })), setUndoable([]))),
     placing,
     place,
     cancelPlacing: () => setPlacing(null),
