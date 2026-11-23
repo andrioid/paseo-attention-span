@@ -61,7 +61,8 @@ export interface CardProps {
 
 export function CardList({ children }: { children: ReactNode }) {
   const styles = useStyles();
-  return <View style={styles.card}>{children}</View>;
+  // Unclipped, so an action's hint can show above it on the first row.
+  return <View style={[styles.card, { overflow: "visible" }]}>{children}</View>;
 }
 
 export function CardRow({ first, mark, title, meta, accessibilityLabel, onOpen, hover, primary, secondary, busy, extra, confirm, overlay }: CardProps & { first: boolean }) {

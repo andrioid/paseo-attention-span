@@ -99,7 +99,6 @@ export function History({
                       icon="copy"
                       variant="ghost"
                       accessibilityLabel={`Copy links from ${label}`}
-                      hint="Copy as Markdown"
                       onPress={() => copy(week.copy.text, `Copied ${links} link${links === 1 ? "" : "s"} from ${label}`)}
                     />
                   </View>

@@ -234,7 +234,10 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
     setPlacement(null);
   };
   const where: ViewStyle =
-    placement?.side === "beside" ? { left: "100%", marginLeft: HINT_GAP, bottom: -2 } : { left: placement?.offset ?? 0, bottom: "100%", marginBottom: 4 };
+    placement?.side === "beside"
+      ? { left: "100%", marginLeft: HINT_GAP, bottom: -2 }
+      : // Shifted left to fit near the right edge: kept to that edge, so it stays over what it's about.
+        { left: placement?.offset ?? 0, bottom: "100%", marginBottom: 4, alignItems: placement && placement.offset < 0 ? "flex-end" : "flex-start" };
   return (
     // Raised while shown: every view is its own layer here, so the words would otherwise sit under whatever follows.
     <View ref={self} accessibilityLabel={text} onPointerEnter={show} onPointerLeave={hide} style={[inline ? null : { alignSelf: "flex-start" }, placement ? { zIndex: 10 } : null]}>
@@ -304,7 +307,6 @@ export function Button({
   busy,
   pressed,
   accessibilityLabel,
-  hint,
 }: {
   label?: string;
   icon?: IconName;
@@ -313,18 +315,18 @@ export function Button({
   disabled?: boolean;
   busy?: boolean;
   pressed?: boolean;
+  // An icon-only button shows it on hover too, so every icon says what it does.
   accessibilityLabel?: string;
-  // Says what an icon-only button does, on hover and to screen readers.
-  hint?: string;
 }) {
   const styles = useStyles();
   const { hovered, hover } = useHover();
   const { c } = styles;
+  const tip = label ? undefined : accessibilityLabel;
   const color = variant === "solid" ? c.accentForeground : variant === "calm" ? styles.action : variant === "ghost" ? c.foregroundMuted : variant === "danger" ? c.statusDanger : c.foreground;
   const button = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? hint ?? label ?? icon}
+      accessibilityLabel={accessibilityLabel ?? label ?? icon}
       accessibilityState={{ disabled: disabled || busy, busy }}
       aria-pressed={pressed}
       disabled={disabled || busy}
@@ -345,8 +347,8 @@ export function Button({
       {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
     </Pressable>
   );
-  return hint ? (
-    <Hint text={hint} inline>
+  return tip ? (
+    <Hint text={tip} inline>
       {button}
     </Hint>
   ) : (

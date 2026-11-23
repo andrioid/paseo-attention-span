@@ -151,12 +151,13 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     await page.evaluate(`(${scroller})()?.scrollTo(0, 0)`);
     await settled();
   };
+  // to: the header that ends the band, or a function from the band's top to where it ends.
   const band = async (from, to) => {
     const header = (title) => page.locator(`text=/^${title}/ >> visible=true`).first();
     await header(from).scrollIntoViewIfNeeded();
     await settled();
     const y = Math.max(0, Math.floor((await header(from).boundingBox()).y) - 24);
-    const end = Math.ceil((await header(to).boundingBox()).y) - 16;
+    const end = typeof to === "function" ? await to(y) : Math.ceil((await header(to).boundingBox()).y) - 16;
     // Just the list's column, with even margins: the sidebar on desktops is 320 px wide.
     const sidebar = layout.isMobile ? 0 : 320;
     const x = Math.max(sidebar, Math.floor((await header(from).boundingBox()).x) - 48);
@@ -314,20 +315,38 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       const face = page.getByLabel(/^Waiting on bob since/).first();
       await face.scrollIntoViewIfNeeded();
       await face.hover();
+      // Hints show after a rest longer than settled() waits, so wait for the words.
+      await page.getByText(/^Waiting on bob since/).first().waitFor({ timeout: 5000 });
       await settled();
       await capture("doing-hint", () => around(face));
+      await page.mouse.move(0, 0);
+      // Icon-only buttons say what they do: a card's ›, and the settings gear.
+      const details = page.getByRole("button", { name: /^Details for #\d+$/ }).first();
+      await details.scrollIntoViewIfNeeded();
+      await details.hover();
+      await page.getByText(/^Details for #\d+$/).first().waitFor({ timeout: 5000 });
+      await settled();
+      await capture("doing-details-hint", () => around(details));
+      await page.mouse.move(0, 0);
+      const gear = page.getByRole("button", { name: "Attention Span settings" });
+      await gear.scrollIntoViewIfNeeded();
+      await gear.hover();
+      await page.getByText("Settings", { exact: true }).waitFor({ timeout: 5000 });
+      await settled();
+      await capture("settings-hint", () => around(gear));
       await page.mouse.move(0, 0);
       await tab("Waiting");
       const age = page.getByLabel(/^Waited too long:/).first();
       await age.scrollIntoViewIfNeeded();
       await age.hover();
+      await page.getByText(/^Waited too long:/).first().waitFor({ timeout: 5000 });
       await settled();
       await capture("waiting-too-long", () => around(age));
       await page.mouse.move(0, 0);
       // The icon-only copy button says what it copies [WAI-03].
       const nudge = page.getByRole("button", { name: "Copy what waits on alice" });
       await nudge.hover();
-      await page.getByText("Copy as Markdown", { exact: true }).waitFor({ timeout: 5000 });
+      await page.getByText("Copy what waits on alice", { exact: true }).waitFor({ timeout: 5000 });
       await settled();
       await capture("waiting-copy-hint", () => around(nudge));
       await page.mouse.move(0, 0);
@@ -422,7 +441,16 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await page.getByRole("checkbox", { name: "Changed by others", exact: true }).click();
       await done();
       await shot("history-filtered");
-      await bandShot("history-groups", "Reviewed", "Last week");
+      // Down to the next week's header: which week Reviewed falls in depends on the day, so it's found, not named.
+      await bandShot("history-groups", "Reviewed", async (top) => {
+        const below = [];
+        for (const copy of await page.getByRole("button", { name: /^Copy links from / }).all()) {
+          const box = await copy.boundingBox();
+          if (box && box.y > top + 24) below.push(box.y);
+        }
+        const bottom = await page.evaluate(`(${scroller})()?.firstElementChild?.getBoundingClientRect().bottom ?? 0`);
+        return Math.ceil(below.length ? Math.min(...below) : bottom) - 16;
+      });
       const read = await clipboard();
       // The newest week with work in it: on a Monday, "This week" has none yet.
       await page.getByRole("button", { name: /^Copy links from / }).first().click();
