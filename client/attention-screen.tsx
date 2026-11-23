@@ -362,7 +362,7 @@ function Waiting({ groups, actions }: { groups: WaitingGroup[]; actions: Actions
           action={
             who && !who.bot ? (
               <View style={styles.overCard}>
-                <Button icon="markdown" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} onPress={() => nudge(who.login)} />
+                <Button icon="copy" variant="ghost" accessibilityLabel={`Copy what waits on ${who.login}`} hint="Copy as Markdown" onPress={() => nudge(who.login)} />
               </View>
             ) : null
           }

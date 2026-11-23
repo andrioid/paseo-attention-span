@@ -324,6 +324,13 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await settled();
       await capture("waiting-too-long", () => around(age));
       await page.mouse.move(0, 0);
+      // The icon-only copy button says what it copies [WAI-03].
+      const nudge = page.getByRole("button", { name: "Copy what waits on alice" });
+      await nudge.hover();
+      await page.getByText("Copy as Markdown", { exact: true }).waitFor({ timeout: 5000 });
+      await settled();
+      await capture("waiting-copy-hint", () => around(nudge));
+      await page.mouse.move(0, 0);
       await settled();
     },
     // Copy what waits on alice for a nudge, and keep what landed on the clipboard [WAI-03].

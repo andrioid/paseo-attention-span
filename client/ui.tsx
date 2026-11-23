@@ -304,6 +304,7 @@ export function Button({
   busy,
   pressed,
   accessibilityLabel,
+  hint,
 }: {
   label?: string;
   icon?: IconName;
@@ -313,15 +314,17 @@ export function Button({
   busy?: boolean;
   pressed?: boolean;
   accessibilityLabel?: string;
+  // Says what an icon-only button does, on hover and to screen readers.
+  hint?: string;
 }) {
   const styles = useStyles();
   const { hovered, hover } = useHover();
   const { c } = styles;
   const color = variant === "solid" ? c.accentForeground : variant === "calm" ? styles.action : variant === "ghost" ? c.foregroundMuted : variant === "danger" ? c.statusDanger : c.foreground;
-  return (
+  const button = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label ?? icon}
+      accessibilityLabel={accessibilityLabel ?? hint ?? label ?? icon}
       accessibilityState={{ disabled: disabled || busy, busy }}
       aria-pressed={pressed}
       disabled={disabled || busy}
@@ -341,6 +344,13 @@ export function Button({
       {busy ? <ActivityIndicator size="small" color={color} style={{ width: 15, height: 15 }} /> : icon ? <TablerIcon name={icon} size={15} color={color} /> : null}
       {label ? <Text style={{ color, fontSize: 13, fontWeight: "600" }}>{label}</Text> : null}
     </Pressable>
+  );
+  return hint ? (
+    <Hint text={hint} inline>
+      {button}
+    </Hint>
+  ) : (
+    button
   );
 }
 

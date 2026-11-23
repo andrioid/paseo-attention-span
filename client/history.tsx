@@ -96,9 +96,10 @@ export function History({
                 links > 0 ? (
                   <View style={styles.overCard}>
                     <Button
-                      icon="markdown"
+                      icon="copy"
                       variant="ghost"
                       accessibilityLabel={`Copy links from ${label}`}
+                      hint="Copy as Markdown"
                       onPress={() => copy(week.copy.text, `Copied ${links} link${links === 1 ? "" : "s"} from ${label}`)}
                     />
                   </View>
