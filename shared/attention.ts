@@ -4,7 +4,7 @@ import { keySet, uniqueKeys } from "./names";
 import type { KeptRow } from "./archive";
 import type { NewIssueInfo } from "./new-issue";
 import type { AttentionConfig, MergeMethod, SessionKind } from "./config";
-import type { WorkKind } from "./work";
+import type { Work } from "./work";
 
 // Tabs tell the story of my work: what I finished, what needs me, what waits on others, what's next.
 export type TabId = "history" | "doing" | "waiting" | "next";
@@ -260,7 +260,7 @@ export interface Item {
   // History only: when it merged or closed.
   closedAt?: string;
   // History only: what kind of work it was, when that can be told [HIS-04].
-  work?: WorkKind;
+  work?: Work;
   // History only: an issue closed as not planned, kept out of the copied week [HIS-03].
   notPlanned?: true;
   // A PR of mine I closed without merging, for Wrap up's words [ATT-22].
@@ -362,7 +362,8 @@ export interface NextUpIssue {
   title: string;
   url: string;
   createdAt: string;
-  type?: string;
+  // What kind of work it is, told as History tells it, so closing it keeps it [NXT-15, HIS-04].
+  work?: Work;
   priority?: string;
   effort?: string;
   scope?: string;

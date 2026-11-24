@@ -13,7 +13,7 @@ const item = (number: number, section: Item["section"], closedDays: number, fiel
 const sameWeek = (fields: Partial<Item> = {}) => ({ ...fields, closedAt: daysAgo(0), othersActivityAt: daysAgo(0) });
 
 describe("History's weeks and their copy", () => {
-  const done = item(1, "done", 0, { ...sameWeek(), work: "bug" });
+  const done = item(1, "done", 0, { ...sameWeek(), work: { name: "bug", kind: "bug" } });
   const notPlanned = item(2, "done", 0, { ...sameWeek(), kind: "issue", notPlanned: true });
   const reviewed = item(3, "reviewed", 0, sameWeek());
   const handed = item(4, "handed_off", 0, sameWeek());
@@ -27,6 +27,15 @@ describe("History's weeks and their copy", () => {
     expect(weeks[0].reviewed).toEqual([]);
     expect(weeks[0].changed).toEqual([]);
     expect(weeks[0].copy).toEqual({ text: "- 🐞 [Item 1](https://github.com/acme/shop/pull/1)", links: 1 });
+  });
+
+  it("HIS-04: epics and debt lead with their own emoji; a type it doesn't know leads a PR with 🔀 and an issue with nothing", () => {
+    const week = (...items: Item[]) => historyWeeks(items, []).weeks[0].copy.text;
+    const epic = item(6, "done", 0, { ...sameWeek(), kind: "issue", work: { name: "epic", kind: "epic" } });
+    const debt = item(7, "done", 0, { ...sameWeek(), kind: "issue", work: { name: "debt", kind: "debt" } });
+    const spikePr = item(8, "done", 0, { ...sameWeek(), work: { name: "spike" } });
+    const spikeIssue = item(9, "done", 0, { ...sameWeek(), kind: "issue", work: { name: "spike" } });
+    expect(week(epic, debt, spikePr, spikeIssue).split("\n").map((line) => line.split(" [")[0])).toEqual(["- 🏔️", "- 🧾", "- 🔀", "-"]);
   });
 
   it("HIS-02, HIS-03: with Reviewed shown, the copy has both lists under their headings", () => {

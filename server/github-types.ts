@@ -108,6 +108,7 @@ export interface PickableNode {
   createdAt: string;
   repository: Repo & { isFork?: boolean };
   issueType: { name: string } | null;
+  labels?: Nodes<{ name: string }>;
   issueFieldValues: Nodes<{ name?: string; field?: { name: string } }>;
   // Open PRs that close it, so a card can say someone is on it [NXT-10].
   closedByPullRequestsReferences?: Nodes<{ number: number; url: string; state: string; author: { login: string } | null }>;
