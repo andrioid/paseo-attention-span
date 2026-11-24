@@ -233,7 +233,9 @@ function ItemSheet({ item, waitChips, sessions, actions, ...handlers }: { item: 
   const elsewhere = !!targetUrl(item);
   // The row of the PR its actions apply to, where it's in the stack line: marked there instead of named on top.
   const targetRow = elsewhere ? item.children.find((child) => child.url === item.target.url) : undefined;
-  const meta = elsewhere && !targetRow ? [`actions apply to PR #${item.target.number}`] : [];
+  // How it finished, as its card says it ("closed 1d ago by bob as not planned"), so the sheet keeps the close reason [HIS-07].
+  const when = cardWhen(item);
+  const meta = [...(when ? [when] : []), ...(elsewhere && !targetRow ? [`actions apply to PR #${item.target.number}`] : [])];
   // PRs already in the stack line link from there; list only the rest, like someone else's PR closing the same issue.
   const shown = new Set(item.children.map((child) => child.url));
   const extra = details.data && { ...details.data, linked: details.data.linked.filter((link) => !shown.has(link.url)) };

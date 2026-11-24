@@ -64,7 +64,7 @@ export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanne
   return {
     ...base,
     target: { ...base.target, ...head },
-    chips: [...(work ? [workChip(work)] : []), ...(notPlanned ? [{ text: "not planned", tone: "neutral" as const }] : [])],
+    chips: work ? [workChip(work)] : [],
     ...(work ? { work } : {}),
     ...(notPlanned ? { notPlanned: true as const } : {}),
     // Not planned issues list their PRs on their own, as classifyHistory does [HIS-03].
