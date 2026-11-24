@@ -1,6 +1,6 @@
 import type { HistoryFilter, Item } from "./attention";
 import { linkList } from "./format";
-import { workEmoji } from "./work";
+import { type WorkKind, workEmoji } from "./work";
 
 // History's weeks: what each shows under the filter, and what its copy button copies [HIS-01, HIS-02, HIS-03, HIS-06, HIS-07].
 // Pure, so the report's rules are testable; client/history.tsx draws it.
@@ -50,11 +50,21 @@ export function historyWeeks(items: Item[], filter: HistoryFilter[]): { weeks: H
   return { weeks, anything: byWeek.size > 0 };
 }
 
-// What was done, each led by its kind, then what I reviewed when that's shown, each under its own heading when both are
-// there. Not planned issues stay on screen but out of the report [HIS-03, HIS-04].
+// The copy's order, so a long week skims by kind: epics and features first, then the rest of the kinds it knows, then issue types it
+// doesn't, then issues of no kind, and the PRs led by 🔀 last. Newest first within each [HIS-03].
+const COPY_ORDER: WorkKind[] = ["epic", "feature", "bug", "debt", "task"];
+function copyRank(item: Item): number {
+  if (item.work?.kind) return COPY_ORDER.indexOf(item.work.kind);
+  if (item.kind === "pr") return COPY_ORDER.length + 2;
+  return item.work ? COPY_ORDER.length : COPY_ORDER.length + 1;
+}
+const byKind = (items: Item[]) => [...items].sort((a, b) => copyRank(a) - copyRank(b) || newestFirst(a, b));
+
+// What was done, each led by its kind and sorted by it, then what I reviewed when that's shown, each under its own heading
+// when both are there. Not planned issues stay on screen but out of the report [HIS-03, HIS-04].
 function weekCopy(done: Item[], reviewed: Item[]): HistoryWeek["copy"] {
   const finished = done.filter((item) => !item.notPlanned);
-  const list = (items: Item[]) => linkList(items.map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) })));
+  const list = (items: Item[]) => linkList(byKind(items).map((item) => ({ title: item.title, url: item.url, mark: workEmoji(item) })));
   const finishedText = list(finished);
   const reviewedText = list(reviewed);
   const text = [finishedText && reviewedText ? `## Finished\n\n${finishedText}` : finishedText, reviewedText ? `## Reviewed\n\n${reviewedText}` : ""].filter(Boolean).join("\n\n");
