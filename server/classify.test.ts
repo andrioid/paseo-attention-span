@@ -876,21 +876,27 @@ describe("history", () => {
       closed: [
         { number: 60, title: "Backups", url: "u", closedAt: daysAgo(1), stateReason: "COMPLETED", repository, issueType: { name: "Bug" }, labels: labels("enhancement") },
         { number: 64, title: "Notes", url: "u", closedAt: daysAgo(5), stateReason: "COMPLETED", repository, issueType: null, labels: labels() },
+        { number: 66, title: "Planner", url: "u", closedAt: daysAgo(5), stateReason: "COMPLETED", repository, issueType: { name: "Epic" }, labels: labels() },
+        { number: 67, title: "fix: renderer", url: "u", closedAt: daysAgo(5), stateReason: "COMPLETED", repository, issueType: { name: "Spike" }, labels: labels("bug") },
       ],
       merged: [
         { number: 61, title: "chore: tidy", url: "u", mergedAt: daysAgo(2), repository, labels: labels(), closingIssuesReferences: { nodes: [] } },
         { number: 62, title: "Speed up", url: "u", mergedAt: daysAgo(3), repository, labels: labels("kind/feature"), closingIssuesReferences: { nodes: [] } },
         { number: 63, title: "Tidy", url: "u", mergedAt: daysAgo(4), repository, closingIssuesReferences: { nodes: [] } },
+        { number: 68, title: "refactor: one pipeline", url: "u", mergedAt: daysAgo(4), repository, labels: labels(), closingIssuesReferences: { nodes: [] } },
       ],
       reviewed: [{ number: 65, title: "Onboarding", url: "u", mergedAt: daysAgo(3), repository, author: alice, labels: labels("bug") }],
     }));
-    expect(items.map((item) => [item.number, item.work, chips(item)])).toEqual([
+    expect(items.map((item) => [item.number, item.work?.kind, chips(item)]).sort(([a], [b]) => Number(a) - Number(b))).toEqual([
       [60, "bug", ["bug"]],
       [61, "task", ["task"]],
       [62, "feature", ["feature"]],
       [63, undefined, []],
       [64, undefined, []],
       [65, "bug", ["bug"]],
+      [66, "epic", ["epic"]],
+      [67, undefined, ["spike"]],
+      [68, "debt", ["debt"]],
     ]);
   });
 
@@ -1017,7 +1023,17 @@ describe("next up", () => {
       { config: AttentionConfig.parse({ nextUp }), fieldOptions },
     );
     expect(attention.unclaimed.map((issue) => issue.number)).toEqual([4, 3, 2, 1, 5]);
-    expect(attention.unclaimed[0]).toMatchObject({ type: "Bug", priority: "🏔 P1 High", effort: "🦑 Large (1-2w)", defaultBranch: "main" });
+    expect(attention.unclaimed[0]).toMatchObject({ work: { name: "bug", kind: "bug" }, priority: "🏔 P1 High", effort: "🦑 Large (1-2w)", defaultBranch: "main" });
+  });
+
+  it("NXT-15: tells each issue's kind as History does: its type, else its labels, else its title, and a type it doesn't know by name", () => {
+    const labelled = (number: number, type: string | null, title: string, ...names: string[]) => ({ ...pickable(number, {}, 10, "Bug", title), issueType: type ? { name: type } : null, labels: { nodes: names.map((name) => ({ name })) } });
+    const attention = run(
+      { unclaimed: [labelled(1, null, "Calendar drops events", "bug"), labelled(2, "Epic", "Planner"), labelled(3, null, "Old tables", "tech debt"), labelled(4, "Spike", "fix: faster PDFs", "bug"), labelled(5, null, "Devcontainers")] },
+      { config: AttentionConfig.parse({ nextUp }), fieldOptions },
+    );
+    const work = Object.fromEntries(attention.unclaimed.map((issue) => [issue.number, issue.work]));
+    expect(work).toEqual({ 1: { name: "bug", kind: "bug" }, 2: { name: "epic", kind: "epic" }, 3: { name: "debt", kind: "debt" }, 4: { name: "spike" }, 5: undefined });
   });
 
   it("NXT-10: says which open PRs already close an issue, and where its priority ranks", () => {

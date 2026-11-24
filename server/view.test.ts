@@ -152,9 +152,10 @@ describe("pending changes", () => {
     expect(cardWhen(done, new Date(at))).toMatch(/ as not planned$/);
   });
 
-  it("FRESH-02, HIS-04: until History is fetched, the issue type or title prefix tells the kind of work", () => {
-    expect(doneItem({ ...issue("i"), type: "Bug" }, at)).toMatchObject({ work: "bug", chips: [{ text: "bug" }] });
-    expect(doneItem({ ...item("a", "ready"), title: "feat: export" }, at)).toMatchObject({ work: "feature", chips: [{ text: "feature" }] });
+  it("FRESH-02, HIS-04, NXT-15: until History is fetched, an issue keeps the kind Next up showed, and a PR's title prefix tells", () => {
+    expect(doneItem({ ...issue("i"), work: { name: "bug", kind: "bug" } }, at)).toMatchObject({ work: { kind: "bug" }, chips: [{ text: "bug" }] });
+    expect(doneItem({ ...issue("i"), work: { name: "spike" } }, at)).toMatchObject({ work: { name: "spike" }, chips: [{ text: "spike" }] });
+    expect(doneItem({ ...item("a", "ready"), title: "feat: export" }, at)).toMatchObject({ work: { kind: "feature" }, chips: [{ text: "feature" }] });
     expect(doneItem(issue("i"), at, true)).toMatchObject({ notPlanned: true });
     expect(doneItem(item("a", "ready"), at).work).toBeUndefined();
   });

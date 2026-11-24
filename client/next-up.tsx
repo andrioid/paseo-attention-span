@@ -15,6 +15,7 @@ import {
 import type { NextUpSource } from "../shared/config";
 import { sessionSignal } from "../shared/item-view";
 import { CLEAR_FILTER, type FilterChange, nextUpFilter, repoGroups } from "../shared/next-up-filter";
+import type { WorkKind } from "../shared/work";
 import type { IconName } from "./icons";
 import type { FetchDetails } from "./item-actions";
 import { CardList, CardRow, type Tone } from "./card";
@@ -24,7 +25,7 @@ import { IssuePills, PlaceText, RepoText } from "./entity";
 import { Still } from "./still";
 import { Button, FilterButton, Meta, SectionHeader, TablerIcon, useStyles } from "./ui";
 
-const TYPE_ICONS: Record<string, IconName> = { bug: "bug", feature: "feature", debt: "debt", task: "task", epic: "epic" };
+const KIND_ICONS: Record<WorkKind, IconName> = { bug: "bug", feature: "feature", epic: "epic", debt: "debt", task: "task" };
 
 interface Props {
   // Nothing at all to show: nowhere to look yet, or nothing to pick up after a refresh that worked [NXT-13].
@@ -190,8 +191,10 @@ export function issueDetailsQuery(issue: Pick<NextUpIssue, "repo" | "number">, f
   return { queryKey: detailsKey(subject, undefined, false), queryFn: () => fetchDetails({ subject, checks: false }) };
 }
 
-// The type as the card's mark: red bugs, green features and epics, amber debt, the rest quiet.
-const TYPE_TONES: Record<string, Tone> = { bug: "bad", feature: "good", epic: "good", debt: "warn" };
+// The kind as the card's mark: red bugs, green features and epics, amber debt, the rest quiet [NXT-15].
+const KIND_TONES: Partial<Record<WorkKind, Tone>> = { bug: "bad", feature: "good", epic: "good", debt: "warn" };
+// Its age, then its kind by name, as History's cards end with theirs [NXT-15, HIS-04].
+const issueFacts = (issue: NextUpIssue) => [`${ago(issue.createdAt)} old`, ...(issue.work ? [issue.work.name] : [])];
 
 // Its main action and ›; tapping it opens the sheet with the description, Claim or Unclaim [ATT-06, NXT-07].
 export function IssueRow({ issue, claim, first, agents, login, busy, fetchDetails, onStart, onOptions, onClaim, onCloseIssue, onOpenAgent }: RowProps & { issue: NextUpIssue; claim: boolean; first: boolean }) {
@@ -204,15 +207,15 @@ export function IssueRow({ issue, claim, first, agents, login, busy, fetchDetail
   // An open session leads; without one, Start does [SES-03].
   const sessions = matchSessions(agents, [issue.key]);
   const startLabel = claim ? "Claim & start" : "Start";
-  const type = issue.type?.toLowerCase() ?? "";
+  const kind = issue.work?.kind;
   const close = (reason: IssueCloseReason) => (comment: string) => (setClosing(false), onCloseIssue(issue, reason, comment));
   return (
     <CardRow
       first={first}
-      mark={{ icon: TYPE_ICONS[type] ?? "issue", tone: TYPE_TONES[type] ?? "neutral" }}
+      mark={{ icon: kind ? KIND_ICONS[kind] : "issue", tone: (kind && KIND_TONES[kind]) ?? "neutral" }}
       title={issue.title}
-      accessibilityLabel={`${issue.type ? `${issue.type}: ` : ""}${issue.title}, more`}
-      meta={{ place: { repo: issue.repo, number: issue.number, login }, when: `${ago(issue.createdAt)} old`, signals: sessions[0] ? [...prSignal(issue), sessionSignal(sessions[0])] : prSignal(issue) }}
+      accessibilityLabel={`${issue.work ? `${issue.work.name}: ` : ""}${issue.title}, more`}
+      meta={{ place: { repo: issue.repo, number: issue.number, login }, when: issueFacts(issue).join(" · "), signals: sessions[0] ? [...prSignal(issue), sessionSignal(sessions[0])] : prSignal(issue) }}
       extra={<IssuePills issue={issue} />}
       onOpen={open}
       hover={prefetch}
@@ -306,7 +309,7 @@ function IssueSheet({
       top={
         <>
           {/* The sheet always names the owner, even of my own repos. */}
-          <Meta lead={<PlaceText place={{ repo: issue.repo, number: issue.number, login: null }} />} facts={[`${ago(issue.createdAt)} old`, ...(issue.type ? [issue.type] : [])]} chips={prSignal(issue)} />
+          <Meta lead={<PlaceText place={{ repo: issue.repo, number: issue.number, login: null }} />} facts={issueFacts(issue)} chips={prSignal(issue)} />
           <IssuePills issue={issue} full />
         </>
       }

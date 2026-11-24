@@ -20,7 +20,7 @@ import {
 } from "../shared/attention";
 import { type AttentionConfig, FIELD_ROLES, type MergeMethod, nextUpField } from "../shared/config";
 import { ago, daysSince } from "../shared/format";
-import { workChip, workKind } from "../shared/work";
+import { workChip, workOf } from "../shared/work";
 import type { Actor, Comment, Details, HistoryResult, IssueNode, LinkedIssue, LiveResult, MentionNode, PickableNode, ProjectItemNode, PullRequestNode, RequestedReviewer } from "./github-types";
 import { asksQuestion, excerpt, plainText, taggedIn } from "./markdown";
 import { prKey } from "./queries";
@@ -469,7 +469,7 @@ export function classifyHistory(data: HistoryResult): Item[] {
   const closed = new Map<string, Item>();
   // What kind of work it was, on the card and its copied line [HIS-04].
   const kinded = (item: Item, node: { title: string; labels?: { nodes: { name: string }[] }; issueType?: { name: string } | null }): Item => {
-    const work = workKind({ type: node.issueType?.name, labels: node.labels?.nodes.map((label) => label.name), title: node.title });
+    const work = workOf({ type: node.issueType?.name, labels: node.labels?.nodes.map((label) => label.name), title: node.title });
     return work ? { ...item, work, chips: [workChip(work), ...item.chips] } : item;
   };
   // Who merged a PR, when it wasn't me, alone or under its issue [HIS-05].
@@ -676,6 +676,7 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
       const priorityValue = valueOf(node, priority?.field);
       const priorityColor = priorityValue ? colorsOf(node)?.[priorityValue] : undefined;
       const projects = issueBoards(node);
+      const work = workOf({ type: node.issueType?.name, labels: node.labels?.nodes.map((label) => label.name), title: node.title });
       return {
         // Kept out of the issue, for sorting only.
         effortRank: position(node, effort),
@@ -685,7 +686,7 @@ function rankIssues(nodes: PickableNode[], details: Details, config: AttentionCo
         title: node.title,
         url: node.url,
         createdAt: node.createdAt,
-        type: node.issueType?.name,
+        ...(work ? { work } : {}),
         priority: valueOf(node, priority?.field),
         effort: valueOf(node, effort?.field),
         scope: valueOf(node, scope?.field),

@@ -3,7 +3,7 @@ import type { AttentionConfig } from "../shared/config";
 import type { KeptRow } from "../shared/archive";
 import type { NewIssueInfo } from "../shared/new-issue";
 import { keySet } from "../shared/names";
-import { workChip, workKind } from "../shared/work";
+import { workChip, workOf } from "../shared/work";
 import { type ChangeLedger, changeItems, EMPTY_LEDGER, handedKeys } from "./changes";
 import { historySince } from "./queries";
 import type { State } from "./store";
@@ -56,8 +56,9 @@ export function isPending({ at, effect }: Pending, fetchedAt: Record<FeedId, str
 export function doneItem(source: Item | NextUpIssue, closedAt: string, notPlanned = false): Item {
   const { key, repo, number, title, url } = source;
   const kind = "kind" in source ? source.kind : "issue";
-  // Labels come with the next History fetch; until then the issue type and title prefix tell what kind of work it was [HIS-04].
-  const work = workKind({ type: "type" in source ? source.type : undefined, title });
+  // A Next up issue keeps the kind its card showed; a PR's labels come with the next History fetch, so until then its title
+  // prefix tells [HIS-04, NXT-15].
+  const work = "kind" in source ? workOf({ title }) : source.work;
   const base = baseItem({ key, section: "done", kind, repo, number, title, url });
   // A PR keeps its branch, so a session left on it finds its Wrap up row before History is fetched again [ATT-22].
   const head = "target" in source && source.target.headRefName ? { headRefName: source.target.headRefName } : {};
