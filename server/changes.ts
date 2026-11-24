@@ -322,7 +322,7 @@ export function changeItems(ledger: ChangeLedger, now: Date, windowDays: number,
         change: undefined,
         ...(change.kind === "merged" && change.actor ? { mergedBy: change.actor } : {}),
         ...(change.kind === "issue_closed" && change.actor ? { closedBy: change.actor } : {}),
-        ...(change.reason === "not_planned" ? { notPlanned: true as const, chips: [{ text: "not planned", tone: "neutral" as const }] } : {}),
+        ...(change.reason === "not_planned" ? { notPlanned: true as const } : {}),
       }),
     );
   return { notes, history, finished };

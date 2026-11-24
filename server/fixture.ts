@@ -374,6 +374,8 @@ export function fixtureChanges(now: Date): OthersChange[] {
     event("took_over", "pr", 186, "Split the invoice PDF job", 5, "phil", "phil"),
     { ...event("issue_closed", "issue", 188, "Export fails on empty months", 6, "alice"), reason: "completed" as const },
     event("closed", "pr", 169, "Cache exchange rates", 26, "alice"),
+    // Closed as not planned, so History shows both closed-issue marks side by side [HIS-07].
+    { ...event("issue_closed", "issue", 187, "Import contacts from the old CRM", 30, "bob"), reason: "not_planned" as const },
     event("handed", "pr", 179, "Move invoices to the new queue", 96, "dave", "carol"),
     event("unassigned", "issue", 160, "Refunds skip the ledger", 192, "bob"),
     event("closed", "pr", 170, "Drop the legacy CSV import", 216, "bob"),

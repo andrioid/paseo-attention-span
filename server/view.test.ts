@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Attention, type Item, liftActive, type NextUpIssue, type WaitingOn } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
+import { cardWhen } from "../shared/item-view";
 import { agent, issue, item, viewMeta } from "../shared/test-builders";
 import { applyPending, buildView, dismissedIn, doneItem, isPending, type Pending, SETTLE_MS } from "./view";
 
@@ -145,8 +146,10 @@ describe("pending changes", () => {
     expect(history).toHaveLength(1);
   });
 
-  it("FRESH-02: an issue closed as not planned says so in History", () => {
-    expect(doneItem(issue("i"), at, true)).toMatchObject({ kind: "issue", section: "done", chips: [{ text: "not planned" }] });
+  it("FRESH-02: an issue closed as not planned says so in History, once, in its line", () => {
+    const done = doneItem(issue("i"), at, true);
+    expect(done).toMatchObject({ kind: "issue", section: "done", chips: [] });
+    expect(cardWhen(done, new Date(at))).toMatch(/ as not planned$/);
   });
 
   it("FRESH-02, HIS-04: until History is fetched, the issue type or title prefix tells the kind of work", () => {

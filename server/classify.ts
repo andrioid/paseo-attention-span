@@ -482,7 +482,7 @@ export function classifyHistory(data: HistoryResult): Item[] {
     // Who closed it, when it wasn't me [HIS-07].
     const closer = issue.timelineItems?.nodes.at(-1)?.actor?.login;
     const closedBy = closer && me && closer.toLowerCase() !== me ? { closedBy: closer } : {};
-    const item = kinded({ ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: notPlanned ? [chip("not planned")] : [], ...closedBy, ...(notPlanned ? { notPlanned: true as const } : {}) }, issue);
+    const item = kinded({ ...plain(issue, "issue", "done"), closedAt: issue.closedAt, chips: [], ...closedBy, ...(notPlanned ? { notPlanned: true as const } : {}) }, issue);
     // Not planned issues get no PRs under them: the PRs were still done, so they're listed on their own [HIS-03].
     if (!notPlanned) closed.set(prKey(issue), item);
     items.push(item);

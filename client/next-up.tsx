@@ -231,7 +231,7 @@ export function IssueRow({ issue, claim, first, agents, login, busy, fetchDetail
               comment: true,
               choices: [
                 { label: "Completed", icon: "issueClosed", solid: true, onConfirm: close("completed") },
-                { label: "Not planned", icon: "close", onConfirm: close("not_planned") },
+                { label: "Not planned", icon: "notPlanned", onConfirm: close("not_planned") },
               ],
               onCancel: () => setClosing(false),
             }
