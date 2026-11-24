@@ -28,7 +28,7 @@ import { History } from "./history";
 import { WrapUp } from "./wrap-up";
 import { SetupChecklist } from "./setup";
 import { UpdateNotice } from "./update";
-import { Avatar, Button, Hint, Loading, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, tint, useCopy, useStyles } from "./ui";
+import { Avatar, Button, BUTTON_HINT_DELAY_MS, Hint, Loading, SectionHeader, SpinningIcon, StylesProvider, TablerIcon, tint, useCopy, useStyles } from "./ui";
 
 const SECTION_ICONS: Record<SectionId, IconName> = {
   reply: "reply",
@@ -164,7 +164,7 @@ function AttentionList({
           ))}
         </View>
         <View style={[styles.row, { gap: 16 }]}>
-          <Hint text="Refresh now" inline>
+          <Hint text="Refresh now" inline delayMs={BUTTON_HINT_DELAY_MS}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Refresh now"
@@ -178,7 +178,7 @@ function AttentionList({
             </Pressable>
           </Hint>
           {openSettings ? (
-            <Hint text="Settings" inline>
+            <Hint text="Settings" inline delayMs={BUTTON_HINT_DELAY_MS}>
               {/* Padding, not hitSlop: native only reaches as far as the hint's wrapper, which hugs the icon. */}
               <Pressable accessibilityRole="button" accessibilityLabel="Attention Span settings" onPress={openSettings} style={{ padding: 8, margin: -8 }}>
                 <TablerIcon name="settings" size={16} />

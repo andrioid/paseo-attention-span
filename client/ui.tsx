@@ -207,12 +207,13 @@ export function HintArea({ style, children }: { style?: StyleProp<ViewStyle>; ch
 
 // Resting the pointer this long shows a hint, or fetches a card's details ahead; passing over does neither.
 export const REST_MS = 300;
-const HINT_DELAY_MS = REST_MS;
+// A button's hint waits longer: the pointer rests on a button to press it, and the words would cover what's beside it.
+export const BUTTON_HINT_DELAY_MS = 1000;
 
 // What something means, in words: on hover after a moment, and always to screen readers. It floats over the layout rather
 // than in it, so showing it moves nothing, and it's sized to the room left in its HintArea: beside the content, wrapping
 // upward, or above it where there's too little room beside. Touch has no hover, so there the label is all [ATT-19, ATT-11].
-export function Hint({ text, inline, children }: { text: string; inline?: boolean; children: ReactNode }) {
+export function Hint({ text, inline, delayMs = REST_MS, children }: { text: string; inline?: boolean; delayMs?: number; children: ReactNode }) {
   const styles = useStyles();
   const bounds = useContext(HintBounds);
   const self = useRef<View>(null);
@@ -227,7 +228,7 @@ export function Hint({ text, inline, children }: { text: string; inline?: boolea
         if (bounds?.current) bounds.current.measureInWindow((left, _top, boundsWidth) => place(left, left + boundsWidth));
         else place(HINT_GAP, Dimensions.get("window").width - HINT_GAP);
       });
-    }, HINT_DELAY_MS);
+    }, delayMs);
   };
   const hide = () => {
     clearTimeout(timer.current);
@@ -348,7 +349,7 @@ export function Button({
     </Pressable>
   );
   return tip ? (
-    <Hint text={tip} inline>
+    <Hint text={tip} inline delayMs={BUTTON_HINT_DELAY_MS}>
       {button}
     </Hint>
   ) : (
