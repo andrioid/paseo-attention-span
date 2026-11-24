@@ -35,7 +35,36 @@ describe("History's weeks and their copy", () => {
     const debt = item(7, "done", 0, { ...sameWeek(), kind: "issue", work: { name: "debt", kind: "debt" } });
     const spikePr = item(8, "done", 0, { ...sameWeek(), work: { name: "spike" } });
     const spikeIssue = item(9, "done", 0, { ...sameWeek(), kind: "issue", work: { name: "spike" } });
-    expect(week(epic, debt, spikePr, spikeIssue).split("\n").map((line) => line.split(" [")[0])).toEqual(["- 🏔️", "- 🧾", "- 🔀", "-"]);
+    expect(week(epic, debt, spikePr, spikeIssue).split("\n").map((line) => line.split(" [")[0])).toEqual(["- 🏔️", "- 🧾", "-", "- 🔀"]);
+  });
+
+  it("HIS-02, HIS-03: each copied list is sorted by kind, epics and features first and PRs of no kind last, newest first within each", () => {
+    // Seconds apart on a Wednesday, so they share a week whenever the test runs.
+    const at = (section: Item["section"], seconds: number, fields: Partial<Item> = {}) => {
+      const closedAt = new Date(new Date(2026, 10, 18, 12).getTime() - seconds * 1000).toISOString();
+      return { ...fields, section, closedAt, othersActivityAt: closedAt };
+    };
+    const finished = [
+      at("done", 1),
+      at("done", 2, { work: { name: "bug", kind: "bug" } }),
+      at("done", 3, { kind: "issue", work: { name: "spike" } }),
+      at("done", 4, { work: { name: "task", kind: "task" } }),
+      at("done", 5, { work: { name: "feature", kind: "feature" } }),
+      at("done", 6, { kind: "issue" }),
+      at("done", 7, { work: { name: "debt", kind: "debt" } }),
+      at("done", 8, { work: { name: "epic", kind: "epic" } }),
+      at("done", 9, { work: { name: "feature", kind: "feature" } }),
+    ];
+    // Out of order on purpose: the copy doesn't lean on the order they arrive in.
+    const reviewed = [at("reviewed", 13), at("reviewed", 11, { work: { name: "bug", kind: "bug" } }), at("reviewed", 10), at("reviewed", 12, { work: { name: "feature", kind: "feature" } })];
+    const items = [...finished, ...reviewed].map((fields, index) => item(index + 1, fields.section, 0, fields));
+    const [week] = historyWeeks(items, ["reviewed"]).weeks;
+    const [finishedText, reviewedText] = week.copy.text.split("## Reviewed");
+    const numbers = (text: string) => [...text.matchAll(/Item (\d+)/g)].map((match) => Number(match[1]));
+    expect(numbers(finishedText)).toEqual([8, 5, 9, 2, 7, 4, 3, 6, 1]);
+    expect(numbers(reviewedText)).toEqual([13, 11, 12, 10]);
+    expect(week.done.map((entry) => entry.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(week.reviewed.map((entry) => entry.number)).toEqual([10, 11, 12, 13]);
   });
 
   it("HIS-02, HIS-03: with Reviewed shown, the copy has both lists under their headings", () => {
