@@ -122,7 +122,7 @@ function AttentionList({
   // Each tab shows how fresh its own feed is.
   const feed = view.feeds[TAB_FEED[tab]];
   // Wrap up is made here from the sessions the screen and sidebar already poll; the server archives and acknowledges [ATT-22].
-  const agentsNow = (agents.data ?? []).filter((agent) => !act.archivedSessions.has(agent.id));
+  const agentsNow = agents.data ?? [];
   const wrap = wrapItems(view, agentsNow);
   // Issues I started a session on leave Next up for In progress until a card of their own shows them [PRS-05, SES-11].
   const shown = withInProgress(view, agentsNow, wrap);
@@ -288,13 +288,13 @@ function AttentionList({
           kind={feedback}
           config={view.config}
           screen={{ ...device, tab, refreshError: feed.error ?? null }}
-          onStarted={act.started}
+          startElsewhere={act.startElsewhere}
           onBack={() => setFeedback("sheet")}
           onClose={() => setFeedback(null)}
         />
       ) : null}
-      {newIssue ? <NewIssueSheet request={newIssue} view={view} onView={attention.setView} onStarted={act.started} onClose={() => setNewIssue(null)} /> : null}
-      {act.options ? <SessionOptions spec={act.options} config={view.config} started={act.startedOn} onClose={act.closeOptions} /> : null}
+      {newIssue ? <NewIssueSheet request={newIssue} view={view} settle={act.settle} startElsewhere={act.startElsewhere} onClose={() => setNewIssue(null)} /> : null}
+      {act.options ? <SessionOptions spec={act.options} config={view.config} onStart={act.startWithChoice} onClose={act.closeOptions} /> : null}
       {act.placing ? <CodeRepoPicker issueRepo={act.placing.target.repo} missing={act.placing.missing} onPick={act.place} onClose={act.cancelPlacing} /> : null}
     </ScrollView>
   );

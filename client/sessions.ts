@@ -7,6 +7,8 @@ import { ITEM_LABEL, KIND_LABEL, LABEL } from "../shared/item-sessions";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
 import * as rpc from "../shared/rpc";
+import type { SessionWorkspaceEntry } from "../shared/item-sessions";
+import type { PaseoAgentEntry } from "../shared/linked-sessions";
 import {
   applySnapshot,
   applyUpdates,
@@ -265,9 +267,11 @@ export function useStartRpcs() {
   return { fetchContext, fetchProviders, defaultBranch: async (repo: string) => (await fetchDefaultBranch({ repo })).name };
 }
 
-// The profile configured for the session type, then "default", then Paseo's defaults [SES-01, SES-06].
+// The profile configured for the session type, then "default", then Paseo's defaults [SES-01, SES-06]. The ready
+// providers are the session source's, in a preview, else the host's.
 export async function resolveAgentConfig(
   paseo: Paseo,
+  source: SessionSource,
   fetchProviders: FetchProviders,
   kind: SessionKind,
   config: AttentionConfig,
@@ -279,7 +283,7 @@ export async function resolveAgentConfig(
     name ? profiles.find((p) => p.id === name || sameName(p.name, name)) : undefined;
   const profile = profileId ? byName(profileId) : (byName(config.profiles[kind]) ?? byName(config.profiles.default));
   // A profile that names its model needs no provider lookup.
-  const providers = profile?.model ? [] : await fetchProviders();
+  const providers = profile?.model ? [] : await (source.readyProviders ?? fetchProviders)();
   return chooseAgent(profile, providers);
 }
 
@@ -303,19 +307,26 @@ export interface StartSession {
   workspaceId?: string; // an existing workspace; otherwise a new worktree
 }
 
+// What a start made, as Paseo's lists would have it: the agent, and the workspace when it made one.
+export interface Created {
+  agent: PaseoAgentEntry;
+  workspace?: SessionWorkspaceEntry;
+}
+
+export const createdResult = ({ agent, workspace }: Created): SessionResult => ({ agents: [agent], ...(workspace ? { workspaces: [workspace] } : {}) });
+
 // A new worktree: checkout-pr for PRs, branch-off from the default branch for issues. Made through the session source, so
 // a preview can make one up.
-export async function startSession(paseo: Paseo, source: SessionSource, input: StartSession): Promise<string> {
+export async function startSession(paseo: Paseo, source: SessionSource, input: StartSession): Promise<Created> {
   const { target, checkout } = input;
   const project = checkout.project;
   if (!project) throw new Error(noProjectMessage(checkout, target));
-  const { agent: agentConfig } = await resolveAgentConfig(paseo, input.fetchProviders, input.kind, input.config, input.profileId);
+  const { agent: agentConfig } = await resolveAgentConfig(paseo, source, input.fetchProviders, input.kind, input.config, input.profileId);
   const title = sessionTitle(input.kind, target);
 
-  const workspaceId =
-    input.workspaceId ??
-    (
-      await source.createWorkspace({
+  const workspace = input.workspaceId
+    ? undefined
+    : await source.createWorkspace({
         title,
         source:
           target.kind === "pr"
@@ -334,13 +345,12 @@ export async function startSession(paseo: Paseo, source: SessionSource, input: S
                 baseBranch: checkout.baseBranch,
                 branchName: `issue-${target.number}-${slug(target.title)}`,
               },
-      })
-    ).id;
-  const agent = await source.createAgent(workspaceId, {
+      });
+  const agent = await source.createAgent(input.workspaceId ?? workspace!.id, {
     config: agentConfig,
     title,
     prompt: input.prompt,
     labels: { [LABEL]: "1", [ITEM_LABEL]: input.itemKey, [KIND_LABEL]: input.kind },
   });
-  return agent.id;
+  return { agent, workspace };
 }

@@ -34,5 +34,5 @@ export function useAttention() {
   // Kept in the query client, so it still shows after leaving the screen and coming back mid-refresh.
   const pendingFeeds = useMutationState({ filters: { mutationKey: REFRESH_KEY, status: "pending" }, select: (mutation) => mutation.state.variables as FeedId });
   const isRefreshing = useCallback((feed: FeedId) => pendingFeeds.includes(feed), [pendingFeeds]);
-  return { ...query, setView, refreshNow, isRefreshing };
+  return { ...query, refreshNow, isRefreshing };
 }

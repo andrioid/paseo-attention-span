@@ -6,11 +6,14 @@ import { fixtureEntries, startedOnIssue } from "../shared/fixture-sessions";
 import type { SessionWorkspaceEntry } from "../shared/item-sessions";
 import type { PaseoAgentEntry } from "../shared/linked-sessions";
 import { everyPage, type Page } from "../shared/paging";
-import type { SessionSnapshot, StreamUpdate } from "../shared/session-cache";
+import type { ReadyProvider } from "../shared/providers";
+import type { SessionResult, SessionSnapshot, StreamUpdate } from "../shared/session-cache";
 
 type Paseo = ReturnType<typeof usePaseo>;
 export type WorkspaceCreateOptions = Parameters<Paseo["workspaces"]["create"]>[0];
-export type AgentCreateOptions = Parameters<ReturnType<Paseo["workspaces"]["ref"]>["agents"]["create"]>[0];
+type WorkspaceHandle = Awaited<ReturnType<Paseo["workspaces"]["create"]>>;
+export type AgentCreateOptions = Parameters<WorkspaceHandle["agents"]["create"]>[0];
+type AgentHandle = Awaited<ReturnType<WorkspaceHandle["agents"]["create"]>>;
 
 // Everything the session cache and a start reach in Paseo, like the server's Port: Paseo itself here, made up for previews,
 // whose daemon has no agent provider [FRESH-04, SES-01].
@@ -20,8 +23,16 @@ export interface SessionSource {
   list(subscribe: boolean): Promise<{ snapshot: SessionSnapshot; subscription: SessionSubscription | null }>;
   // Paseo's updates to them, as they come; throws on a host without them.
   subscribe(onUpdate: (update: StreamUpdate) => void): () => void;
-  createWorkspace(options: WorkspaceCreateOptions): Promise<{ id: string }>;
-  createAgent(workspaceId: string, options: AgentCreateOptions): Promise<{ id: string }>;
+  // Each answers with Paseo's own entry for what it made, as its lists would have it, for the start to write before its
+  // spinner stops [FRESH-04, SES-10].
+  createWorkspace(options: WorkspaceCreateOptions): Promise<SessionWorkspaceEntry>;
+  // A workspace in a directory, Paseo's own if it has one there (feedback's scratch folder, a new issue's checkout).
+  openWorkspace(cwd: string): Promise<SessionWorkspaceEntry>;
+  createAgent(workspaceId: string, options: AgentCreateOptions): Promise<PaseoAgentEntry>;
+  // The ready agent providers, where they aren't the host's: a preview's [SES-06].
+  readyProviders?(): Promise<ReadyProvider[]>;
+  // What an action did in Paseo, for a made-up Paseo to keep up with; Paseo's own knows already.
+  learn?(result: SessionResult): void;
 }
 
 export interface SessionSubscription {
@@ -35,6 +46,20 @@ interface Owned {
   readonly subscriptionId: string | null;
   subscribe?(observer: { snapshot(snapshot: { subscriptionId: string }): void; update(): void }): () => void;
   release(): Promise<void>;
+}
+
+// The entry Paseo's lists would have for a workspace just made or opened: the handle's snapshot, else asked for, else
+// what's known of it.
+async function workspaceEntry(handle: WorkspaceHandle, kind: SessionWorkspaceEntry["workspaceKind"], title?: string): Promise<SessionWorkspaceEntry> {
+  const known = handle.current() ?? (await handle.refresh().catch(() => null));
+  return known ?? { id: handle.id, workspaceKind: kind, name: handle.name ?? title ?? handle.id, ...(title ? { title } : {}), workspaceDirectory: handle.directory };
+}
+
+// …and for an agent just made, labelled as it was made, so its item's card finds it either way.
+async function agentEntry(handle: AgentHandle, workspaceId: string, options: AgentCreateOptions): Promise<PaseoAgentEntry> {
+  if (!handle.current()) await handle.refresh().catch(() => null);
+  const known = handle.current();
+  return known ?? { id: handle.id, labels: options.labels ?? {}, status: "running", requiresAttention: false, title: options.title ?? null, workspaceId, updatedAt: new Date().toISOString() };
 }
 
 // Paseo's own lists and stream, over the host's SDK.
@@ -94,8 +119,9 @@ export function paseoSource(paseo: Paseo): SessionSource {
         throw error;
       }
     },
-    createWorkspace: (options) => paseo.workspaces.create(options),
-    createAgent: (workspaceId, options) => paseo.workspaces.ref(workspaceId).agents.create(options),
+    createWorkspace: async (options) => workspaceEntry(await paseo.workspaces.create(options), "worktree", options.title ?? undefined),
+    openWorkspace: async (cwd) => workspaceEntry(await paseo.workspaces.open({ cwd }), "directory"),
+    createAgent: async (workspaceId, options) => agentEntry(await paseo.workspaces.ref(workspaceId).agents.create(options), workspaceId, options),
   };
 }
 
@@ -127,8 +153,10 @@ function ownedTogether(owned: Owned[], restoredAs: (id: string) => void): Sessio
   };
 }
 
-// The preview's: the made-up sessions, a start that makes one up, and the started-on-issues ones going and coming back as
-// the view says, as an archive in Paseo would [SES-11].
+// The preview's: the made-up sessions, a start that makes one up with a made-up agent provider, an archive that takes them
+// away, and the started-on-issues ones going and coming back as the view says, as an archive in Paseo would [SES-11].
+// What a start or an archive makes isn't streamed: only the action's own write shows it, as the preview's shots check
+// [FRESH-04].
 export interface PreviewSource extends SessionSource {
   showStarted(show: boolean): void;
 }
@@ -158,8 +186,14 @@ export function previewSource(now = Date.now()): PreviewSource {
         gitRuntime: { currentBranch: branch ?? null, isDirty: false, aheadOfOrigin: 0 },
       };
       workspaces = [...workspaces, workspace];
-      emit({ of: "workspace", kind: "upsert", entry: workspace });
-      return { id: workspace.id };
+      return workspace;
+    },
+    async openWorkspace(cwd) {
+      const known = workspaces.find((workspace) => workspace.workspaceDirectory === cwd);
+      if (known) return known;
+      const workspace: SessionWorkspaceEntry = { id: `WS_preview_${++made}`, workspaceKind: "directory", name: cwd.split("/").pop() || cwd, workspaceDirectory: cwd };
+      workspaces = [...workspaces, workspace];
+      return workspace;
     },
     async createAgent(workspaceId, options) {
       const agent: PaseoAgentEntry = {
@@ -172,8 +206,12 @@ export function previewSource(now = Date.now()): PreviewSource {
         updatedAt: new Date().toISOString(),
       };
       agents = [...agents, agent];
-      emit({ of: "agent", kind: "upsert", entry: agent });
-      return { id: agent.id };
+      return agent;
+    },
+    readyProviders: async () => [{ provider: "preview", label: "Preview agent", defaultModel: "preview" }],
+    learn({ archivedAgents = [], archivedWorkspaces = [] }) {
+      agents = agents.filter((agent) => !archivedAgents.includes(agent.id));
+      workspaces = workspaces.filter((workspace) => !archivedWorkspaces.includes(workspace.id));
     },
     showStarted(show) {
       if (show === started) return;
