@@ -22,6 +22,9 @@ interface Held<E> {
 export interface SessionEntries {
   agents: Map<string, Held<PaseoAgentEntry>>;
   workspaces: Map<string, Held<SessionWorkspaceEntry>>;
+  // When the newest list merged was asked for: an older list landing later knows less, and could bring back what a newer
+  // one already dropped along with its tombstone.
+  listedAt?: Stamp;
 }
 
 // Every page of both lists, as Paseo listed them.
@@ -60,7 +63,7 @@ function stale<E>(held: Held<E> | undefined, update: { at: Stamp; seq?: number; 
 
 // Paseo's stream updates, in the order they arrived [FRESH-04].
 export function applyUpdates(entries: SessionEntries, updates: SessionUpdate[]): SessionEntries {
-  const next = { agents: new Map(entries.agents), workspaces: new Map(entries.workspaces) };
+  const next = { ...entries, agents: new Map(entries.agents), workspaces: new Map(entries.workspaces) };
   for (const update of updates) {
     const held: Map<string, Held<unknown>> = update.of === "agent" ? next.agents : next.workspaces;
     const id = update.kind === "upsert" ? update.entry.id : update.id;
@@ -85,14 +88,15 @@ function merged<E extends { id: string }>(held: Map<string, Held<E>>, listed: E[
 // A full list asked for at `at` [FRESH-04].
 export function applySnapshot(entries: SessionEntries | undefined, snapshot: SessionSnapshot, at: Stamp): SessionEntries {
   const held = entries ?? emptyEntries();
-  return { agents: merged(held.agents, snapshot.agents, at), workspaces: merged(held.workspaces, snapshot.workspaces, at) };
+  if (held.listedAt !== undefined && at < held.listedAt) return held;
+  return { agents: merged(held.agents, snapshot.agents, at), workspaces: merged(held.workspaces, snapshot.workspaces, at), listedAt: at };
 }
 
 // What an action just did, as Paseo answered it, learned at `at`: neither a stream update that arrived before then nor a
 // list asked for before then can undo it [FRESH-04].
 export function writeResult(entries: SessionEntries | undefined, result: SessionResult, at: Stamp): SessionEntries {
   const held = entries ?? emptyEntries();
-  const next = { agents: new Map(held.agents), workspaces: new Map(held.workspaces) };
+  const next = { ...held, agents: new Map(held.agents), workspaces: new Map(held.workspaces) };
   const write = <E>(into: Map<string, Held<E>>, id: string, entry: E | null) => {
     const known = into.get(id);
     // Where the stream had got to stays, so an older update with a seq can't win later either.

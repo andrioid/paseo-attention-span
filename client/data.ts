@@ -3,8 +3,9 @@ import { type QueryClient, useMutation, useMutationState, useQuery, useQueryClie
 import { useCallback, useEffect } from "react";
 import { type AttentionView, type FeedId, newerView } from "../shared/attention";
 import { getAttention } from "../shared/rpc";
+import { VIEW_QUERY_KEY, viewQuery } from "./view-query";
 
-export const VIEW_QUERY_KEY = ["attention-span", "view"] as const;
+export { VIEW_QUERY_KEY };
 const REFRESH_KEY = ["attention-span", "refresh"] as const;
 // History's weeks are the device's, so the server is told its time zone [HIS-01].
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -35,9 +36,7 @@ export function useAttention() {
   const fetchAttention = useRpc(getAttention);
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: VIEW_QUERY_KEY,
-    // A poll's answer too [FRESH-04].
-    queryFn: async () => newerView(queryClient.getQueryData<AttentionView>(VIEW_QUERY_KEY), await fetchAttention({ timeZone })),
+    ...viewQuery(() => fetchAttention({ timeZone })),
     refetchInterval: (query) => pollInterval(query.state.data),
   });
   const setView = useCallback((view: AttentionView) => writeView(queryClient, view), [queryClient]);

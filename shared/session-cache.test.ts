@@ -63,6 +63,14 @@ describe("the session cache", () => {
     expect(ids(applySnapshot(archived, { agents: [a, b], workspaces: [] }, 5))).toEqual(["a", "b"]);
   });
 
+  it("FRESH-04: a list asked for before an archive can't bring it back after a newer list already dropped it", () => {
+    const listed = applySnapshot(undefined, { agents: [a, b], workspaces: [] }, 1);
+    // An old list asked at 2, the archive at 3, a newer list asked at 4 lands first, then the old one.
+    const archived = writeResult(listed, { archivedAgents: ["a"] }, 3);
+    const newer = applySnapshot(archived, { agents: [b], workspaces: [] }, 4);
+    expect(ids(applySnapshot(newer, { agents: [a, b], workspaces: [] }, 2))).toEqual(["b"]);
+  });
+
   it("FRESH-04: a session an action started stays until a list asked for after it has Paseo's own", () => {
     const started = writeResult(applySnapshot(undefined, { agents: [a], workspaces: [] }, 1), { agents: [{ ...b, status: "running" }], workspaces: [paseoWorkspace("w2", "fix-2")] }, 4);
     expect(ids(applySnapshot(started, { agents: [a], workspaces: [] }, 3))).toEqual(["a", "b"]);

@@ -64,10 +64,21 @@ async function agentEntry(handle: AgentHandle, workspaceId: string, options: Age
 
 // Paseo's own lists and stream, over the host's SDK.
 export function paseoSource(paseo: Paseo): SessionSource {
-  // Paseo's own screens list agents with filters of their own, and their updates reach every listener; only this
-  // subscription's are the whole list's, so the others are left out once its ID is known.
+  // Paseo's own screens list agents with filters of their own, and their updates reach every listener. An upsert is the
+  // whole entry, whoever's it is; a remove from a filtered subscription may only mean the entry left its filter, so only
+  // ours count. While ours are being listed, removes wait until their IDs are known.
   const ours = new Set<string>();
-  const mine = (update: { subscriptionId?: string }) => !update.subscriptionId || !ours.size || ours.has(update.subscriptionId);
+  let listing = 0;
+  let held: { subscriptionId: string; deliver: () => void }[] = [];
+  const removal = (update: { subscriptionId?: string }, deliver: () => void) => {
+    if (!update.subscriptionId || ours.has(update.subscriptionId)) deliver();
+    else if (listing) held.push({ subscriptionId: update.subscriptionId, deliver });
+  };
+  const ownershipKnown = () => {
+    const waiting = held;
+    held = [];
+    for (const remove of waiting) if (ours.has(remove.subscriptionId)) remove.deliver();
+  };
   // A seq counts within one subscription and generation.
   const position = (update: { subscriptionId?: string; seq?: number; generation?: string }) => ({
     seq: update.seq,
@@ -76,42 +87,55 @@ export function paseoSource(paseo: Paseo): SessionSource {
   return {
     async list(subscribe) {
       const owned: Owned[] = [];
-      // Only the first page subscribes; the stream covers the whole list.
+      // Only the first page subscribes; the stream covers the whole list. Its ID is ours as soon as that page is back.
       const page = <E>(list: (page: { limit: number; cursor?: string }, subscribing: boolean) => Promise<Page<E> & { subscription?: Owned }>) =>
         everyPage(async (at) => {
           const result = await list(at, subscribe && !at.cursor);
-          if (result.subscription) owned.push(result.subscription);
+          if (result.subscription) {
+            owned.push(result.subscription);
+            if (result.subscription.subscriptionId) ours.add(result.subscription.subscriptionId);
+          }
           return result;
         });
+      const release = () => {
+        for (const subscription of owned) {
+          if (subscription.subscriptionId) ours.delete(subscription.subscriptionId);
+          void subscription.release().catch(() => {});
+        }
+      };
+      if (subscribe) listing++;
       try {
-        const [agents, workspaces] = await Promise.all([
+        // Both settle before anything is decided, so a subscription that comes back after the other list failed is
+        // released too, not left streaming with nobody to release it.
+        const [agents, workspaces] = await Promise.allSettled([
           page((at, subscribing) => (subscribing ? paseo.agents.list({ page: at, subscribe: {} }) : paseo.agents.list({ page: at }))),
           page((at, subscribing) => (subscribing ? paseo.workspaces.list({ page: at, subscribe: {} }) : paseo.workspaces.list({ page: at }))),
         ]);
-        const snapshot = { agents: agents.map((entry) => entry.agent), workspaces };
+        if (agents.status === "rejected" || workspaces.status === "rejected") {
+          release();
+          throw agents.status === "rejected" ? agents.reason : (workspaces as PromiseRejectedResult).reason;
+        }
+        const snapshot = { agents: agents.value.map((entry) => entry.agent), workspaces: workspaces.value };
         // A host that streams only one of the two can't keep the sessions current: it's polled instead.
         if (!subscribe || owned.length < 2) {
-          for (const subscription of owned) void subscription.release().catch(() => {});
+          release();
           return { snapshot, subscription: null };
         }
-        for (const subscription of owned) if (subscription.subscriptionId) ours.add(subscription.subscriptionId);
         return { snapshot, subscription: ownedTogether(owned, (id) => ours.add(id)) };
-      } catch (error) {
-        for (const subscription of owned) void subscription.release().catch(() => {});
-        throw error;
+      } finally {
+        if (subscribe) listing--;
+        ownershipKnown();
       }
     },
     subscribe(onUpdate) {
       const stopAgents = paseo.agents.subscribe((update) => {
-        if (!mine(update)) return;
         if (update.kind === "upsert") onUpdate({ of: "agent", kind: "upsert", entry: update.agent, ...position(update) });
-        else onUpdate({ of: "agent", kind: "remove", id: update.agentId, ...position(update) });
+        else removal(update, () => onUpdate({ of: "agent", kind: "remove", id: update.agentId, ...position(update) }));
       });
       try {
         const stopWorkspaces = paseo.workspaces.subscribe((update) => {
-          if (!mine(update)) return;
           if (update.kind === "upsert") onUpdate({ of: "workspace", kind: "upsert", entry: update.workspace, ...position(update) });
-          else onUpdate({ of: "workspace", kind: "remove", id: update.id, ...position(update) });
+          else removal(update, () => onUpdate({ of: "workspace", kind: "remove", id: update.id, ...position(update) }));
         });
         return () => (stopAgents(), stopWorkspaces());
       } catch (error) {
