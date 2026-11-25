@@ -71,6 +71,14 @@ describe("the session cache", () => {
     expect(ids(applySnapshot(newer, { agents: [a, b], workspaces: [] }, 2))).toEqual(["b"]);
   });
 
+  it("FRESH-04: an update that waited in its batch while an archive and a newer list came can't bring the session back", () => {
+    const listed = applySnapshot(undefined, { agents: [a, b], workspaces: [] }, 1);
+    // The update arrived at 2, the archive at 3, a list asked at 4 without it; then the batch is written.
+    const archived = writeResult(listed, { archivedAgents: ["a"] }, 3);
+    const relisted = applySnapshot(archived, { agents: [b], workspaces: [] }, 4);
+    expect(ids(applyUpdates(relisted, [{ of: "agent", kind: "upsert", entry: { ...a, status: "running" }, at: 2 }]))).toEqual(["b"]);
+  });
+
   it("FRESH-04: a session an action started stays until a list asked for after it has Paseo's own", () => {
     const started = writeResult(applySnapshot(undefined, { agents: [a], workspaces: [] }, 1), { agents: [{ ...b, status: "running" }], workspaces: [paseoWorkspace("w2", "fix-2")] }, 4);
     expect(ids(applySnapshot(started, { agents: [a], workspaces: [] }, 3))).toEqual(["a", "b"]);

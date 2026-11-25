@@ -67,7 +67,9 @@ export function applyUpdates(entries: SessionEntries, updates: SessionUpdate[]):
   for (const update of updates) {
     const held: Map<string, Held<unknown>> = update.of === "agent" ? next.agents : next.workspaces;
     const id = update.kind === "upsert" ? update.entry.id : update.id;
-    if (stale(held.get(id), update)) continue;
+    // One that arrived before the newest list was asked for is in that list already, or gone from it: an entry it doesn't
+    // have, like one archived meanwhile, isn't brought back.
+    if ((next.listedAt !== undefined && update.at < next.listedAt) || stale(held.get(id), update)) continue;
     held.set(id, { entry: update.kind === "upsert" ? update.entry : null, at: update.at, seq: update.seq, generation: update.generation });
   }
   return next;
