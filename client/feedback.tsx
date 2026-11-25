@@ -1,5 +1,5 @@
 import { openExternalUrl, type PluginClientContext, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { TextInput } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { AgentSummary } from "../shared/attention";
@@ -8,6 +8,7 @@ import { FEEDBACK_REPO, type FeedbackContext, type FeedbackKind, feedbackItemKey
 import * as rpc from "../shared/rpc";
 import { ActionSheet, Dialog, type SheetEntry } from "./sheet";
 import { sessionEntry } from "./session-menu";
+import type { StartElsewhere } from "./item-actions";
 import { ITEM_LABEL, KIND_LABEL, LABEL, resolveAgentConfig } from "./sessions";
 import { Button, TablerIcon, useStyles } from "./ui";
 
@@ -75,45 +76,42 @@ export function FeedbackAsk({
   kind,
   config,
   screen,
-  onStarted,
+  startElsewhere,
   onBack,
   onClose,
 }: {
   kind: FeedbackKind;
   config: AttentionConfig;
   screen: FeedbackScreen;
-  onStarted: (agentId: string) => Promise<void>;
+  startElsewhere: StartElsewhere;
   onBack: () => void;
   onClose: () => void;
 }) {
   const styles = useStyles();
   const paseo = usePaseo();
-  const toast = useToast();
   const fetchInfo = useRpc(rpc.feedbackInfo);
   const fetchProviders = useRpc(rpc.readyProviders);
   const [message, setMessage] = useState("");
   const [starting, setStarting] = useState(false);
 
+  // In its scratch folder's workspace, through the session source like every start [FRESH-04].
   async function start() {
     setStarting(true);
-    try {
+    const started = await startElsewhere(async (source) => {
       const info = await fetchInfo({});
       const prompt = feedbackPrompt(kind, { ...screen, message, dir: info.source, version: info.version });
-      const { agent } = await resolveAgentConfig(paseo, () => fetchProviders({}).then((result) => result.providers), "start", config);
-      const workspace = await paseo.workspaces.open({ cwd: info.cwd });
-      const created = await workspace.agents.create({
-        config: agent,
+      const { agent: agentConfig } = await resolveAgentConfig(paseo, source, () => fetchProviders({}).then((result) => result.providers), "start", config);
+      const workspace = await source.openWorkspace(info.cwd);
+      const agent = await source.createAgent(workspace.id, {
+        config: agentConfig,
         title: `Feedback: ${KINDS[kind].label}`,
         prompt,
         labels: { [LABEL]: "1", [ITEM_LABEL]: feedbackItemKey(kind), [KIND_LABEL]: `feedback-${kind}` },
       });
-      onClose();
-      await onStarted(created.id);
-    } catch (error) {
-      toast.error(`Starting the session failed: ${(error as Error).message}`);
-    } finally {
-      setStarting(false);
-    }
+      return { agent, workspace };
+    });
+    setStarting(false);
+    if (started) onClose();
   }
 
   return (

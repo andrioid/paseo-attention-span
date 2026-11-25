@@ -418,6 +418,8 @@ export interface Attention {
   ownClosed?: Item[];
   // Issues Wrap up asks to close that the live refresh found closed since, or with a PR open for them [ATT-24].
   askOff?: string[];
+  // Checks still running on an open PR of mine: the live feed is fetched again every few minutes until none are [FRESH-01].
+  checksRunning?: boolean;
 }
 
 export interface Section {
@@ -517,6 +519,9 @@ export interface FeedStatus {
   fetchedAt: string | null;
   refreshing: boolean;
   error: string | null;
+  // When the server next refreshes it by itself, on its schedule or an extra refresh: the screen reads the view again
+  // shortly after [FRESH-01, FRESH-04].
+  nextAt?: string;
 }
 
 // The tabs whose items can be dismissed [ATT-08].
@@ -561,10 +566,20 @@ export interface AttentionView {
   newIssue: NewIssueInfo;
   // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
   pending: number;
-  // Fixture mode only: made-up sessions, since the preview daemon has no agents.
-  fixtureAgents?: AgentSummary[];
+  // Fixture mode only: the app shows made-up sessions, since the preview daemon has no agents (shared/fixture-sessions.ts);
+  // with `fixtureNoStarted`, the ones started on issues are as good as archived [SES-11].
+  fixture?: boolean;
+  fixtureNoStarted?: boolean;
   // Wrap up rows whose sessions are archived but whose worktree stayed, until it's gone or dismissed [ATT-22].
   kept?: KeptRow[];
+  // The server's count of its own changes when it answered: a view answered before a change has a lower one, so it can't
+  // undo the change's own answer, however late it arrives [FRESH-04].
+  revision: number;
+}
+
+// The view to keep when one arrives: never one the server answered before the one held [FRESH-04].
+export function newerView(held: AttentionView | undefined, incoming: AttentionView): AttentionView {
+  return held && incoming.revision < held.revision ? held : incoming;
 }
 
 // What a tick in Next up's project filter stands for: one status of one project, a project's issues without a status, or

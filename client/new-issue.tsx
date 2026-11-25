@@ -1,5 +1,5 @@
 import { type PluginScreenParams, usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { TextInput } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -7,6 +7,7 @@ import type { AttentionView } from "../shared/attention";
 import { codeRepoFor } from "../shared/config";
 import { lastMessages, newIssueItemKey, newIssuePrompt, newIssueTag, newIssueTitle, prefillRepo, type SourceSession } from "../shared/new-issue";
 import * as rpc from "../shared/rpc";
+import type { Settle, StartElsewhere } from "./item-actions";
 import { Dialog } from "./sheet";
 import { githubProjects, ITEM_LABEL, LABEL, listProfiles, resolveAgentConfig } from "./sessions";
 import { Button, Loading, TablerIcon, Toggle, useStyles } from "./ui";
@@ -71,19 +72,18 @@ async function sourceSession(paseo: Paseo, agentId: string, workspace: SourceWor
 export function NewIssueSheet({
   request,
   view,
-  onView,
-  onStarted,
+  settle,
+  startElsewhere,
   onClose,
 }: {
   request: Omit<NewIssueRequest, "at">;
   view: AttentionView;
-  onView: (view: AttentionView) => void;
-  onStarted: (agentId: string) => Promise<void>;
+  settle: Settle;
+  startElsewhere: StartElsewhere;
   onClose: () => void;
 }) {
   const styles = useStyles();
   const paseo = usePaseo();
-  const toast = useToast();
   const fetchProviders = useRpc(rpc.readyProviders);
   const remember = useRpc(rpc.setNewIssueChoice);
   const setCodeRepo = useRpc(rpc.setCodeRepo);
@@ -117,45 +117,41 @@ export function NewIssueSheet({
   const noCheckout = !!repo && !loading && !checkout;
   const fromSession = !!request.agentId;
 
+  // [SES-07, FRESH-04]
   async function place(code: string) {
     if (!repo) return;
     setPlacing(true);
-    try {
-      onView(await setCodeRepo({ issueRepo: repo, codeRepo: code }));
-    } catch (error) {
-      toast.error(`Saving where the code lives failed: ${(error as Error).message}`);
-    } finally {
-      setPlacing(false);
-    }
+    await settle(null, "Saving where the code lives", async (write) => write({ view: await setCodeRepo({ issueRepo: repo, codeRepo: code }) }));
+    setPlacing(false);
   }
 
+  // Through the session source like every start; next time's starting point is remembered before the sheet closes, so it
+  // opens with it at once [FRESH-04].
   async function start() {
     if (!repo || !codeRepo || !checkout) return;
     setStarting(true);
-    try {
+    const started = await startElsewhere(async (sessions, write) => {
       // In the workspace I came from when it's a checkout of the code, else in the project's own checkout.
       const here = request.workspaceId && from.data?.projectId === checkout.projectId ? from.data : null;
       const dir = here?.directory ?? checkout.rootPath;
       const source = fromSession && withContext && request.agentId ? await sourceSession(paseo, request.agentId, from.data ?? null) : null;
       const title = newIssueTitle(repo, newIssueTag());
       const prompt = newIssuePrompt({ message, repo, codeRepo, dir, source, title });
-      const { agent } = await resolveAgentConfig(paseo, () => fetchProviders({}).then((result) => result.providers), "start", view.config, profile ?? undefined);
-      const workspace = here && request.workspaceId ? paseo.workspaces.ref(request.workspaceId) : await paseo.workspaces.open({ cwd: checkout.rootPath });
-      const created = await workspace.agents.create({
-        config: agent,
+      const { agent: agentConfig } = await resolveAgentConfig(paseo, sessions, () => fetchProviders({}).then((result) => result.providers), "start", view.config, profile ?? undefined);
+      const workspace = here && request.workspaceId ? undefined : await sessions.openWorkspace(checkout.rootPath);
+      const agent = await sessions.createAgent(workspace?.id ?? request.workspaceId!, {
+        config: agentConfig,
         title,
         prompt,
         labels: { [LABEL]: "1", [ITEM_LABEL]: newIssueItemKey(repo) },
       });
-      onView({ ...view, newIssue: { ...view.newIssue, repo, profileId: profile } });
-      remember({ repo, profileId: profile }).catch(() => {}); // only next time's starting point
-      onClose();
-      await onStarted(created.id);
-    } catch (error) {
-      toast.error(`Starting the session failed: ${(error as Error).message}`);
-    } finally {
-      setStarting(false);
-    }
+      // Only next time's starting point: failing to save it doesn't fail the start.
+      const saved = await remember({ repo, profileId: profile }).catch(() => null);
+      if (saved) write({ view: saved });
+      return { agent, workspace };
+    });
+    setStarting(false);
+    if (started) onClose();
   }
 
   const profileName = profile ? (profiles.data?.find((choice) => choice.id === profile)?.name ?? profile) : "Default";

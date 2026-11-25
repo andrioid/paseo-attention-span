@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AttentionView } from "../shared/attention";
+import { type AttentionView, newerView } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { historyWeeks } from "../shared/history-report";
 import { type Gh, type GitHub, gitHub, type ProbeResult } from "./fetch";
 import type { HistoryResult } from "./github-types";
-import { fixture, REPO } from "./fixture";
+import { PARENT_AGENT_LABEL } from "../shared/linked-sessions";
+import { paseoAgent, paseoWorkspace, startedAgent } from "../shared/test-builders";
+import { checksDone, fixture, REPO } from "./fixture";
 import type { Port } from "./port";
 import { AttentionService } from "./service";
 import { SETTLE_MS } from "./view";
@@ -50,8 +52,13 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
   } as Partial<Store> as Store;
   const port: Port = {
     github,
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },
+    paseo: {
+      projectRepos: async () => [],
+      archive: async () => ({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: [] }),
+      sessions: vi.fn<Port["paseo"]["sessions"]>(async () => ({ agents: [], workspaces: [] })),
+    },
     store,
+    backgroundRefreshes: true,
     now: () => now,
     setTimer: (run, ms) => {
       const timer = { at: now + ms, run };
@@ -65,6 +72,8 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
     github,
     // Paseo as the service reaches it, for a test to say what archiving answers.
     paseo: port.paseo,
+    // The server started again on the same port, as after a restart.
+    restarted: () => new AttentionService(port),
     store,
     saved,
     // Moves the clock on, running the timers due on the way.
@@ -130,6 +139,7 @@ describe("refreshes", () => {
 
   it("FRESH-01: the live feed refreshes every refreshMinutes, and asking in between answers from the cache", async () => {
     const { service, github, start, advance } = harness({ refreshMinutes: 10 });
+    github.live.mockImplementation(async (_config, at) => checksDone(fixture(at)));
     await start();
     await advance(9 * MINUTE);
     await service.get();
@@ -161,6 +171,122 @@ describe("refreshes", () => {
     await service.get();
     await service.get("live");
     expect(github.live).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("extra live refreshes", () => {
+  const paseo = {} as Parameters<AttentionService["turnEnded"]>[0];
+  const turn = (id: string, parentAgentId: string | null = null) => ({ id, parentAgentId });
+  // The service with no checks running, on an hourly schedule, so only what a test does refreshes it.
+  async function quiet(agents = [startedAgent("a1", KEY), paseoAgent("other")], workspaces: ReturnType<typeof paseoWorkspace>[] = []) {
+    const h = harness({ refreshMinutes: 60 });
+    h.github.live.mockImplementation(async (_config, at) => checksDone(fixture(at)));
+    vi.mocked(h.paseo.sessions).mockResolvedValue({ agents, workspaces });
+    await h.start();
+    return h;
+  }
+
+  it("FRESH-04: a turn in a session started on an item refreshes live once GitHub's search caught up; others' turns don't", async () => {
+    const { service, github, advance } = await quiet();
+    await service.turnEnded(paseo, turn("other"));
+    await advance(MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(1);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS - 1);
+    expect(github.live).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(github.live).toHaveBeenCalledTimes(2);
+  });
+
+  it("FRESH-04, SES-08: a sub-agent's turn counts for its session, and so does a session Paseo links to the item's PR", async () => {
+    const pr = paseoWorkspace("W1", "fix-vat", { githubRuntime: { pullRequest: { url: `https://github.com/${REPO}/pull/101` } } });
+    const agents = [startedAgent("a1", KEY), paseoAgent("sub", { labels: { [PARENT_AGENT_LABEL]: "a1" } }), paseoAgent("subsub", { labels: { [PARENT_AGENT_LABEL]: "sub" } }), paseoAgent("linked", { workspaceId: "W1" })];
+    for (const ended of [turn("subsub", "sub"), turn("linked")]) {
+      const { service, github, advance } = await quiet(agents, [pr]);
+      await service.turnEnded(paseo, ended);
+      await advance(SETTLE_MS);
+      expect(github.live).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("FRESH-04: a turn whose session can't be looked up refreshes nothing", async () => {
+    const { service, github, paseo: port, advance } = await quiet();
+    vi.mocked(port.sessions).mockRejectedValue(new Error("Paseo is restarting"));
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(1);
+  });
+
+  it("FRESH-01, GH-01: extra refreshes come at most once in 5 minutes; one due sooner waits, and the ones waiting go as one", async () => {
+    const { service, github, advance } = await quiet();
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(MINUTE);
+    await service.turnEnded(paseo, turn("a1"));
+    // The last began at 0:30; it's 1:30.
+    await advance(5 * MINUTE - MINUTE - 1);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await advance(1);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    await advance(30 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-04: a turn that an extra refresh already planned meets doesn't ask Paseo whose it was", async () => {
+    const { service, github, paseo: port, advance } = await quiet();
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(MINUTE);
+    // The next can't begin before 5:30, after this turn's 2:00.
+    await service.turnEnded(paseo, turn("a1"));
+    expect(port.sessions).toHaveBeenCalledTimes(2);
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-01, GH-01: ⟳ begun after a turn's refresh was due meets it, and doesn't count against the budget", async () => {
+    const { service, github, advance, jump } = await quiet();
+    await service.turnEnded(paseo, turn("a1"));
+    jump(SETTLE_MS);
+    await service.get("live");
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-01: while checks run on a PR of mine, the live feed refreshes every 5 minutes, until none do", async () => {
+    const { github, start, advance } = harness({ refreshMinutes: 60 });
+    await start();
+    await advance(5 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    github.live.mockImplementation(async (_config, at) => checksDone(fixture(at)));
+    await advance(5 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    await advance(30 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-01: the screen opening answers from the cache at once, refreshing a live feed 5 minutes old behind it", async () => {
+    const { service, github, jump } = await quiet();
+    jump(5 * MINUTE - 1);
+    expect((await service.get(undefined, false, undefined, true)).feeds.live.refreshing).toBe(false);
+    jump(1);
+    const opened = await service.get(undefined, false, undefined, true);
+    expect(opened.feeds.live).toMatchObject({ refreshing: true, fetchedAt: new Date(START).toISOString() });
+    await settle();
+    expect(github.live).toHaveBeenCalledTimes(2);
+  });
+
+  it("FRESH-01, FRESH-04: the view says when the live feed next refreshes by itself, on its schedule or an extra refresh", async () => {
+    const { service } = await quiet();
+    expect((await service.get(undefined, true)).feeds.live.nextAt).toBe(new Date(START + 60 * MINUTE).toISOString());
+    await service.turnEnded(paseo, turn("a1"));
+    expect((await service.get(undefined, true)).feeds.live.nextAt).toBe(new Date(START + SETTLE_MS).toISOString());
   });
 });
 
@@ -295,6 +421,72 @@ describe("what I just did", () => {
   });
 });
 
+describe("which view is newer", () => {
+  const dismissed = (view: AttentionView) => !view.doing.some((section) => section.items.some((item) => item.key === KEY));
+
+  it("FRESH-04: a view answered before a change can't undo the change's answer, however late it arrives", async () => {
+    const { service, start } = harness();
+    await start();
+    const before = await service.get(undefined, true);
+    const answer = await service.dismiss(KEY);
+    const after = await service.get(undefined, true);
+    expect(dismissed(newerView(answer, before))).toBe(true);
+    expect(newerView(answer, after)).toBe(after);
+  });
+
+  it("FRESH-04: a refresh under way when a change is made answers with the change", async () => {
+    const { service, github, start, jump } = harness();
+    await start();
+    const held = deferred<Awaited<ReturnType<GitHub["live"]>>>();
+    github.live.mockImplementationOnce(() => held.promise);
+    const refreshing = service.get("live");
+    await settle();
+    const answer = await service.dismiss(KEY);
+    jump(MINUTE);
+    held.resolve(fixture(new Date(START)));
+    const refreshed = await refreshing;
+    expect([dismissed(refreshed), newerView(answer, refreshed)]).toEqual([true, refreshed]);
+  });
+
+  it("FRESH-04: a view that said a refresh runs is older than one answered once it's done, failed or not", async () => {
+    const { service, github, start } = harness();
+    await start();
+    for (const failing of [false, true]) {
+      const held = deferred<Awaited<ReturnType<GitHub["live"]>>>();
+      github.live.mockImplementationOnce(() => held.promise);
+      const refresh = service.refresh("live").catch(() => {});
+      const during = await service.get(undefined, true);
+      if (failing) held.reject(new Error("down"));
+      else held.resolve(fixture(new Date(START)));
+      await refresh;
+      const done = await service.get(undefined, true);
+      expect([during.feeds.live.refreshing, done.feeds.live.refreshing, newerView(done, during)]).toEqual([true, false, done]);
+    }
+  });
+
+  it("FRESH-04: Next up's filter answers with the view after it", async () => {
+    const { service, start } = harness();
+    await start();
+    const before = await service.get(undefined, true);
+    const scoped = await service.setScopes(["backend"]);
+    const sourced = await service.setSources(["org:acme"]);
+    expect(newerView(scoped, before).scopes).toEqual(["backend"]);
+    expect(newerView(sourced, scoped)).toBe(sourced);
+  });
+
+  it("FRESH-04: a restarted server's views are newer than the last one's", async () => {
+    const { service, start, restarted, jump } = harness();
+    await start();
+    await service.dismiss(KEY);
+    const last = await service.get(undefined, true);
+    jump(1000);
+    const again = restarted();
+    await again.start();
+    const first = await again.get(undefined, true);
+    expect(newerView(last, first)).toBe(first);
+  });
+});
+
 describe("saving", () => {
   it("ATT-08: saves go one at a time, so an older snapshot never lands last, even after Undo", async () => {
     const { service, store, saved, start } = harness();
@@ -376,7 +568,7 @@ describe("kept worktrees", () => {
 
   it("ATT-22: a worktree that stays keeps its row, saying why, until it's archived anywhere", async () => {
     const h = harness();
-    h.paseo.archive = async () => ({ ok: true, kept: [kept] });
+    h.paseo.archive = async () => ({ ok: true, kept: [kept], archivedAgents: [], archivedWorkspaces: [] });
     await h.start();
     const { view } = await h.service.archive(paseo, [target], false);
     expect(view.kept).toEqual([{ workspaceId: "w1", name: "Fix VAT", reason: "session", detail: "Fix flaky test", agentId: "a2", itemKey: KEY, title: "Fix VAT", repo: REPO, number: 101, kind: "pr", at: expect.any(String) }]);
@@ -387,15 +579,15 @@ describe("kept worktrees", () => {
 
   it("ATT-22: tried again, a kept row goes once its worktree does, or stays with the new reason; Dismiss leaves the worktree", async () => {
     const h = harness();
-    const archive = vi.fn<Port["paseo"]["archive"]>(async () => ({ ok: true, kept: [kept] }));
+    const archive = vi.fn<Port["paseo"]["archive"]>(async () => ({ ok: true, kept: [kept], archivedAgents: [], archivedWorkspaces: [] }));
     h.paseo.archive = archive;
     await h.start();
     await h.service.archive(paseo, [target], false);
-    archive.mockResolvedValueOnce({ ok: true, kept: [{ ...kept, reason: "refused", detail: "busy", agentId: undefined, sessionIds: [] }] });
+    archive.mockResolvedValueOnce({ ok: true, kept: [{ ...kept, reason: "refused", detail: "busy", agentId: undefined, sessionIds: [] }], archivedAgents: [], archivedWorkspaces: [] });
     const again = await h.service.archiveWorktree(paseo, "w1", true, ["t1"]);
     expect(archive).toHaveBeenLastCalledWith(paseo, [], true, ["t1"], ["w1"]);
     expect(again.view.kept).toMatchObject([{ workspaceId: "w1", reason: "refused", detail: "busy", itemKey: KEY }]);
-    archive.mockResolvedValueOnce({ ok: true, kept: [] });
+    archive.mockResolvedValueOnce({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: [] });
     expect((await h.service.archiveWorktree(paseo, "w1", false)).view.kept).toEqual([]);
     await h.service.archive(paseo, [target], false);
     expect((await h.service.dismissKept("w1")).kept).toEqual([]);
@@ -404,7 +596,7 @@ describe("kept worktrees", () => {
   it("ATT-22: a worktree Paseo archived while an archive still ran gets no kept row afterwards", async () => {
     const h = harness();
     let finish!: () => void;
-    h.paseo.archive = () => new Promise((resolve) => (finish = () => resolve({ ok: true, kept: [kept] })));
+    h.paseo.archive = () => new Promise((resolve) => (finish = () => resolve({ ok: true, kept: [kept], archivedAgents: [], archivedWorkspaces: [] })));
     await h.start();
     const archiving = h.service.archive(paseo, [target], false);
     await settle();

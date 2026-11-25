@@ -41,17 +41,18 @@ export default function contribute(server: PluginServerContext) {
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
 
-  // A change on GitHub, answered with the list after it; what it does to the card shows right away [FRESH-02].
-  const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, work, change)).then(shown);
+  // A change on GitHub, answered with the list after it; what it does to the card shows right away [FRESH-02]. Previews
+  // never reach GitHub: there it does nothing and succeeds, so their shots can show what follows, as Claim & start's.
+  const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, FIXTURE ? async () => {} : work, change)).then(shown);
   const chip = (text: string, tone: Chip["tone"] = "neutral", icon?: Chip["icon"]): Change => ({ kind: "chip", chip: { text, tone, ...(icon ? { icon } : {}) } });
 
   // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08],
   // and its time zone sets History's weeks [HIS-01].
-  server.handle(rpc.getAttention, ({ refresh, cached, timeZone }, { paseo }) =>
+  server.handle(rpc.getAttention, ({ refresh, cached, timeZone, opened }, { paseo }) =>
     ready(() => {
       attention.connect(paseo);
       if (archived.waiting) void archived.notice(paseo);
-      return attention.get(refresh, cached, timeZone);
+      return attention.get(refresh, cached, timeZone, opened);
     }).then(shown),
   );
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)).then(shown));
@@ -65,8 +66,10 @@ export default function contribute(server: PluginServerContext) {
     const event = { agentId: agent.id, parentAgentId: agent.parentAgentId, archivedAt };
     void ready(() => archived.notice(paseo, event));
   });
-  server.on("agent.turn_ended", (_event, { paseo }) => {
+  // A turn in one of my items' sessions may have changed it on GitHub: the live feed follows [FRESH-04].
+  server.on("agent.turn_ended", ({ agent }, { paseo }) => {
     if (archived.waiting) void ready(() => archived.notice(paseo));
+    void ready(() => attention.turnEnded(paseo, agent));
   });
   server.handle(rpc.archiveSessions, ({ targets, confirm, terminals }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm, terminals)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })));
   server.handle(rpc.archiveWorktree, ({ workspaceId, confirm, terminals }, { paseo }) =>
@@ -89,11 +92,11 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.setFollowThreads, ({ on }) => ready(() => attention.setFollowThreads(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.setOnlyQuestionsWait, ({ on }) => ready(() => attention.setOnlyQuestionsWait(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.myOrgs, async () => ({ orgs: await answers.myOrgs() }));
-  server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
-  server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
-  server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(shown));
+  server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(shown));
+  server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(shown));
   server.handle(rpc.setUnclaimedByRepo, ({ on }) => ready(() => attention.setUnclaimedByRepo(on)).then(shown));
-  server.handle(rpc.setNewIssueChoice, ({ repo, profileId }) => ready(() => attention.setNewIssueChoice(repo, profileId)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setNewIssueChoice, ({ repo, profileId }) => ready(() => attention.setNewIssueChoice(repo, profileId)).then(shown));
   server.handle(rpc.projectsAccess, () => ready(() => attention.projectsAccess(true)));
   server.handle(rpc.updateBranch, ({ key, target }) => act(key, () => updateBranch(target), chip("updating")));
   server.handle(rpc.mergePullRequest, ({ key, target }) => act(key, () => mergePullRequest(target), { kind: "finished" }));

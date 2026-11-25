@@ -59,11 +59,13 @@ function Coverage() {
       </SettingsSection>
     );
 
-  // Saving refreshes the lists on the daemon; the screen picks them up on its next read.
+  // Saving refreshes the lists on the daemon; the screen's view is read again before Saving ends, and settings read before
+  // it are cancelled, so neither shows what was there before [FRESH-04].
   async function write(next: Partial<ConfigStatus>, send: () => Promise<unknown>) {
     setSaving(true);
     setError(null);
     try {
+      await queryClient.cancelQueries({ queryKey: COVERAGE_QUERY_KEY });
       await send();
       queryClient.setQueryData(COVERAGE_QUERY_KEY, { ...coverage.data!, ...next });
       await queryClient.invalidateQueries({ queryKey: VIEW_QUERY_KEY });

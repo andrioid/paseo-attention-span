@@ -169,9 +169,10 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     return { x, y, width: layout.viewport.width - x - (x - sidebar), height: Math.min(end - y, MAX_HEIGHT) };
   };
   const bandShot = (name, from, to) => capture(name, () => band(from, to));
-  // A phone's bottom sheet has no Escape; its × closes it.
+  // A phone's bottom sheet has no Escape; its × closes it. Matched exactly, as a sheet's "Close #152" or a card's "Close #152
+  // as completed" would otherwise match, and previews' GitHub writes now succeed [FRESH-04].
   const closeModal = async () => {
-    const close = page.getByRole("button", { name: /^close/i }).last();
+    const close = page.getByRole("button", { name: /^close$/i }).last();
     if (await close.isVisible().catch(() => false)) await close.click();
     else await page.keyboard.press("Escape");
     await settled();
@@ -180,6 +181,14 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     await page.getByRole("button", { name: `Details for #${number}`, exact: true }).click();
     await page.getByRole("button", { name: "Keep open", exact: true }).last().click();
     await settled();
+  };
+  // A card's button, found from its title: the nearest box holding both, which must hold no other card. Fails when the card
+  // has no such button.
+  const cardButton = async (title, label) => {
+    const more = page.getByRole("button", { name: `${title}, more` }).first();
+    const card = more.locator(`xpath=ancestor::*[.//*[@role="button" and @aria-label="${label}"]][1]`);
+    if ((await card.getByRole("button", { name: /, more$/ }).count()) !== 1) throw new Error(`"${title}" has no ${label}`);
+    return card.getByRole("button", { name: label, exact: true }).first();
   };
   const sheetOpen = () => page.getByText(/^Open (issue|PR)( on GitHub)?$/).last();
   const openSheet = async (title) => {
@@ -672,6 +681,44 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await page.getByRole("tab", { name: /Doing/ }).first().waitFor({ timeout: 15000 });
       await settled();
     },
+    // Archive session on a clean row: the row is gone as soon as the archive is done, with no ⟳ [ATT-22, FRESH-04].
+    "wrap-archive": async () => {
+      await tab("Doing");
+      await page.getByRole("button", { name: "Archive the session on #183", exact: true }).click();
+      await page.getByText("Archived the session on #183").waitFor({ timeout: 10000 });
+      await page.getByRole("button", { name: "Details for #183", exact: true }).waitFor({ state: "detached", timeout: 2000 });
+      await settled();
+      await bandShot("doing-wrap-archived", "Wrap up", "Waiting for your reply");
+      await toastGone("Archived the session on #183");
+    },
+    // Review again on a card: once it's started, the card offers Open session, with no ⟳ [SES-10, FRESH-04].
+    "review-start": async () => {
+      await tab("Doing");
+      const title = "Group order emails by customer";
+      await (await cardButton(title, "Review again")).click();
+      await page.getByText("Session started on #199").waitFor({ timeout: 15000 });
+      await cardButton(title, "Open session");
+      await settled();
+      await bandShot("doing-review-started", "Review requested", "CI failing");
+      await toastGone("Session started on #199");
+    },
+    // Claim & start in Next up: once it's started, the issue is in Doing's In progress with Open session, with no ⟳
+    // [NXT-05, SES-11, FRESH-04]. Then given back, so later scenarios see Next up as before.
+    "claim-start": async () => {
+      await tab("Next up");
+      const title = "Merge the two import commands";
+      await page.getByRole("button", { name: `Claim & start ${title}`, exact: true }).click();
+      await page.getByText("Session started on #162").waitFor({ timeout: 15000 });
+      if (await page.getByRole("button", { name: `Claim & start ${title}`, exact: true }).count()) throw new Error("#162 still offers Claim & start");
+      await tab("Doing");
+      await cardButton(title, "Open session");
+      await bandShot("doing-claim-started", "In progress", "Enjoying Attention Span");
+      await toastGone("Session started on #162");
+      await page.getByRole("button", { name: `${title}, more` }).first().click();
+      await page.getByRole("button", { name: "Unclaim", exact: true }).last().click();
+      await page.getByText("Unclaimed #162").waitFor({ timeout: 10000 });
+      await settled();
+    },
     // Archive every Wrap up row, then dismiss everything: a clear Doing tab shows its horizon, as on a real screen's
     // height [ATT-18]. Then a quiet day: every other tab empty shows its own scene [HIS-08, WAI-04, NXT-13].
     clear: async () => {
@@ -763,8 +810,8 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
         await page.setViewportSize(tall);
       }
     },
-    // Last, because it may open a session: an issue kept apart from its code [SES-07].
-    // Start asks where the code lives, saves it to config.json, and the next start goes straight on.
+    // Last, because it opens a session: an issue kept apart from its code [SES-07].
+    // Start asks where the code lives, saves it to config.json, and starts there; the next start goes straight on.
     "code-repo": async () => {
       const startIssue = () => page.getByRole("button", { name: "Start Price list import skips quoted rows" }).click();
       const picker = page.getByText("Where does the code for acme/issues live?");
@@ -778,15 +825,21 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
       await settled();
       const saved = await config();
       if (saved.codeRepos?.["acme/issues"] !== "acme/shop" || saved.orgs?.[0] !== "acme") throw new Error(`config.json after picking: ${JSON.stringify(saved)}`);
+      // Started: the issue has left Next up for Doing's In progress, with no ⟳ [SES-11, FRESH-04].
+      await page.getByText("Session started on #151").waitFor({ timeout: 15000 });
+      await page.getByRole("button", { name: "Start Price list import skips quoted rows" }).waitFor({ state: "detached", timeout: 2000 });
       await capture("next-up-code-repo-after", fold());
-      // Still on the list means the start stopped later (no agent provider in here); press it again.
-      if (await page.getByRole("tab", { name: /Next up/ }).first().isVisible()) {
-        await tab("Next up");
-        await startIssue();
-        await settled();
-        if (await picker.isVisible()) throw new Error("asked where the code lives a second time");
-        await capture("next-up-code-repo-again", fold());
-      }
+      await toastGone("Session started on #151");
+      // Another session from its In progress card goes straight to acme/shop: no picker, no missing project.
+      await tab("Doing");
+      await openSheet("Price list import skips quoted rows");
+      await page.getByRole("button", { name: "Start another session…", exact: true }).last().click();
+      await page.getByText("Agent profile").last().waitFor({ timeout: 15000 });
+      if (await picker.isVisible()) throw new Error("asked where the code lives a second time");
+      await settled();
+      await modalShot("next-up-code-repo-again");
+      await page.getByRole("button", { name: "Cancel" }).last().click();
+      await settled();
     },
   };
 

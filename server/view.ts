@@ -22,6 +22,7 @@ export interface ViewMeta {
   kept?: KeptRow[];
   // History's asks, less those kept open or just closed [ATT-24].
   closeAsks?: CloseAsk[];
+  revision: number;
 }
 
 // What a tap on GitHub changed, shown until a fetch can show it for itself [FRESH-02].

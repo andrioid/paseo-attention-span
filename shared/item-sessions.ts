@@ -1,6 +1,6 @@
 import { type AgentSummary, type SessionWorkspace, subAgentBusy } from "./attention";
 import { SessionKind } from "./config";
-import { linkedSessions, type PaseoAgentEntry, type PaseoWorkspaceEntry, subAgentsOf } from "./linked-sessions";
+import { linkedSessions, PARENT_AGENT_LABEL, type PaseoAgentEntry, type PaseoWorkspaceEntry, subAgentsOf } from "./linked-sessions";
 
 // The sessions on items, as the screen and the sidebar's count see them, from Paseo's lists [SES-03, SES-08, ATT-22].
 // Pure, so the rules test in node; the client fetches every page and hands them over.
@@ -21,6 +21,8 @@ export type SessionWorkspaceEntry = PaseoWorkspaceEntry & {
   workspaceDirectory?: string | null;
   projectRootPath?: string | null;
   gitRuntime?: { currentBranch?: string | null; remoteUrl?: string | null; isDirty?: boolean | null; aheadOfOrigin?: number | null } | null;
+  // Previews only, where Paseo has no worktree: what the confirm sheet names (shared/fixture-sessions.ts).
+  preview?: Pick<SessionWorkspace, "dirtyFiles" | "dirtyLines" | "terminals">;
 };
 
 // What Paseo knows about the workspace a session runs in, for Wrap up's unsaved-work check [ATT-22].
@@ -34,20 +36,21 @@ function sessionWorkspace(workspace: SessionWorkspaceEntry): SessionWorkspace {
     ...(git?.currentBranch ? { branch: git.currentBranch } : {}),
     ...(typeof git?.isDirty === "boolean" ? { dirty: git.isDirty } : {}),
     ...(typeof git?.aheadOfOrigin === "number" ? { ahead: git.aheadOfOrigin } : {}),
+    ...workspace.preview,
   };
 }
 
-// Agents started from Attention Span (`labelled`, listed by SESSION_LABELS), each with the item it was started on, and the
-// agents started outside it (from `all`) in a workspace that belongs to an item. Each with its workspace, and the sub-agents
-// that go with it: one still busy keeps its Wrap up row out [SES-08, ATT-22]. `branches` are closedBranches.
+// Agents started from Attention Span (labelled by SESSION_LABELS), each with the item it was started on, and the agents
+// started outside it in a workspace that belongs to an item, all from one list of Paseo's agents. Each with its workspace,
+// and the sub-agents that go with it: one still busy keeps its Wrap up row out [SES-08, ATT-22]. `branches` are closedBranches.
 export function sessionsFrom(
-  labelled: PaseoAgentEntry[],
   all: PaseoAgentEntry[],
   workspaces: SessionWorkspaceEntry[],
   branches = new Map<string, string>(),
 ): AgentSummary[] {
+  const labelled = (agent: PaseoAgentEntry) => SESSION_LABELS.some((label) => agent.labels?.[label]);
   const byId = new Map<string, AgentSummary>();
-  for (const agent of labelled) {
+  for (const agent of all.filter(labelled)) {
     const itemKey = SESSION_LABELS.map((label) => agent.labels?.[`${label}-item`]).find(Boolean);
     if (!itemKey || agent.archivedAt) continue;
     byId.set(agent.id, {
@@ -62,7 +65,7 @@ export function sessionsFrom(
     });
   }
   const started = [...byId.values()];
-  const unlabelled = all.filter((agent) => !SESSION_LABELS.some((label) => agent.labels?.[label]));
+  const unlabelled = all.filter((agent) => !labelled(agent));
   const byWorkspace = new Map(workspaces.map((workspace) => [workspace.id, sessionWorkspace(workspace)]));
   return [...started, ...linkedSessions(started, unlabelled, workspaces, branches)].map((agent) => {
     const workspace = agent.workspaceId ? byWorkspace.get(agent.workspaceId) : undefined;
@@ -73,4 +76,17 @@ export function sessionsFrom(
       ...(subAgents.length ? { subAgents: { count: subAgents.length, working: subAgents.some(subAgentBusy) } } : {}),
     };
   });
+}
+
+// The item a session is on, by the same rules as the screen's sessions: `agentId`'s own, or, for a sub-agent, its top
+// parent's, as a sub-agent's work is its session's [SES-08, FRESH-04]. Null when it's on none.
+export function itemOfSession(agentId: string, all: PaseoAgentEntry[], workspaces: SessionWorkspaceEntry[], branches = new Map<string, string>()): string | null {
+  const byId = new Map(all.map((agent) => [agent.id, agent]));
+  const seen = new Set<string>();
+  let id = agentId;
+  for (let parent = byId.get(id)?.labels?.[PARENT_AGENT_LABEL]; parent && !seen.has(parent); parent = byId.get(id)?.labels?.[PARENT_AGENT_LABEL]) {
+    seen.add(id);
+    id = parent;
+  }
+  return sessionsFrom(all, workspaces, branches).find((session) => session.id === id)?.itemKey ?? null;
 }

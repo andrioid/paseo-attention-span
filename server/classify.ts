@@ -125,6 +125,8 @@ function prState(
     ciPending,
     optionalFailing: !ciFailing && anyFailing,
     optionalPending: !ciFailing && !ciPending && anyPending,
+    // Any check still to report, required or not, failing ones besides: the live feed is fetched again until none is [FRESH-01].
+    checksRunning: anyPending || (required?.pending ?? 0) > 0,
     conflicts: pr.mergeable === "CONFLICTING",
     mergeBlocked,
     approved: pr.reviewDecision === "APPROVED",
@@ -459,6 +461,7 @@ export function classify({ data, details, config, now }: ClassifyInput): Attenti
     assigned: rankIssues(compact(data.assigned.nodes).filter((issue) => !listed.has(prKey(issue))), details, config),
     unclaimed: rankIssues(compact(data.unclaimed.nodes), details, config),
     projects: issueProjects([...compact(data.assigned.nodes), ...compact(data.unclaimed.nodes)], details),
+    ...(mine.some((pr) => state(pr).checksRunning) ? { checksRunning: true } : {}),
   };
 }
 

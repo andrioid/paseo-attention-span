@@ -11,9 +11,11 @@ import { type ArchiveOutcome, archiveTarget, type KeptRow } from "../shared/arch
 import type { FilterChange } from "../shared/next-up-filter";
 import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
-import type { useAttention } from "./data";
+import { type useAttention, VIEW_QUERY_KEY, writeView } from "./data";
 import { DETAILS_STALE_MS, type DetailsQuery, detailsKey } from "./sheet";
-import { AGENTS_QUERY_KEY, findCheckout, startSession, useStartRpcs } from "./sessions";
+import { type Checkout, type Created, createdResult, findCheckout, stamp, startSession, useStartRpcs, writeSessions } from "./sessions";
+import { type SessionSource, useSessionSource } from "./session-source";
+import type { SessionResult } from "../shared/session-cache";
 
 export type FetchDetails = (input: RpcInput<typeof rpc.itemDetails>) => Promise<RpcOutput<typeof rpc.itemDetails>>;
 
@@ -31,7 +33,7 @@ interface Placing {
   kind: SessionKind;
   target: Target;
   missing: string;
-  before?: () => Promise<unknown>;
+  before?: () => Promise<AttentionView>;
 }
 
 // Session options, before it starts [SES-02].
@@ -41,7 +43,15 @@ export interface OptionsSpec {
   kind: SessionKind;
   target: Target;
   // Claims an issue first [NXT-05].
-  before?: () => Promise<unknown>;
+  before?: () => Promise<AttentionView>;
+}
+
+// What the options sheet starts with [SES-02].
+export interface OptionsChoice {
+  prompt: string;
+  checkout: Checkout;
+  profileId?: string;
+  workspaceId?: string;
 }
 
 // Something I just did, offered for undo until the tab changes [ATT-08, ATT-14].
@@ -49,8 +59,19 @@ export interface Undoable {
   id: number;
   text: string;
   dismissal?: boolean;
-  undo: () => Promise<unknown>;
+  undo: () => Promise<AttentionView>;
 }
+
+// What an action's work learned, written as it arrives: the view after it, and what Paseo confirmed it did [FRESH-04].
+export interface Answer {
+  view?: AttentionView;
+  sessions?: SessionResult;
+}
+export type Write = (answer: Answer) => void;
+// An action, run the one way [FRESH-04]: undefined when it failed, as a toast has said.
+export type Settle = <T>(key: string | null, label: string, work: (write: Write) => Promise<T>) => Promise<T | undefined>;
+// A start with no card for it, from a sheet of its own: true once started.
+export type StartElsewhere = (make: (source: SessionSource, write: Write) => Promise<Created>) => Promise<boolean>;
 
 // What a card and its sheet can do.
 export interface Actions {
@@ -69,15 +90,6 @@ export interface Actions {
   dismiss: (item: Item) => void;
   gotItAll: (items: Item[]) => void;
   openAgent: (agentId: string) => void;
-  started: (agentId: string) => Promise<void>;
-}
-
-// A session just started on an item.
-export interface Started {
-  agentId: string;
-  itemKey: string;
-  kind: SessionKind;
-  target: Target;
 }
 
 function issueTarget(issue: NextUpIssue): Target {
@@ -88,6 +100,7 @@ function issueTarget(issue: NextUpIssue): Target {
 // back; sessions start here, and Wrap up archives here.
 export function useItemActions(attention: ReturnType<typeof useAttention>, navigation: PluginScreenProps["navigation"]) {
   const paseo = usePaseo();
+  const sessionSource = useSessionSource(attention.data);
   const toast = useToast();
   const queryClient = useQueryClient();
   const { fetchContext, defaultBranch, fetchProviders } = useStartRpcs();
@@ -120,9 +133,6 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   const setCodeRepo = useRpc(rpc.setCodeRepo);
   // Every card with a change still running: each runs on its own.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
-  // Sessions archived here, hidden before Paseo's list catches up; in previews, where nothing really archives, this is what
-  // makes a Wrap up row go away after its screenshot [ATT-22].
-  const [archivedSessions, setArchivedSessions] = useState<ReadonlySet<string>>(new Set());
   const [undoable, setUndoable] = useState<Undoable[]>([]);
   // Bumped when the tab changes and its Undo rows go, so a change still running then adds none to the next tab [ATT-08].
   const undoTab = useRef(0);
@@ -130,27 +140,40 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   const [options, setOptions] = useState<OptionsSpec | null>(null);
   const view = attention.data;
 
-  async function run(key: string, label: string, work: () => Promise<unknown>) {
-    setBusy((keys) => new Set(keys).add(key));
+  // Every action runs here, so that when it finishes, everything that shows what it changed already does: the screen, the
+  // sidebar's count, every tab [FRESH-04]. Busy while it runs (the card's spinner), and nothing changes before its answer:
+  // no guess to take back. Views asked for before it are cancelled; each answer is written as it arrives, the view keeping
+  // whichever the server answered last and Paseo's entries stamped then, so nothing fetched before can undo it.
+  const write: Write = ({ view, sessions }) => {
+    if (view) writeView(queryClient, view);
+    if (sessions) {
+      writeSessions(queryClient, sessions, stamp());
+      sessionSource?.learn?.(sessions);
+    }
+  };
+  const settle: Settle = async (key, label, work) => {
+    if (key) setBusy((keys) => new Set(keys).add(key));
     try {
-      await work();
+      await queryClient.cancelQueries({ queryKey: VIEW_QUERY_KEY });
+      return await work(write);
     } catch (error) {
       toast.error(`${label} failed: ${(error as Error).message}`);
+      return undefined;
     } finally {
-      setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
+      if (key) setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
     }
-  }
+  };
 
   // A change from one tap, without confirming: Undo instead, where it can be taken back [SAFE-01, ATT-08, ATT-14].
   // The server answers each with the list after it, so nothing needs a refresh.
   function change(key: string, label: string, work: () => Promise<AttentionView>, done: string, undo?: () => Promise<AttentionView>, dismissal?: boolean) {
     const tab = undoTab.current;
-    void run(key, label, async () => {
-      attention.setView(await work());
+    void settle(key, label, async (write) => {
+      write({ view: await work() });
       if (!undo) return toast.show(done, { variant: "success" });
       if (tab !== undoTab.current) return;
       const id = Date.now() + Math.random();
-      setUndoable((rows) => [...rows, { id, text: done, undo: async () => attention.setView(await undo()), dismissal }]);
+      setUndoable((rows) => [...rows, { id, text: done, undo, dismissal }]);
     });
   }
 
@@ -159,66 +182,84 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     else toast.show("Session started. Open it from the sidebar.", { variant: "success" });
   }
 
-  // A session started from somewhere with no card for it (a new issue, feedback): open it, or it'd be hard to find.
-  async function started(agentId: string) {
-    await queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
-    openAgent(agentId);
-  }
-
   // A session started on an item leaves me here, so I can start several in a row; the item's card offers Open session
-  // [SES-10]. The session goes on the list at once, so the card offers it even if the poll after fails, rather than Start
-  // again; the next poll that succeeds replaces it with Paseo's own.
-  async function startedOn({ agentId, itemKey, kind, target }: Started) {
-    queryClient.setQueryData<AgentSummary[]>(AGENTS_QUERY_KEY, (agents = []) =>
-      agents.some((agent) => agent.id === agentId)
-        ? agents
-        : [...agents, { id: agentId, itemKey, kind, status: "running", requiresAttention: false, title: null, workspaceId: null, lastActivityAt: new Date().toISOString() }],
-    );
-    await queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
+  // [SES-10]. Paseo's own entries for the agent and its worktree are written before the spinner stops, so the card offers
+  // it at once and Next up's issue is in In progress, without waiting for Paseo's stream [FRESH-04, SES-11].
+  async function startOn(write: Write, itemKey: string, kind: SessionKind, target: Target, config: AttentionConfig, choice: OptionsChoice) {
+    const created = await startSession(paseo, sessionSource!, { itemKey, kind, target, config, fetchProviders, ...choice });
+    write({ sessions: createdResult(created) });
     toast.show(`Session started on #${target.number}`, { variant: "success" });
   }
 
   // One tap: start a session with defaults [SES-01]. An open one is offered first, by the card [SES-03].
-  async function startWithDefaults(itemKey: string, kind: SessionKind, target: Target, before?: () => Promise<unknown>) {
+  async function startWithDefaults(itemKey: string, kind: SessionKind, target: Target, before?: () => Promise<AttentionView>) {
     if (!view) return;
-    await run(itemKey, "Starting the session", () => startNow(itemKey, kind, target, view.config, before));
+    await settle(itemKey, "Starting the session", (write) => startNow(write, itemKey, kind, target, view.config, before));
   }
 
-  async function startNow(itemKey: string, kind: SessionKind, target: Target, config: AttentionConfig, before?: () => Promise<unknown>) {
+  async function startNow(write: Write, itemKey: string, kind: SessionKind, target: Target, config: AttentionConfig, before?: () => Promise<AttentionView>) {
     const checkout = await findCheckout(paseo, config, target, defaultBranch);
     // Ask where an issue's code lives before claiming it, so a failed start doesn't leave it taken [SES-07].
     if (!checkout.project && target.kind === "issue") return setPlacing({ itemKey, kind, target, missing: checkout.repo, before });
-    await before?.();
+    if (before) write({ view: await before() });
     const { context } = await fetchContext({ kind, target });
-    const prompt = renderPrompt(kind, target, context, config);
-    const agentId = await startSession(paseo, { itemKey, kind, target, prompt, config, fetchProviders, checkout });
-    await startedOn({ agentId, itemKey, kind, target });
+    await startOn(write, itemKey, kind, target, config, { prompt: renderPrompt(kind, target, context, config), checkout });
   }
 
   function place(codeRepo: string) {
     if (!placing) return;
     const { itemKey, kind, target, before } = placing;
     setPlacing(null);
-    void run(itemKey, "Starting the session", async () => {
+    void settle(itemKey, "Starting the session", async (write) => {
       const next = await setCodeRepo({ issueRepo: target.repo, codeRepo });
-      attention.setView(next);
-      await startNow(itemKey, kind, target, next.config, before);
+      write({ view: next });
+      await startNow(write, itemKey, kind, target, next.config, before);
     });
   }
+
+  // A start with no card for it (a new issue, feedback), written like any other, then opened, or it'd be hard to find
+  // [FRESH-04, ISS-01, FB-01].
+  const startElsewhere: StartElsewhere = async (make) => {
+    const created = await settle(null, "Starting the session", async (write) => {
+      const created = await make(sessionSource!, write);
+      write({ sessions: createdResult(created) });
+      return created;
+    });
+    if (created) openAgent(created.agent.id);
+    return !!created;
+  };
+
+  // The options sheet's Start, which stays open with its spinner until the session is written, or the start failed
+  // [SES-02, FRESH-04]. True once started.
+  async function startWithChoice(spec: OptionsSpec, choice: OptionsChoice): Promise<boolean> {
+    if (!view) return false;
+    const { itemKey, kind, target, before } = spec;
+    const started = await settle(itemKey, "Starting the session", async (write) => {
+      if (before) write({ view: await before() });
+      await startOn(write, itemKey, kind, target, view.config, choice);
+      return true;
+    });
+    return !!started;
+  }
+
+  // What an archive archived, written as gone with the view after it, so its Wrap up row is gone when the spinner stops
+  // [ATT-22, FRESH-04].
+  const archived = (outcome: ArchiveOutcome): Answer => ({
+    view: outcome.view,
+    ...(outcome.ok ? { sessions: { archivedAgents: outcome.archivedAgents, archivedWorkspaces: outcome.archivedWorkspaces } } : {}),
+  });
 
   // Archive sessions, with the busy key that makes it wait for Archive all clean and the other way round [ATT-22].
   // No Undo: Paseo's SDK can't restore a workspace and its agents, so the sheet is the safeguard instead.
   // `terminals` are the ones the confirm sheet named; archiving closes no other.
+
   async function archiveRows(items: WrapItem[], confirm: boolean, key = ALL_WRAP, terminals: string[] = []): Promise<ArchiveOutcome | null> {
     if (items.length === 0) return null;
-    setBusy((keys) => new Set(keys).add(key));
-    try {
+    const outcome = await settle(key, "Archive", async (write) => {
       const outcome = await archiveSessions({ targets: items.map(archiveTarget), confirm, terminals });
-      attention.setView(outcome.view);
+      write(archived(outcome));
       if (outcome.ok) {
-        const archived = new Set(items.flatMap((item) => item.wrap.sessions.map((session) => session.id)));
-        setArchivedSessions((known) => new Set([...known, ...archived]));
-        const sessions = archived.size;
+        const sessions = new Set(items.flatMap((item) => item.wrap.sessions.map((session) => session.id))).size;
         // A worktree that stayed lingers as a row saying why; the toast only confirms [ATT-22].
         const kept = outcome.kept.length ? ` · ${outcome.kept.length === 1 ? "worktree" : "worktrees"} kept` : "";
         toast.show(`${sessions === 1 ? `Archived the session on #${items[0].number}` : `Archived ${sessions} sessions`}${kept}`, { variant: "success" });
@@ -226,30 +267,20 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
         toast.error(`Couldn't archive: ${outcome.message}`);
       }
       return outcome;
-    } catch (error) {
-      toast.error(`Archive failed: ${(error as Error).message}`);
-      return null;
-    } finally {
-      setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
-    }
+    });
+    return outcome ?? null;
   }
 
   // A kept worktree tried again on its own: Archive worktree, or Try again [ATT-22].
   async function archiveWorktree(row: KeptRow, confirm: boolean, terminals: string[] = []): Promise<ArchiveOutcome | null> {
-    const key = `kept:${row.workspaceId}`;
-    setBusy((keys) => new Set(keys).add(key));
-    try {
+    const outcome = await settle(`kept:${row.workspaceId}`, "Archive", async (write) => {
       const outcome = await archiveWorktreeRpc({ workspaceId: row.workspaceId, confirm, terminals });
-      attention.setView(outcome.view);
+      write(archived(outcome));
       if (outcome.ok && !outcome.kept.length) toast.show(`Archived ${row.name}`, { variant: "success" });
       else if (!outcome.ok && outcome.reason === "working") toast.error(`Couldn't archive: ${outcome.message}`);
       return outcome;
-    } catch (error) {
-      toast.error(`Archive failed: ${(error as Error).message}`);
-      return null;
-    } finally {
-      setBusy((keys) => new Set([...keys].filter((other) => other !== key)));
-    }
+    });
+    return outcome ?? null;
   }
 
   function itemActions(view: AttentionView, agents: AgentSummary[]): Actions {
@@ -261,7 +292,6 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
       login: view.login,
       fetchDetails,
       openAgent,
-      started,
       act: (item, action) => {
         const session = ACTION_SESSION[action];
         const { target } = item;
@@ -322,7 +352,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   }
 
   // Next up's issues: start, with options, claim or give back, close [NXT-05, NXT-07, NXT-11].
-  const claimFirst = (issue: NextUpIssue, target: Target) => async () => attention.setView(await claim({ key: issue.key, target }));
+  const claimFirst = (issue: NextUpIssue, target: Target) => () => claim({ key: issue.key, target });
   const issueActions = {
     onStart: (issue: NextUpIssue, claiming: boolean) => {
       const target = issueTarget(issue);
@@ -363,52 +393,66 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     },
   };
 
-  const failedSaving = (error: Error) => toast.error(`Saving the filter failed: ${error.message}`);
-  // Ticks apply right away, like Next up's; the server remembers them [HIS-07].
+  // Filter ticks and Next up's grouping are my own choice of what to see, not a change anywhere else: each shows at once,
+  // with nothing to take back, so quick ticks build on each other. Saving runs as an action [FRESH-04]: views asked for
+  // before it are cancelled, and only the last save's answer is written, so an earlier one can't drop a later tick.
+  const choosing = useRef(0);
+  function choose(view: AttentionView, choice: Partial<AttentionView>, label: string, save: () => Promise<AttentionView[]>) {
+    const mine = ++choosing.current;
+    // On whatever view is held, which may be newer than the one ticked on.
+    queryClient.setQueryData<AttentionView>(VIEW_QUERY_KEY, (held) => ({ ...(held ?? view), ...choice }));
+    void settle(null, label, async (write) => {
+      const saved = await save();
+      if (mine === choosing.current) for (const answer of saved) write({ view: answer });
+    });
+  }
+  // [HIS-07]
   function filterHistory(view: AttentionView, next: HistoryFilter[]) {
-    attention.setView({ ...view, historyFilter: next });
-    saveHistoryFilter({ filter: next })
-      .then((saved) => attention.setView(saved))
-      .catch(failedSaving);
+    choose(view, { historyFilter: next }, "Saving the filter", async () => [await saveHistoryFilter({ filter: next })]);
   }
-  // One setView for all, so clearing them together can't put any back.
+  // All of it at once, so clearing them together can't put any back [NXT-03, NXT-09].
   function filterNextUp(view: AttentionView, change: FilterChange) {
-    attention.setView({ ...view, ...change });
-    if (change.scopes) saveScopes({ scopes: change.scopes }).catch(failedSaving);
-    if (change.sources) saveSources({ sources: change.sources }).catch(failedSaving);
-    if (change.projectFilter) saveProjects({ projects: change.projectFilter }).catch(failedSaving);
+    choose(view, change, "Saving the filter", () =>
+      Promise.all([
+        ...(change.scopes ? [saveScopes({ scopes: change.scopes })] : []),
+        ...(change.sources ? [saveSources({ sources: change.sources })] : []),
+        ...(change.projectFilter ? [saveProjects({ projects: change.projectFilter })] : []),
+      ]),
+    );
   }
-  // Shown at once, and remembered; the saved view then wins over a refresh that started before it [NXT-14].
+  // [NXT-14]
   function groupNextUp(view: AttentionView, on: boolean) {
-    attention.setView({ ...view, unclaimedByRepo: on });
-    saveByRepo({ on })
-      .then((saved) => attention.setView(saved))
-      .catch((error: Error) => toast.error(`Saving the grouping failed: ${error.message}`));
+    choose(view, { unclaimedByRepo: on }, "Saving the grouping", async () => [await saveByRepo({ on })]);
   }
 
   return {
     busy,
-    archivedSessions,
     undoable,
     clearUndo: () => ((undoTab.current += 1), setUndoable([])),
+    // [ATT-08, ATT-14]
     undo: (row: Undoable) =>
-      void run(String(row.id), "Undo", async () => {
-        await row.undo();
+      void settle(String(row.id), "Undo", async (write) => {
+        write({ view: await row.undo() });
         setUndoable((rows) => rows.filter((other) => other.id !== row.id));
       }),
-    restoreDismissed: (tab: DismissTab) => void run("restore", "Restore", async () => (attention.setView(await restore({ tab })), setUndoable([]))),
+    restoreDismissed: (tab: DismissTab) =>
+      void settle("restore", "Restore", async (write) => {
+        write({ view: await restore({ tab }) });
+        setUndoable([]);
+      }),
     placing,
     place,
     cancelPlacing: () => setPlacing(null),
     options,
     closeOptions: () => setOptions(null),
+    startWithChoice,
+    settle,
+    startElsewhere,
     fetchDetails,
     openAgent,
-    started,
-    startedOn,
     archiveRows,
     archiveWorktree,
-    dismissKept: (row: KeptRow) => void run(`kept:${row.workspaceId}`, "Dismiss", async () => attention.setView(await dismissKept({ workspaceId: row.workspaceId }))),
+    dismissKept: (row: KeptRow) => void settle(`kept:${row.workspaceId}`, "Dismiss", async (write) => write({ view: await dismissKept({ workspaceId: row.workspaceId }) })),
     itemActions,
     issueActions,
     askActions,

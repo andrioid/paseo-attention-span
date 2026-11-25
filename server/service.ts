@@ -14,6 +14,8 @@ import type { Details, LiveResult, ReferencedIssue } from "./github-types";
 import { State } from "./store";
 import { applyPending, buildView, dismissedIn, doneItem, type Effect, isPending, type Pending, SETTLE_MS } from "./view";
 import { keySet, uniqueKeys } from "../shared/names";
+import { itemOfSession } from "../shared/item-sessions";
+import { closedBranches } from "../shared/linked-sessions";
 
 // History changes only when I finish something, so it's fetched daily, on ⟳ in its tab and after a merge.
 const HISTORY_MAX_AGE_SECONDS = 24 * 60 * 60;
@@ -21,6 +23,16 @@ const HISTORY_MAX_AGE_SECONDS = 24 * 60 * 60;
 const RETRY_MS = 5 * 60_000;
 // Whether projects can be read is asked again at most this often, unless Settings asks [NXT-12].
 const PROJECTS_CHECK_MS = 60 * 60_000;
+// Besides its schedule, the live feed is refreshed after a turn in one of my items' sessions, while my CI runs and when the
+// screen opens on an old one; those extra refreshes share one budget, at most one this often [FRESH-01, FRESH-04, GH-01].
+const EXTRA_GAP_MS = 5 * 60_000;
+// While checks run on a PR of mine, the live feed is fetched again this long after the last fetch [FRESH-01].
+const CHECKS_MS = 5 * 60_000;
+// Opening the screen fetches a live feed older than this [FRESH-01].
+const OPENED_MAX_AGE_MS = 5 * 60_000;
+
+// Why an extra live refresh is wanted, and from when on a refresh would do.
+type Want = { why: "turn" | "checks" | "opened"; at: number };
 
 // Where gh's token comes from: an environment variable, which gh reads before its own login, or that login [NXT-12].
 const tokenSource = (): ProjectsAccess["token"] => (process.env.GH_TOKEN ? "GH_TOKEN" : process.env.GITHUB_TOKEN ? "GITHUB_TOKEN" : "gh");
@@ -53,13 +65,34 @@ export class AttentionService {
   private timer: (() => void) | null = null;
   private followUps: Partial<Record<FeedId, () => void>> = {};
   private intervalMinutes = 0;
+  // When the schedule next refreshes the live feed.
+  private tickAt = 0;
+  // Extra live refreshes still wanted, the one waiting for its time, and when the last one began [FRESH-01, FRESH-04].
+  private wants: Want[] = [];
+  private extra: { at: number; cancel: () => void } | null = null;
+  private lastExtraAt = -Infinity;
   private projects: { access: ProjectsAccess; checkedAt: number } = { access: { state: "unknown", token: tokenSource() }, checkedAt: 0 };
   private projectsProbe: Promise<ProjectsAccess> | null = null;
   private projectsWarning: string | undefined;
   // The app's connection to Paseo, from its last request; background refreshes have none of their own.
   private paseo: PluginHandlerContext["paseo"] | null = null;
+  // Counts every change to what the view shows, as it's made, so a view answered before a change can't undo the change's
+  // own answer on the screen [FRESH-04]. Started from the clock, so a restarted server's views are newer than the last's.
+  private revision: number;
 
-  constructor(private readonly port: Port) {}
+  constructor(private readonly port: Port) {
+    this.revision = port.now();
+  }
+
+  // Called as a change is made, before anything can answer with it [FRESH-04].
+  private changed(): void {
+    this.revision = Math.max(this.revision + 1, this.port.now());
+  }
+
+  private configure(config: AttentionConfig): void {
+    this.config = config;
+    this.changed();
+  }
 
   async start(): Promise<void> {
     await this.port.store.moveOldFiles().catch((error) => console.error("Couldn't move the old settings folder:", error));
@@ -67,6 +100,7 @@ export class AttentionService {
     await this.reloadConfig().catch(() => {}); // shown as the screen's error
     this.schedule();
     void this.refreshStale();
+    this.followChecks();
   }
 
   connect(paseo: PluginHandlerContext["paseo"]): void {
@@ -77,22 +111,86 @@ export class AttentionService {
     this.timer?.();
     this.timer = null;
     for (const cancel of Object.values(this.followUps)) cancel();
+    this.extra?.cancel();
+    this.extra = null;
   }
 
   // ⟳ fetches its tab's feed now; otherwise feeds older than their schedule are fetched first.
   // `cached` answers from memory, with no GitHub refresh first. `timeZone` is the device's: History's weeks follow the last
-  // one sent, so a new one fetches History again, once [HIS-01].
-  async get(refresh?: FeedId, cached?: boolean, timeZone?: string): Promise<AttentionView> {
+  // one sent, so a new one fetches History again, once [HIS-01]. `opened` is the screen just opened: it's answered from
+  // memory at once, while what's old is fetched behind it, the live feed already after a few minutes [FRESH-01].
+  async get(refresh?: FeedId, cached?: boolean, timeZone?: string, opened?: boolean): Promise<AttentionView> {
     const rezoned = !!timeZone && timeZone !== this.timeZone && isTimeZone(timeZone);
     if (rezoned) {
       this.state.timeZone = timeZone;
       await this.save();
     }
     const history = rezoned && refresh !== "history" ? this.refresh("history", true).catch(() => {}) : null;
+    // Only with something to show: a screen with nothing yet waits for it.
+    const behind = opened && !refresh && !cached && !!this.state.live;
     if (refresh) await this.refresh(refresh).catch(() => {});
+    else if (behind) this.opened();
     else if (!cached) await this.refreshStale();
-    if (!cached) await history;
+    if (!cached && !behind) await history;
     return this.view();
+  }
+
+  // Feeds older than their schedule refresh as ever; a live feed only a few minutes old takes an extra refresh.
+  private opened(): void {
+    void this.refreshStale();
+    const fetchedAt = this.state.live ? Date.parse(this.state.live.fetchedAt) : 0;
+    if (!this.feeds.live.inFlight && this.port.now() - fetchedAt >= OPENED_MAX_AGE_MS) this.want("opened", this.port.now());
+  }
+
+  // A turn just ended in a Paseo session: one on an item, started here or linked to it by its workspace or PR, may have
+  // pushed, commented or opened a PR, so the live feed is refreshed once GitHub's search has caught up [FRESH-04]. Paseo's
+  // lists tell, as the hook's agent has no labels; a sub-agent's turn counts for its session. A failed lookup skips it.
+  async turnEnded(paseo: PluginHandlerContext["paseo"], agent: { id: string; parentAgentId: string | null }): Promise<void> {
+    const at = this.port.now() + SETTLE_MS;
+    if (!this.port.backgroundRefreshes) return;
+    // An extra refresh already planned for then meets it: no need to ask Paseo whose turn it was, as agents end many [GH-01].
+    if (this.extra && this.extra.at >= at) return;
+    try {
+      const { agents, workspaces } = await this.port.paseo.sessions(paseo);
+      if (itemOfSession(agent.parentAgentId ?? agent.id, agents, workspaces, closedBranches(this.view()))) this.want("turn", at);
+    } catch (error) {
+      console.error("Couldn't tell whose turn ended:", (error as Error).message);
+    }
+  }
+
+  // While checks run on a PR of mine, the live feed is fetched again a few minutes after the last fetch; once none run, it
+  // stops [FRESH-01]. A failed fetch keeps the last answer, so it's tried again as often, as a failure is anyway.
+  private followChecks(): void {
+    this.wants = this.wants.filter((want) => want.why !== "checks");
+    const live = this.state.live;
+    if (live?.attention.checksRunning) this.want("checks", Math.max(Date.parse(live.fetchedAt), this.feeds.live.lastAttemptAt) + CHECKS_MS);
+    else this.planExtra();
+  }
+
+  private want(why: Want["why"], at: number): void {
+    if (!this.port.backgroundRefreshes) return;
+    this.wants.push({ why, at });
+    this.planExtra();
+  }
+
+  // The next extra refresh: when the earliest want is due, but never within EXTRA_GAP_MS of the last one, which it waits
+  // for; every want due by then is met by it [FRESH-01, GH-01]. One due now starts now, so the view answered says it runs.
+  private planExtra(): void {
+    this.extra?.cancel();
+    this.extra = null;
+    const now = this.port.now();
+    if (this.wants.length) {
+      const at = Math.max(Math.min(...this.wants.map((want) => want.at)), this.lastExtraAt + EXTRA_GAP_MS);
+      if (at <= now) return this.runExtra();
+      this.extra = { at, cancel: this.port.setTimer(() => this.runExtra(), at - now) };
+    }
+    this.changed(); // the view says when it's due
+  }
+
+  private runExtra(): void {
+    this.extra = null;
+    this.lastExtraAt = this.port.now();
+    void this.refresh("live", true).catch(() => {});
   }
 
   private get timeZone(): string {
@@ -216,26 +314,26 @@ export class AttentionService {
 
   // Remember where an issue repo's code lives [SES-07].
   async setCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionView> {
-    this.config = await this.port.store.saveCodeRepo(issueRepo, codeRepo);
+    this.configure(await this.port.store.saveCodeRepo(issueRepo, codeRepo));
     return this.view();
   }
 
   // Orgs and repos chosen in settings [SRC-02]. The lists follow right away; History catches up behind them.
   async setCoverage(orgs: string[], repos: string[]): Promise<void> {
-    this.config = await this.port.store.saveCoverage(orgs, repos);
+    this.configure(await this.port.store.saveCoverage(orgs, repos));
     void this.refresh("history").catch(() => {});
     await this.refresh("live").catch(() => {});
   }
 
   // Where Next up looks, chosen in settings [NXT-04]. Only the live feed has Next up.
   async setNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<void> {
-    this.config = await this.port.store.saveNextUpSources(sources);
+    this.configure(await this.port.store.saveNextUpSources(sources));
     await this.refresh("live").catch(() => {});
   }
 
   // Which org issue fields Next up uses, chosen in settings [NXT-04]. Only the live feed has Next up.
   async setNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<void> {
-    this.config = await this.port.store.saveNextUpFields(fields);
+    this.configure(await this.port.store.saveNextUpFields(fields));
     await this.refresh("live").catch(() => {});
   }
 
@@ -252,35 +350,40 @@ export class AttentionService {
 
   // Replies on others' threads without a tag [ATT-17]. Only the live feed has them.
   async setFollowThreads(on: boolean): Promise<void> {
-    this.config = await this.port.store.saveFollowThreads(on);
+    this.configure(await this.port.store.saveFollowThreads(on));
     await this.refresh("live").catch(() => {});
   }
 
   // Only questions wait [WAI-01]. Only the live feed has threads.
   async setOnlyQuestionsWait(on: boolean): Promise<void> {
-    this.config = await this.port.store.saveOnlyQuestionsWait(on);
+    this.configure(await this.port.store.saveOnlyQuestionsWait(on));
     await this.refresh("live").catch(() => {});
   }
 
-  async setScopes(scopes: string[]): Promise<void> {
+  // Next up's filter, each answered with the view, so a refresh that read the old ticks can't undo them [NXT-03, NXT-09, FRESH-04].
+  async setScopes(scopes: string[]): Promise<AttentionView> {
     this.state.scopes = scopes;
     await this.save();
+    return this.view();
   }
 
-  async setSources(sources: string[]): Promise<void> {
+  async setSources(sources: string[]): Promise<AttentionView> {
     this.state.sources = sources;
     await this.save();
+    return this.view();
   }
 
   // What the New issue sheet starts with next time [ISS-01].
-  async setNewIssueChoice(repo: string, profileId: string | null): Promise<void> {
+  async setNewIssueChoice(repo: string, profileId: string | null): Promise<AttentionView> {
     this.state.newIssue = { repo, profileId };
     await this.save();
+    return this.view();
   }
 
-  async setProjectFilter(projects: string[]): Promise<void> {
+  async setProjectFilter(projects: string[]): Promise<AttentionView> {
     this.state.projectFilter = projects;
     await this.save();
+    return this.view();
   }
 
   // Not a filter, so Clear leaves it [NXT-14]. Answered with the view, so a refresh that read the old choice can't undo it.
@@ -358,6 +461,7 @@ export class AttentionService {
 
   // One fetch once GitHub's search has caught up with the latest change, which ends what's pending.
   private followUp(id: FeedId): void {
+    if (!this.port.backgroundRefreshes) return;
     this.followUps[id]?.();
     this.followUps[id] = this.port.setTimer(() => void this.refresh(id, true).catch(() => {}), SETTLE_MS);
   }
@@ -369,7 +473,9 @@ export class AttentionService {
       feed.next ??= feed.inFlight.catch(() => {}).then(() => ((feed.next = null), this.refresh(id)));
       return feed.next;
     }
-    feed.inFlight ??= this.fetch(id).finally(() => (feed.inFlight = null));
+    // Starting and ending change what the view says is refreshing [FRESH-04].
+    if (!feed.inFlight) this.changed();
+    feed.inFlight ??= this.fetch(id).finally(() => ((feed.inFlight = null), this.changed()));
     return feed.inFlight;
   }
 
@@ -381,6 +487,11 @@ export class AttentionService {
   private async fetch(id: FeedId): Promise<void> {
     const feed = this.feeds[id];
     feed.lastAttemptAt = this.port.now();
+    // Any live refresh begun now meets what was wanted by now, scheduled, ⟳ or extra; the rest wait on.
+    if (id === "live" && this.wants.some((want) => want.at <= feed.lastAttemptAt)) {
+      this.wants = this.wants.filter((want) => want.at > feed.lastAttemptAt);
+      this.planExtra();
+    }
     try {
       await this.reloadConfig();
       const now = new Date(this.port.now());
@@ -410,8 +521,11 @@ export class AttentionService {
       await this.save();
     } catch (error) {
       feed.error = (error as Error).message;
+      this.changed();
       console.error(`Attention Span ${id} refresh failed:`, feed.error);
       throw error;
+    } finally {
+      if (id === "live") this.followChecks();
     }
   }
 
@@ -508,10 +622,11 @@ export class AttentionService {
 
   private async reloadConfig(): Promise<void> {
     try {
-      this.config = await this.port.store.loadConfig();
+      this.configure(await this.port.store.loadConfig());
       this.configError = null;
     } catch (error) {
       this.configError = (error as Error).message;
+      this.changed();
       throw error;
     }
     if (this.timer && this.intervalMinutes !== this.config.refreshMinutes) this.schedule();
@@ -521,12 +636,16 @@ export class AttentionService {
   private schedule(): void {
     this.timer?.();
     this.intervalMinutes = this.config.refreshMinutes;
-    const tick = () => {
+    const next = () => {
+      this.tickAt = this.port.now() + this.intervalMinutes * 60_000;
       this.timer = this.port.setTimer(tick, this.intervalMinutes * 60_000);
+    };
+    const tick = () => {
+      next();
       void this.refresh("live").catch(() => {});
       if (this.isStale("history")) void this.refresh("history").catch(() => {});
     };
-    this.timer = this.port.setTimer(tick, this.intervalMinutes * 60_000);
+    next();
   }
 
   // Older than the feed's schedule, and not failed within the last few minutes.
@@ -542,8 +661,10 @@ export class AttentionService {
     return [...(this.state.live?.attention.items ?? []), ...(this.state.history?.items ?? [])];
   }
 
-  // Feeds finish independently; saves go one at a time so an older snapshot never lands last.
+  // Feeds finish independently; saves go one at a time so an older snapshot never lands last. Every change to the state
+  // saves, so it counts here.
   private save(): Promise<void> {
+    this.changed();
     this.saving = this.saving.catch(() => {}).then(() => this.port.store.saveState(this.state));
     return this.saving;
   }
@@ -581,6 +702,8 @@ export class AttentionService {
       refreshing: this.feeds[id].inFlight !== null,
       error: this.feeds[id].error ?? this.configError,
     });
+    // When the live feed is next refreshed by itself, so the screen reads the view soon after [FRESH-01, FRESH-04].
+    const nextAt = Math.min(this.timer ? this.tickAt : Infinity, this.extra?.at ?? Infinity);
     const now = this.port.now();
     const pending = Object.fromEntries(Object.entries(this.state.pending).filter(([, entry]) => isPending(entry, this.fetchedAt(), now)));
     const shown = applyPending(this.state.live?.attention ?? null, this.historyItems(), pending);
@@ -589,7 +712,7 @@ export class AttentionService {
       shown.history,
       this.state.dismissed,
       {
-      feeds: { live: status("live"), history: status("history") },
+      feeds: { live: { ...status("live"), ...(Number.isFinite(nextAt) ? { nextAt: new Date(nextAt).toISOString() } : {}) }, history: status("history") },
       scopes: this.state.scopes,
       sources: this.state.sources,
       projectFilter: this.state.projectFilter,
@@ -601,6 +724,7 @@ export class AttentionService {
       newIssue: { repos: this.newIssueRepos(shown.attention), ...this.state.newIssue },
       kept: this.state.kept,
       closeAsks: this.closeAsks(pending),
+      revision: this.revision,
       },
       this.state.changes,
       new Date(now),

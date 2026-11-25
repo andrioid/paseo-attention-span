@@ -1,5 +1,5 @@
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { Markdown, TextInput, useToast } from "@getpaseo/plugin/client/ui";
+import { Markdown, TextInput } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Text, View } from "react-native";
@@ -8,8 +8,10 @@ import type { AttentionConfig } from "../shared/config";
 import { ago } from "../shared/format";
 import { renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
-import type { OptionsSpec, Started } from "./item-actions";
-import { branchWorkspaces, findCheckout, githubProjects, listProfiles, noProjectMessage, resolveAgentConfig, startSession, useStartRpcs } from "./sessions";
+import type { OptionsChoice, OptionsSpec } from "./item-actions";
+import { branchWorkspaces, findCheckout, githubProjects, listProfiles, noProjectMessage, resolveAgentConfig, useStartRpcs } from "./sessions";
+import { useAttention } from "./data";
+import { useSessionSource } from "./session-source";
 import { Dialog } from "./sheet";
 import { Avatar, Button, CheckRow, Loading, TablerIcon, Toggle, useStyles } from "./ui";
 
@@ -137,10 +139,21 @@ export function ReviewerSheet({
 }
 
 // Session options in a modal: a bottom sheet on phones [SES-02].
-export function SessionOptions({ spec, config, started, onClose }: { spec: OptionsSpec; config: AttentionConfig; started: (started: Started) => Promise<void>; onClose: () => void }) {
+// Start keeps the sheet open, saying so, until the session is written or the start failed [FRESH-04].
+export function SessionOptions({
+  spec,
+  config,
+  onStart,
+  onClose,
+}: {
+  spec: OptionsSpec;
+  config: AttentionConfig;
+  onStart: (spec: OptionsSpec, choice: OptionsChoice) => Promise<boolean>;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const paseo = usePaseo();
-  const toast = useToast();
+  const sessionSource = useSessionSource(useAttention().data);
   const { fetchContext, defaultBranch, fetchProviders } = useStartRpcs();
   const { itemKey, kind, target } = spec;
   const options = useQuery({
@@ -151,12 +164,13 @@ export function SessionOptions({ spec, config, started, onClose }: { spec: Optio
         listProfiles(paseo),
         findCheckout(paseo, config, target, defaultBranch),
         // Without a ready provider, still show the options; starting reports the error.
-        resolveAgentConfig(paseo, fetchProviders, kind, config).catch(() => ({ label: "No agent provider is ready" })),
+        resolveAgentConfig(paseo, sessionSource!, fetchProviders, kind, config).catch(() => ({ label: "No agent provider is ready" })),
       ]);
       const workspaces = checkout.project ? await branchWorkspaces(paseo, checkout.project.projectId, checkoutPr(kind, target).head) : [];
       return { prompt: renderPrompt(kind, target, context, config), profiles, checkout, workspaces, defaultLabel: defaults.label };
     },
     staleTime: 60_000,
+    enabled: !!sessionSource,
   });
   const [workspaceId, setWorkspaceId] = useState<string>();
   const [profileId, setProfileId] = useState<string>();
@@ -167,16 +181,9 @@ export function SessionOptions({ spec, config, started, onClose }: { spec: Optio
   async function start() {
     if (!data) return;
     setStarting(true);
-    try {
-      await spec.before?.();
-      const agentId = await startSession(paseo, { itemKey, kind, target, prompt: prompt ?? data.prompt, config: config, fetchProviders: fetchProviders, checkout: data.checkout, profileId, workspaceId });
-      await started({ agentId, itemKey, kind, target });
-      onClose();
-    } catch (error) {
-      toast.error(`Starting the session failed: ${(error as Error).message}`);
-    } finally {
-      setStarting(false);
-    }
+    const started = await onStart(spec, { prompt: prompt ?? data.prompt, checkout: data.checkout, profileId, workspaceId });
+    setStarting(false);
+    if (started) onClose();
   }
 
   return (

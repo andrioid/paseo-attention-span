@@ -76,8 +76,8 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-next-up-projects.png` | Unclaimed filtered to TODO's Todo and all of Ideas: #160, #163, #164, #166; the button reads "Filter · 2" |
    | `<layout>-next-up-source.png` | Unclaimed filtered to the My repos source: only "Devcontainers for pull requests" |
    | `<layout>-next-up-code-repo.png` | Start on "Price list import skips quoted rows" (in `acme/issues`, no checkout): the picker asking where its code lives |
-   | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping; the start then fails with "No agent provider is ready", as expected in the container |
-   | `<layout>-next-up-code-repo-again.png` | Start pressed again: no picker this time |
+   | `<layout>-next-up-code-repo-after.png` | After picking `acme/shop`: the shooter has checked config.json gained the mapping, and the start went on there: "Session started on #151", and the issue has left Next up's Assigned for Doing's In progress, with no ⟳ [FRESH-04] |
+   | `<layout>-next-up-code-repo-again.png` | Start another session… from #151's In progress card: the options sheet goes straight to `acme/shop` (New worktree, profiles, prompt), no picker and no missing project |
    | `<layout>-settings-typo.png` | The settings screen from the gear, after adding `acme/shpo`: "wasn't found on GitHub" |
    | `<layout>-settings.png` | After adding `acme/web`: the shooter has checked config.json kept `orgs` and `nextUp` |
    | `<layout>-settings-next-up.png` | The Next up section after adding `me/tool`: My repos on, `acme`, `me/tool` |
@@ -86,6 +86,9 @@ Never connect a browser, SDK client or script to the Paseo daemon that runs you 
    | `<layout>-settings-fields-picked.png` | After setting Scope to Team: the shooter has checked config.json saved only that, leaving Priority out (still found by its name) and Effort's `order` kept |
    | `<layout>-settings-waiting.png` | Replies, then Waiting with Only questions wait switched on: the shooter has checked config.json saved `onlyQuestionsWait`, and its caption says only questions wait. It's switched back off after |
 | `<layout>-setup.png` | The setup checklist, from a `config.json` that doesn't parse. The shooter restores it and presses Check again |
+   | `<layout>-doing-wrap-archived.png` | Right after Archive session on the clean "Retry failed webhooks" (#183) row, never ⟳: the row is gone from Wrap up and Archive all clean counts one less [ATT-22, FRESH-04] |
+   | `<layout>-doing-review-started.png` | Right after Review again on "Group order emails by customer" (#199), never ⟳: its card offers Open session in place of Review again [SES-10, FRESH-04] |
+   | `<layout>-doing-claim-started.png` | Right after Claim & start on Next up's "Merge the two import commands" (#162), never ⟳: it's in Doing's In progress with Open session, and gone from Next up's Unclaimed [NXT-05, SES-11, FRESH-04]. The shooter unclaims it after |
 
    Viewports are tall (desktop 1280×3000, phone 390×4200) because the plugin screen scrolls inside its own view; each shot is clipped to where the content ends. Sheets and modals are clipped to a band around the dialog, so their thumbnails stay readable. Faces on cards and in sheets carry an icon tight against the picture saying what they are: ⌛ someone I wait on, ✏️ who opened it, the Changes requested icon for a review bot's comments. Quotes have none [ATT-19]. Their words, and an amber age's, show on hover through `Hint`, floating over the card without moving anything; only the `*-hint`/`*-too-long` shots show them. Look for:
    - text that's unreadable in either theme
