@@ -27,6 +27,7 @@ export function UpdateNotice() {
   const apply = useRpc(rpc.applyUpdate);
   const skip = useRpc(rpc.skipUpdate);
   const [updating, setUpdating] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const { data: notice } = useQuery({
     queryKey: UPDATE_QUERY_KEY,
     // While the plugin restarts, its server isn't there to answer: keep what's on screen.
@@ -48,9 +49,19 @@ export function UpdateNotice() {
     }
   };
 
-  const notNow = () => {
-    queryClient.setQueryData(UPDATE_QUERY_KEY, null);
-    skip({ latest: notice.latest }).catch((error: Error) => toast.error(`Couldn't put it off: ${error.message}`));
+  // Gone once the server remembers it, read again from the server, so a check asked before then can't bring it back
+  // [UPD-01, FRESH-04].
+  const notNow = async () => {
+    setSkipping(true);
+    try {
+      await queryClient.cancelQueries({ queryKey: UPDATE_QUERY_KEY });
+      await skip({ latest: notice.latest });
+      await queryClient.invalidateQueries({ queryKey: UPDATE_QUERY_KEY });
+    } catch (error) {
+      toast.error(`Couldn't put it off: ${(error as Error).message}`);
+    } finally {
+      setSkipping(false);
+    }
   };
 
   return (
@@ -78,7 +89,7 @@ export function UpdateNotice() {
         <Button label={busy ? "Updating…" : notice.error ? "Try again" : "Update"} icon="update" variant="solid" busy={busy} onPress={() => void update()} />
         {notice.error ? <Button label="Copy command" icon="copy" onPress={() => copy(notice.command, "Copied the update command")} /> : null}
         <Button label="What's new" icon="github" onPress={() => void openExternalUrl(notice.notes)} />
-        {busy ? null : <Button label="Not now" variant="ghost" accessibilityLabel={`Not now: hide until a version newer than ${notice.latest}`} onPress={notNow} />}
+        {busy ? null : <Button label="Not now" variant="ghost" accessibilityLabel={`Not now: hide until a version newer than ${notice.latest}`} busy={skipping} disabled={skipping} onPress={() => void notNow()} />}
       </View>
     </View>
   );
