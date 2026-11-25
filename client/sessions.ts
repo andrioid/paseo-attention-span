@@ -17,7 +17,7 @@ import {
   type Stamp,
   writeResult,
 } from "../shared/session-cache";
-import { VIEW_QUERY_KEY } from "./data";
+import { VIEW_QUERY_KEY, writeView } from "./data";
 import { sameName } from "../shared/names";
 import { type SessionSource, type SessionSubscription, useSessionSource } from "./session-source";
 
@@ -102,7 +102,7 @@ async function goneFirst(queryClient: QueryClient, live: Live, before: SessionEn
   if (!sessionsOf(before, branches).some((session) => !now.has(session.id))) return;
   await live
     .fetchAttention({ cached: true })
-    .then((view) => queryClient.setQueryData(VIEW_QUERY_KEY, view))
+    .then((view) => writeView(queryClient, view))
     .catch(() => {}); // the view's own poll catches up
 }
 
