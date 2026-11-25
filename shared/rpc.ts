@@ -73,10 +73,10 @@ export const setFollowThreads = defineRpc({ name: "config.set-follow-threads", i
 export const setOnlyQuestionsWait = defineRpc({ name: "config.set-only-questions-wait", input: z.object({ on: z.boolean() }), output: done });
 export const myOrgs = defineRpc({ name: "config.my-orgs", input: z.object({}), output: z.object({ orgs: z.array(z.string()) }) });
 // Remember the scopes and sources ticked in Next up's filter [NXT-03, NXT-09].
-export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: done });
-export const setSources = defineRpc({ name: "next-up.sources", input: z.object({ sources: z.array(z.string()) }), output: done });
+export const setScopes = defineRpc({ name: "next-up.scopes", input: z.object({ scopes: z.array(z.string()) }), output: view });
+export const setSources = defineRpc({ name: "next-up.sources", input: z.object({ sources: z.array(z.string()) }), output: view });
 // And the project statuses [NXT-03].
-export const setProjectFilter = defineRpc({ name: "next-up.projects", input: z.object({ projects: z.array(z.string()) }), output: done });
+export const setProjectFilter = defineRpc({ name: "next-up.projects", input: z.object({ projects: z.array(z.string()) }), output: view });
 // Unclaimed grouped by repository, or not [NXT-14].
 export const setUnclaimedByRepo = defineRpc({ name: "next-up.by-repo", input: z.object({ on: z.boolean() }), output: view });
 // Whether the gh login may read projects, asked again now, for Settings [NXT-12].
@@ -132,4 +132,4 @@ export const applyUpdate = defineRpc({ name: "update.apply", input: z.object({ l
 export const skipUpdate = defineRpc({ name: "update.skip", input: z.object({ latest: z.string() }), output: done });
 
 // What the New issue sheet starts with next time: the repository and agent profile it just started with [ISS-01].
-export const setNewIssueChoice = defineRpc({ name: "new-issue.choice", input: z.object({ repo: z.string(), profileId: z.string().nullable() }), output: done });
+export const setNewIssueChoice = defineRpc({ name: "new-issue.choice", input: z.object({ repo: z.string(), profileId: z.string().nullable() }), output: view });

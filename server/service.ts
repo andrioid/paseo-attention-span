@@ -58,8 +58,23 @@ export class AttentionService {
   private projectsWarning: string | undefined;
   // The app's connection to Paseo, from its last request; background refreshes have none of their own.
   private paseo: PluginHandlerContext["paseo"] | null = null;
+  // Counts every change to what the view shows, as it's made, so a view answered before a change can't undo the change's
+  // own answer on the screen [FRESH-04]. Started from the clock, so a restarted server's views are newer than the last's.
+  private revision: number;
 
-  constructor(private readonly port: Port) {}
+  constructor(private readonly port: Port) {
+    this.revision = port.now();
+  }
+
+  // Called as a change is made, before anything can answer with it [FRESH-04].
+  private changed(): void {
+    this.revision = Math.max(this.revision + 1, this.port.now());
+  }
+
+  private configure(config: AttentionConfig): void {
+    this.config = config;
+    this.changed();
+  }
 
   async start(): Promise<void> {
     await this.port.store.moveOldFiles().catch((error) => console.error("Couldn't move the old settings folder:", error));
@@ -216,26 +231,26 @@ export class AttentionService {
 
   // Remember where an issue repo's code lives [SES-07].
   async setCodeRepo(issueRepo: string, codeRepo: string): Promise<AttentionView> {
-    this.config = await this.port.store.saveCodeRepo(issueRepo, codeRepo);
+    this.configure(await this.port.store.saveCodeRepo(issueRepo, codeRepo));
     return this.view();
   }
 
   // Orgs and repos chosen in settings [SRC-02]. The lists follow right away; History catches up behind them.
   async setCoverage(orgs: string[], repos: string[]): Promise<void> {
-    this.config = await this.port.store.saveCoverage(orgs, repos);
+    this.configure(await this.port.store.saveCoverage(orgs, repos));
     void this.refresh("history").catch(() => {});
     await this.refresh("live").catch(() => {});
   }
 
   // Where Next up looks, chosen in settings [NXT-04]. Only the live feed has Next up.
   async setNextUpSources(sources: Pick<AttentionConfig["nextUp"], "mine" | "orgs" | "repos">): Promise<void> {
-    this.config = await this.port.store.saveNextUpSources(sources);
+    this.configure(await this.port.store.saveNextUpSources(sources));
     await this.refresh("live").catch(() => {});
   }
 
   // Which org issue fields Next up uses, chosen in settings [NXT-04]. Only the live feed has Next up.
   async setNextUpFields(fields: Partial<Record<FieldRole, string | null>>): Promise<void> {
-    this.config = await this.port.store.saveNextUpFields(fields);
+    this.configure(await this.port.store.saveNextUpFields(fields));
     await this.refresh("live").catch(() => {});
   }
 
@@ -252,35 +267,40 @@ export class AttentionService {
 
   // Replies on others' threads without a tag [ATT-17]. Only the live feed has them.
   async setFollowThreads(on: boolean): Promise<void> {
-    this.config = await this.port.store.saveFollowThreads(on);
+    this.configure(await this.port.store.saveFollowThreads(on));
     await this.refresh("live").catch(() => {});
   }
 
   // Only questions wait [WAI-01]. Only the live feed has threads.
   async setOnlyQuestionsWait(on: boolean): Promise<void> {
-    this.config = await this.port.store.saveOnlyQuestionsWait(on);
+    this.configure(await this.port.store.saveOnlyQuestionsWait(on));
     await this.refresh("live").catch(() => {});
   }
 
-  async setScopes(scopes: string[]): Promise<void> {
+  // Next up's filter, each answered with the view, so a refresh that read the old ticks can't undo them [NXT-03, NXT-09, FRESH-04].
+  async setScopes(scopes: string[]): Promise<AttentionView> {
     this.state.scopes = scopes;
     await this.save();
+    return this.view();
   }
 
-  async setSources(sources: string[]): Promise<void> {
+  async setSources(sources: string[]): Promise<AttentionView> {
     this.state.sources = sources;
     await this.save();
+    return this.view();
   }
 
   // What the New issue sheet starts with next time [ISS-01].
-  async setNewIssueChoice(repo: string, profileId: string | null): Promise<void> {
+  async setNewIssueChoice(repo: string, profileId: string | null): Promise<AttentionView> {
     this.state.newIssue = { repo, profileId };
     await this.save();
+    return this.view();
   }
 
-  async setProjectFilter(projects: string[]): Promise<void> {
+  async setProjectFilter(projects: string[]): Promise<AttentionView> {
     this.state.projectFilter = projects;
     await this.save();
+    return this.view();
   }
 
   // Not a filter, so Clear leaves it [NXT-14]. Answered with the view, so a refresh that read the old choice can't undo it.
@@ -369,7 +389,9 @@ export class AttentionService {
       feed.next ??= feed.inFlight.catch(() => {}).then(() => ((feed.next = null), this.refresh(id)));
       return feed.next;
     }
-    feed.inFlight ??= this.fetch(id).finally(() => (feed.inFlight = null));
+    // Starting and ending change what the view says is refreshing [FRESH-04].
+    if (!feed.inFlight) this.changed();
+    feed.inFlight ??= this.fetch(id).finally(() => ((feed.inFlight = null), this.changed()));
     return feed.inFlight;
   }
 
@@ -410,6 +432,7 @@ export class AttentionService {
       await this.save();
     } catch (error) {
       feed.error = (error as Error).message;
+      this.changed();
       console.error(`Attention Span ${id} refresh failed:`, feed.error);
       throw error;
     }
@@ -508,10 +531,11 @@ export class AttentionService {
 
   private async reloadConfig(): Promise<void> {
     try {
-      this.config = await this.port.store.loadConfig();
+      this.configure(await this.port.store.loadConfig());
       this.configError = null;
     } catch (error) {
       this.configError = (error as Error).message;
+      this.changed();
       throw error;
     }
     if (this.timer && this.intervalMinutes !== this.config.refreshMinutes) this.schedule();
@@ -542,8 +566,10 @@ export class AttentionService {
     return [...(this.state.live?.attention.items ?? []), ...(this.state.history?.items ?? [])];
   }
 
-  // Feeds finish independently; saves go one at a time so an older snapshot never lands last.
+  // Feeds finish independently; saves go one at a time so an older snapshot never lands last. Every change to the state
+  // saves, so it counts here.
   private save(): Promise<void> {
+    this.changed();
     this.saving = this.saving.catch(() => {}).then(() => this.port.store.saveState(this.state));
     return this.saving;
   }
@@ -601,6 +627,7 @@ export class AttentionService {
       newIssue: { repos: this.newIssueRepos(shown.attention), ...this.state.newIssue },
       kept: this.state.kept,
       closeAsks: this.closeAsks(pending),
+      revision: this.revision,
       },
       this.state.changes,
       new Date(now),

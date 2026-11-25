@@ -89,11 +89,11 @@ export default function contribute(server: PluginServerContext) {
   server.handle(rpc.setFollowThreads, ({ on }) => ready(() => attention.setFollowThreads(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.setOnlyQuestionsWait, ({ on }) => ready(() => attention.setOnlyQuestionsWait(on)).then(() => ({ ok: true as const })));
   server.handle(rpc.myOrgs, async () => ({ orgs: await answers.myOrgs() }));
-  server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(() => ({ ok: true as const })));
-  server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(() => ({ ok: true as const })));
-  server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setScopes, ({ scopes }) => ready(() => attention.setScopes(scopes)).then(shown));
+  server.handle(rpc.setSources, ({ sources }) => ready(() => attention.setSources(sources)).then(shown));
+  server.handle(rpc.setProjectFilter, ({ projects }) => ready(() => attention.setProjectFilter(projects)).then(shown));
   server.handle(rpc.setUnclaimedByRepo, ({ on }) => ready(() => attention.setUnclaimedByRepo(on)).then(shown));
-  server.handle(rpc.setNewIssueChoice, ({ repo, profileId }) => ready(() => attention.setNewIssueChoice(repo, profileId)).then(() => ({ ok: true as const })));
+  server.handle(rpc.setNewIssueChoice, ({ repo, profileId }) => ready(() => attention.setNewIssueChoice(repo, profileId)).then(shown));
   server.handle(rpc.projectsAccess, () => ready(() => attention.projectsAccess(true)));
   server.handle(rpc.updateBranch, ({ key, target }) => act(key, () => updateBranch(target), chip("updating")));
   server.handle(rpc.mergePullRequest, ({ key, target }) => act(key, () => mergePullRequest(target), { kind: "finished" }));

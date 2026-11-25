@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AttentionView } from "../shared/attention";
+import { type AttentionView, newerView } from "../shared/attention";
 import { AttentionConfig } from "../shared/config";
 import { historyWeeks } from "../shared/history-report";
 import { type Gh, type GitHub, gitHub, type ProbeResult } from "./fetch";
@@ -65,6 +65,8 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
     github,
     // Paseo as the service reaches it, for a test to say what archiving answers.
     paseo: port.paseo,
+    // The server started again on the same port, as after a restart.
+    restarted: () => new AttentionService(port),
     store,
     saved,
     // Moves the clock on, running the timers due on the way.
@@ -292,6 +294,72 @@ describe("what I just did", () => {
     await expect(service.act(KEY, () => Promise.reject(new Error("no")), updating)).rejects.toThrow("no");
     await advance(MINUTE);
     expect([github.live.mock.calls.length, (await service.get(undefined, true)).pending]).toEqual([1, 0]);
+  });
+});
+
+describe("which view is newer", () => {
+  const dismissed = (view: AttentionView) => !view.doing.some((section) => section.items.some((item) => item.key === KEY));
+
+  it("FRESH-04: a view answered before a change can't undo the change's answer, however late it arrives", async () => {
+    const { service, start } = harness();
+    await start();
+    const before = await service.get(undefined, true);
+    const answer = await service.dismiss(KEY);
+    const after = await service.get(undefined, true);
+    expect(dismissed(newerView(answer, before))).toBe(true);
+    expect(newerView(answer, after)).toBe(after);
+  });
+
+  it("FRESH-04: a refresh under way when a change is made answers with the change", async () => {
+    const { service, github, start, jump } = harness();
+    await start();
+    const held = deferred<Awaited<ReturnType<GitHub["live"]>>>();
+    github.live.mockImplementationOnce(() => held.promise);
+    const refreshing = service.get("live");
+    await settle();
+    const answer = await service.dismiss(KEY);
+    jump(MINUTE);
+    held.resolve(fixture(new Date(START)));
+    const refreshed = await refreshing;
+    expect([dismissed(refreshed), newerView(answer, refreshed)]).toEqual([true, refreshed]);
+  });
+
+  it("FRESH-04: a view that said a refresh runs is older than one answered once it's done, failed or not", async () => {
+    const { service, github, start } = harness();
+    await start();
+    for (const failing of [false, true]) {
+      const held = deferred<Awaited<ReturnType<GitHub["live"]>>>();
+      github.live.mockImplementationOnce(() => held.promise);
+      const refresh = service.refresh("live").catch(() => {});
+      const during = await service.get(undefined, true);
+      if (failing) held.reject(new Error("down"));
+      else held.resolve(fixture(new Date(START)));
+      await refresh;
+      const done = await service.get(undefined, true);
+      expect([during.feeds.live.refreshing, done.feeds.live.refreshing, newerView(done, during)]).toEqual([true, false, done]);
+    }
+  });
+
+  it("FRESH-04: Next up's filter answers with the view after it", async () => {
+    const { service, start } = harness();
+    await start();
+    const before = await service.get(undefined, true);
+    const scoped = await service.setScopes(["backend"]);
+    const sourced = await service.setSources(["org:acme"]);
+    expect(newerView(scoped, before).scopes).toEqual(["backend"]);
+    expect(newerView(sourced, scoped)).toBe(sourced);
+  });
+
+  it("FRESH-04: a restarted server's views are newer than the last one's", async () => {
+    const { service, start, restarted, jump } = harness();
+    await start();
+    await service.dismiss(KEY);
+    const last = await service.get(undefined, true);
+    jump(1000);
+    const again = restarted();
+    await again.start();
+    const first = await again.get(undefined, true);
+    expect(newerView(last, first)).toBe(first);
   });
 });
 

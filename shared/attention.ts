@@ -567,6 +567,14 @@ export interface AttentionView {
   fixtureNoStarted?: boolean;
   // Wrap up rows whose sessions are archived but whose worktree stayed, until it's gone or dismissed [ATT-22].
   kept?: KeptRow[];
+  // The server's count of its own changes when it answered: a view answered before a change has a lower one, so it can't
+  // undo the change's own answer, however late it arrives [FRESH-04].
+  revision: number;
+}
+
+// The view to keep when one arrives: never one the server answered before the one held [FRESH-04].
+export function newerView(held: AttentionView | undefined, incoming: AttentionView): AttentionView {
+  return held && incoming.revision < held.revision ? held : incoming;
 }
 
 // What a tick in Next up's project filter stands for: one status of one project, a project's issues without a status, or
