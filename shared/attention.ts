@@ -561,8 +561,10 @@ export interface AttentionView {
   newIssue: NewIssueInfo;
   // Changes I just made that GitHub's search hasn't caught up with; the app checks back sooner while there are any [FRESH-02].
   pending: number;
-  // Fixture mode only: made-up sessions, since the preview daemon has no agents.
-  fixtureAgents?: AgentSummary[];
+  // Fixture mode only: the app shows made-up sessions, since the preview daemon has no agents (shared/fixture-sessions.ts);
+  // with `fixtureNoStarted`, the ones started on issues are as good as archived [SES-11].
+  fixture?: boolean;
+  fixtureNoStarted?: boolean;
   // Wrap up rows whose sessions are archived but whose worktree stayed, until it's gone or dismissed [ATT-22].
   kept?: KeptRow[];
 }

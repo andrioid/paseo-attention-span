@@ -33,11 +33,12 @@ export interface SessionSnapshot {
 type Change<E> = { kind: "upsert"; entry: E } | { kind: "remove"; id: string };
 // One update from Paseo's stream: a whole entry, or the ID of one that's gone. `generation` should name the subscription
 // too, since each counts its own seq.
-export type SessionUpdate = (({ of: "agent" } & Change<PaseoAgentEntry>) | ({ of: "workspace" } & Change<SessionWorkspaceEntry>)) & {
-  at: Stamp;
+export type StreamUpdate = (({ of: "agent" } & Change<PaseoAgentEntry>) | ({ of: "workspace" } & Change<SessionWorkspaceEntry>)) & {
   seq?: number;
   generation?: string;
 };
+// …stamped when it arrived.
+export type SessionUpdate = StreamUpdate & { at: Stamp };
 
 // What an action that Paseo confirmed changed: entries it created or changed, and the IDs it archived.
 export interface SessionResult {

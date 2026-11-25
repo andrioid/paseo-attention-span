@@ -13,7 +13,10 @@ import { ACTION_SESSION, renderPrompt } from "../shared/prompts";
 import * as rpc from "../shared/rpc";
 import type { useAttention } from "./data";
 import { DETAILS_STALE_MS, type DetailsQuery, detailsKey } from "./sheet";
-import { AGENTS_QUERY_KEY, findCheckout, startSession, useStartRpcs } from "./sessions";
+import { findCheckout, SESSIONS_QUERY_KEY, startSession, useStartRpcs, writeSessions } from "./sessions";
+import { useSessionSource } from "./session-source";
+import { ITEM_LABEL, KIND_LABEL, LABEL } from "../shared/item-sessions";
+import type { SessionEntries } from "../shared/session-cache";
 
 export type FetchDetails = (input: RpcInput<typeof rpc.itemDetails>) => Promise<RpcOutput<typeof rpc.itemDetails>>;
 
@@ -88,6 +91,7 @@ function issueTarget(issue: NextUpIssue): Target {
 // back; sessions start here, and Wrap up archives here.
 export function useItemActions(attention: ReturnType<typeof useAttention>, navigation: PluginScreenProps["navigation"]) {
   const paseo = usePaseo();
+  const sessionSource = useSessionSource(attention.data);
   const toast = useToast();
   const queryClient = useQueryClient();
   const { fetchContext, defaultBranch, fetchProviders } = useStartRpcs();
@@ -161,7 +165,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
 
   // A session started from somewhere with no card for it (a new issue, feedback): open it, or it'd be hard to find.
   async function started(agentId: string) {
-    await queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
+    await queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
     openAgent(agentId);
   }
 
@@ -169,12 +173,11 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
   // [SES-10]. The session goes on the list at once, so the card offers it even if the poll after fails, rather than Start
   // again; the next poll that succeeds replaces it with Paseo's own.
   async function startedOn({ agentId, itemKey, kind, target }: Started) {
-    queryClient.setQueryData<AgentSummary[]>(AGENTS_QUERY_KEY, (agents = []) =>
-      agents.some((agent) => agent.id === agentId)
-        ? agents
-        : [...agents, { id: agentId, itemKey, kind, status: "running", requiresAttention: false, title: null, workspaceId: null, lastActivityAt: new Date().toISOString() }],
-    );
-    await queryClient.invalidateQueries({ queryKey: AGENTS_QUERY_KEY });
+    if (!queryClient.getQueryData<SessionEntries>(SESSIONS_QUERY_KEY)?.agents.get(agentId)?.entry) {
+      const labels = { [LABEL]: "1", [ITEM_LABEL]: itemKey, [KIND_LABEL]: kind };
+      writeSessions(queryClient, { agents: [{ id: agentId, labels, status: "running", requiresAttention: false, title: null, workspaceId: null, updatedAt: new Date().toISOString() }] });
+    }
+    await queryClient.invalidateQueries({ queryKey: SESSIONS_QUERY_KEY });
     toast.show(`Session started on #${target.number}`, { variant: "success" });
   }
 
@@ -191,7 +194,7 @@ export function useItemActions(attention: ReturnType<typeof useAttention>, navig
     await before?.();
     const { context } = await fetchContext({ kind, target });
     const prompt = renderPrompt(kind, target, context, config);
-    const agentId = await startSession(paseo, { itemKey, kind, target, prompt, config, fetchProviders, checkout });
+    const agentId = await startSession(paseo, sessionSource!, { itemKey, kind, target, prompt, config, fetchProviders, checkout });
     await startedOn({ agentId, itemKey, kind, target });
   }
 

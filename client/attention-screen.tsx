@@ -23,7 +23,7 @@ import { CodeRepoPicker, SessionOptions } from "./pickers";
 import { Still } from "./still";
 import { FeedbackAsk, FeedbackLine, type FeedbackScreen, FeedbackSheet } from "./feedback";
 import { NewIssueSheet, type NewIssueRequest, takeNewIssueRequest } from "./new-issue";
-import { useItemAgents } from "./sessions";
+import { useSessions } from "./sessions";
 import { History } from "./history";
 import { WrapUp } from "./wrap-up";
 import { SetupChecklist } from "./setup";
@@ -76,7 +76,7 @@ function AttentionList({
   const styles = useStyles();
   const toast = useToast();
   const attention = useAttention();
-  const agents = useItemAgents();
+  const agents = useSessions(attention.data);
   const act = useItemActions(attention, navigation);
   const [tab, setTab] = useState<TabId>("doing");
   // History's Filter sheet: Reviewed and Changed by others per week [HIS-07].
@@ -122,7 +122,7 @@ function AttentionList({
   // Each tab shows how fresh its own feed is.
   const feed = view.feeds[TAB_FEED[tab]];
   // Wrap up is made here from the sessions the screen and sidebar already poll; the server archives and acknowledges [ATT-22].
-  const agentsNow = (view.fixtureAgents ?? agents.data ?? []).filter((agent) => !act.archivedSessions.has(agent.id));
+  const agentsNow = (agents.data ?? []).filter((agent) => !act.archivedSessions.has(agent.id));
   const wrap = wrapItems(view, agentsNow);
   // Issues I started a session on leave Next up for In progress until a card of their own shows them [PRS-05, SES-11].
   const shown = withInProgress(view, agentsNow, wrap);
@@ -130,7 +130,7 @@ function AttentionList({
   const notes = unreadChanges(view.history.filter((item) => item.section === "changed"), wrap);
   // Calm only once a refresh that worked says Doing is empty, Wrap up included [ATT-18, ATT-22].
   // Sessions not known yet, or failing to load, leave Wrap up unknown: no calm on that [ATT-18, ATT-22].
-  const sessionsKnown = !!view.fixtureAgents || (agents.isSuccess && !agents.isError);
+  const sessionsKnown = agents.isSuccess && !agents.isError;
   // A worktree that stayed after its sessions were archived lingers in Wrap up, uncounted, but keeps the calm away [ATT-22].
   const kept = view.kept ?? [];
   const clear = sessionsKnown && isClear(view, !!attention.error, wrap.length + kept.length + shown.started.length);
@@ -224,7 +224,7 @@ function AttentionList({
                   onDismissKept={act.dismissKept}
                   busy={act.busy}
                   login={view.login}
-                  fixture={!!view.fixtureAgents}
+                  fixture={!!view.fixture}
                   agents={agentsNow}
                   fetchDetails={act.fetchDetails}
                   openAgent={act.openAgent}

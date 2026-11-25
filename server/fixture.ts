@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentSummary, AttentionView, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
+import type { AttentionView, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
 import type { KeptRow } from "../shared/archive";
 import type { OthersChange } from "../shared/changes";
-import type { SessionKind } from "../shared/config";
 import type { CoverageCheck, CoverageKind, IssueField, SetupStatus } from "../shared/setup";
 import { sameName } from "../shared/names";
 import type { Actor, Comment, Details, IssueNode, MentionNode, PickableNode, PullRequestNode, SearchResult } from "./github-types";
@@ -389,68 +388,6 @@ export function fixtureGotIt(now: Date): string[] {
     .map((change) => change.id);
 }
 
-// Sessions the preview shows as started from items: working, needs me, failed, idle.
-// Each sits in its action's line in the sheet. Issue 90 has two: an old one with no kind, which leads, and Rebase stack on its PR.
-// #113 waits on CI while its Fix CI session works, though Fix CI isn't one of its actions any more.
-// #120's was started outside Attention Span, in a workspace Paseo linked to the PR, so it has no kind [SES-08].
-// #197's too, so it shows on its stack, led by #196 [ATT-04].
-// #198 is asked to be reviewed again while its Review session is still open: the card opens it [REV-02].
-const agent = (
-  id: string,
-  itemKey: string,
-  kind: SessionKind | undefined,
-  status: string,
-  minutesAgo: number,
-  requiresAttention = false,
-  workspace?: AgentSummary["workspace"],
-  title = `Fixture session ${id}`,
-): AgentSummary => ({
-  id,
-  itemKey,
-  kind,
-  status,
-  requiresAttention,
-  title,
-  workspaceId: workspace ? `WS_${id}` : null,
-  lastActivityAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
-  ...(workspace ? { workspace } : {}),
-});
-// A worktree Paseo made, clean or with uncommitted or unpushed work [ATT-22].
-const sessionWorkspace = (branch: string, dirty: boolean | undefined, ahead: number | undefined, worktree = true, dirtyFiles?: number): AgentSummary["workspace"] => ({
-  kind: worktree ? "worktree" : "local_checkout",
-  name: `Workspace for ${branch}`,
-  directory: `/tmp/attention-span/${branch}`,
-  branch,
-  ...(dirty === undefined ? {} : { dirty }),
-  ...(ahead === undefined ? {} : { ahead }),
-  ...(dirtyFiles === undefined ? {} : { dirtyFiles }),
-});
-export const FIXTURE_AGENTS: AgentSummary[] = [
-  agent("agent-101", `${REPO}#101`, "fix", "running", 4),
-  agent("agent-102", `${REPO}#102`, "address", "idle", 30, true),
-  agent("agent-108", `${REPO}#108`, "rebase", "error", 90),
-  // Started on assigned #150, and on someone else's issue Next up doesn't know, which needs me: In progress [SES-11].
-  agent("agent-150", `${REPO}#150`, "start", "idle", 300, false, undefined, "Orders export times out for big shops"),
-  agent("agent-205", "acme/platform#205", "start", "idle", 8, true, undefined, "Plan single sign-on for partners"),
-  agent("agent-90", `${REPO}#90`, undefined, "idle", 120, true),
-  agent("agent-103", `${REPO}#103`, "rebase", "running", 6),
-  agent("agent-113", `${REPO}#113`, "fix", "running", 2),
-  agent("agent-120", `${REPO}#120`, undefined, "running", 3),
-  agent("agent-197", `${REPO}#197`, undefined, "idle", 15),
-  agent("agent-198", `${REPO}#198`, "review", "idle", 2880, false, undefined, "Review PR 198: Show shipping estimates at checkout"),
-  // Wrap up: finished work whose sessions are all idle [ATT-22].
-  agent("agent-183", `${REPO}#183`, "fix", "idle", 20, false, sessionWorkspace("retry-webhooks", false, 0), "Retry webhooks"),
-  // Its sheet counts lines and names the terminals archiving closes, as Paseo's own sheet would.
-  agent("agent-186", `${REPO}#186`, "fix", "idle", 40, false, { ...sessionWorkspace("split-invoice-pdf", true, 1, true, 2)!, dirtyLines: { added: 12, deleted: 3 }, terminals: ["dev", "shell"] }, "Split invoice PDF"),
-  agent("agent-190", `${REPO}#190`, "review", "idle", 60, false, sessionWorkspace("add-vat-export", false, 0), "Review PR 190: Add the VAT export"),
-  // On a PR under an issue Wrap up asks to close: it joins that row [ATT-24].
-  // A session started from the close-issue prompt stays visible while working, even though it cannot be archived.
-  agent("agent-195", `${REPO}#195`, "fix", "running", 10, false, sessionWorkspace("statement-pdf-download", false, 0), "Statement PDF download"),
-  // With a review sub-agent it started, archived along with it.
-  { ...agent("agent-172", `${REPO}#172`, "fix", "idle", 240, false, sessionWorkspace("fix-vat-credit-notes", false, 0), "Fix VAT on credit notes"), subAgents: { count: 1, working: false } },
-  agent("agent-172b", `${REPO}#172`, "address", "idle", 250, false, sessionWorkspace("credit-note-tests", undefined, undefined), "Credit note tests"),
-];
-
 export const FIXTURE_CONTEXT = "Context from GitHub would go here (fixture mode).";
 
 // What the reviewer picker offers in previews: GitHub's suggestion, who reviewed my other PRs, and a team [PRS-12].
@@ -536,13 +473,15 @@ export const FIXTURE_KEPT: KeptRow[] = [
 const dismissedKept = new Set<string>();
 export const fixtureDismissKept = (workspaceId: string) => void dismissedKept.add(workspaceId);
 
-// A view with the made-up sessions, as the preview daemon has no agents, and kept worktrees for it to show [ATT-22]. While
-// `fixture-no-started` exists in `dir`, the sessions started on issues are as good as archived, so Doing can clear [SES-11].
+// A view that tells the app to show the made-up sessions, as the preview daemon has no agents (shared/fixture-sessions.ts),
+// and kept worktrees for it to show [ATT-22]. While `fixture-no-started` exists in `dir`, the sessions started on issues
+// are as good as archived, so Doing can clear [SES-11].
 export const fixtureView =
   (dir: string) =>
   (view: AttentionView): AttentionView => ({
     ...view,
-    fixtureAgents: existsSync(join(dir, "fixture-no-started")) ? FIXTURE_AGENTS.filter((agent) => agent.kind !== "start") : FIXTURE_AGENTS,
+    fixture: true,
+    fixtureNoStarted: existsSync(join(dir, "fixture-no-started")),
     kept: [...(view.kept ?? []), ...FIXTURE_KEPT.filter((row) => !dismissedKept.has(row.workspaceId))],
   });
 

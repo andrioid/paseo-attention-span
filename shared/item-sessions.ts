@@ -21,6 +21,8 @@ export type SessionWorkspaceEntry = PaseoWorkspaceEntry & {
   workspaceDirectory?: string | null;
   projectRootPath?: string | null;
   gitRuntime?: { currentBranch?: string | null; remoteUrl?: string | null; isDirty?: boolean | null; aheadOfOrigin?: number | null } | null;
+  // Previews only, where Paseo has no worktree: what the confirm sheet names (shared/fixture-sessions.ts).
+  preview?: Pick<SessionWorkspace, "dirtyFiles" | "dirtyLines" | "terminals">;
 };
 
 // What Paseo knows about the workspace a session runs in, for Wrap up's unsaved-work check [ATT-22].
@@ -34,6 +36,7 @@ function sessionWorkspace(workspace: SessionWorkspaceEntry): SessionWorkspace {
     ...(git?.currentBranch ? { branch: git.currentBranch } : {}),
     ...(typeof git?.isDirty === "boolean" ? { dirty: git.isDirty } : {}),
     ...(typeof git?.aheadOfOrigin === "number" ? { ahead: git.aheadOfOrigin } : {}),
+    ...workspace.preview,
   };
 }
 
