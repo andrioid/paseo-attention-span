@@ -13,7 +13,7 @@ import { type FeedbackKind, themeName } from "../shared/feedback";
 import { blocks } from "../shared/setup";
 import { cleanSingle, unreadChanges, wrapItems } from "../shared/wrap-up";
 import { nudgeLead, tabCounts } from "../shared/item-view";
-import { useAttention } from "./data";
+import { useAttention, useScreenOpened } from "./data";
 import type { IconName } from "./icons";
 import { type Actions, type Undoable, useItemActions } from "./item-actions";
 import { Card } from "./item-row";
@@ -76,6 +76,7 @@ function AttentionList({
   const styles = useStyles();
   const toast = useToast();
   const attention = useAttention();
+  useScreenOpened();
   const agents = useSessions(attention.data);
   const act = useItemActions(attention, navigation);
   const [tab, setTab] = useState<TabId>("doing");
