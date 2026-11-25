@@ -233,6 +233,19 @@ describe("extra live refreshes", () => {
     expect(github.live).toHaveBeenCalledTimes(3);
   });
 
+  it("FRESH-04: a turn that an extra refresh already planned meets doesn't ask Paseo whose it was", async () => {
+    const { service, github, paseo: port, advance } = await quiet();
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(MINUTE);
+    // The next can't begin before 5:30, after this turn's 2:00.
+    await service.turnEnded(paseo, turn("a1"));
+    expect(port.sessions).toHaveBeenCalledTimes(2);
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
   it("FRESH-01, GH-01: ⟳ begun after a turn's refresh was due meets it, and doesn't count against the budget", async () => {
     const { service, github, advance, jump } = await quiet();
     await service.turnEnded(paseo, turn("a1"));

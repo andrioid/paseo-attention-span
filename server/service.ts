@@ -147,6 +147,8 @@ export class AttentionService {
   // lists tell, as the hook's agent has no labels; a sub-agent's turn counts for its session. A failed lookup skips it.
   async turnEnded(paseo: PluginHandlerContext["paseo"], agent: { id: string; parentAgentId: string | null }): Promise<void> {
     const at = this.port.now() + SETTLE_MS;
+    // An extra refresh already planned for then meets it: no need to ask Paseo whose turn it was, as agents end many [GH-01].
+    if (this.extra && this.extra.at >= at) return;
     try {
       const { agents, workspaces } = await this.port.paseo.sessions(paseo);
       if (itemOfSession(agent.parentAgentId ?? agent.id, agents, workspaces, closedBranches(this.view()))) this.want("turn", at);
