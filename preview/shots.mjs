@@ -35,6 +35,10 @@ export const SCENARIOS = [
   { name: "next-up-filters", shots: ["next-up-filter", "next-up-filtered", "next-up-source", "next-up-cleared", "next-up-filter-projects", "next-up-projects"] },
   { name: "settings", shots: ["settings-typo", "settings", "settings-next-up", "settings-org-picker", "settings-fields", "settings-fields-picked", "settings-waiting"] },
   { name: "setup", shots: ["setup"] },
+  // Each shot right after an action finishes, never after ⟳ [FRESH-04].
+  { name: "wrap-archive", shots: ["doing-wrap-archived"] },
+  { name: "review-start", shots: ["doing-review-started"] },
+  { name: "claim-start", shots: ["doing-claim-started"] },
   { name: "clear", shots: ["doing-dismissed", "doing-clear", "waiting-clear", "history-clear", "next-up-clear", "next-up-setup"], last: true },
   { name: "code-repo", shots: ["next-up-code-repo", "next-up-code-repo-after", "next-up-code-repo-again"], last: true },
 ];

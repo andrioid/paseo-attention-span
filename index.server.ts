@@ -41,8 +41,9 @@ export default function contribute(server: PluginServerContext) {
   const started = attention.start().catch((error) => console.error("Attention Span failed to start:", error));
   const ready = <T>(work: () => Promise<T>) => started.then(work);
 
-  // A change on GitHub, answered with the list after it; what it does to the card shows right away [FRESH-02].
-  const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, work, change)).then(shown);
+  // A change on GitHub, answered with the list after it; what it does to the card shows right away [FRESH-02]. Previews
+  // never reach GitHub: there it does nothing and succeeds, so their shots can show what follows, as Claim & start's.
+  const act = (key: string, work: () => Promise<void>, change: Change) => ready(() => attention.act(key, FIXTURE ? async () => {} : work, change)).then(shown);
   const chip = (text: string, tone: Chip["tone"] = "neutral", icon?: Chip["icon"]): Change => ({ kind: "chip", chip: { text, tone, ...(icon ? { icon } : {}) } });
 
   // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08],
