@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { type AgentSummary, type AttentionView, checkoutPr, sessionTitle, type Target } from "../shared/attention";
 import { closedBranches } from "../shared/linked-sessions";
-import { ITEM_LABEL, KIND_LABEL, LABEL, SESSION_LABELS, sessionsFrom } from "../shared/item-sessions";
+import { ITEM_LABEL, KIND_LABEL, LABEL, sessionsFrom } from "../shared/item-sessions";
 import { everyPage } from "../shared/paging";
 import { chooseAgent, type ReadyProvider } from "../shared/providers";
 import { type AttentionConfig, codeRepoFor, githubRepoOf, SessionKind } from "../shared/config";
@@ -69,13 +69,8 @@ export { ITEM_LABEL, KIND_LABEL, LABEL };
 // Agents started from Attention Span, each with the item it was started on, and the agents started outside it in a
 // workspace that belongs to an item [SES-08]. Every page, so a session or sub-agent past the first isn't missed [ATT-22].
 export async function itemAgents(paseo: Paseo, branches = new Map<string, string>()): Promise<AgentSummary[]> {
-  const [lists, all, workspaces] = await Promise.all([
-    Promise.all(SESSION_LABELS.map((label) => everyPage((page) => paseo.agents.list({ filter: { labels: { [label]: "1" } }, page })))),
-    everyPage((page) => paseo.agents.list({ page })),
-    paseo.workspaces.list(),
-  ]);
+  const [all, workspaces] = await Promise.all([everyPage((page) => paseo.agents.list({ page })), paseo.workspaces.list()]);
   return sessionsFrom(
-    lists.flat().map((entry) => entry.agent),
     all.map((entry) => entry.agent),
     workspaces.entries,
     branches,
