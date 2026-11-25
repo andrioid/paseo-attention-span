@@ -461,9 +461,9 @@ export function fixturePort(store: Store, dir: string): Port {
       sessions: async () => fixtureEntries(Date.now()),
     },
     store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
-    // Each live fetch makes the made-up GitHub anew, bringing back what a scenario dismissed, so only the schedule, ⟳ and
-    // my own actions fetch it; its checks never finish, which would fetch it every 5 minutes [FRESH-01].
-    extraRefreshes: false,
+    // Each live fetch makes the made-up GitHub anew, bringing back what a scenario dismissed, so only the schedule and ⟳
+    // fetch it [FRESH-01, FRESH-02].
+    backgroundRefreshes: false,
     now: Date.now,
     setTimer,
   };

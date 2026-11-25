@@ -147,7 +147,7 @@ export class AttentionService {
   // lists tell, as the hook's agent has no labels; a sub-agent's turn counts for its session. A failed lookup skips it.
   async turnEnded(paseo: PluginHandlerContext["paseo"], agent: { id: string; parentAgentId: string | null }): Promise<void> {
     const at = this.port.now() + SETTLE_MS;
-    if (!this.port.extraRefreshes) return;
+    if (!this.port.backgroundRefreshes) return;
     // An extra refresh already planned for then meets it: no need to ask Paseo whose turn it was, as agents end many [GH-01].
     if (this.extra && this.extra.at >= at) return;
     try {
@@ -168,7 +168,7 @@ export class AttentionService {
   }
 
   private want(why: Want["why"], at: number): void {
-    if (!this.port.extraRefreshes) return;
+    if (!this.port.backgroundRefreshes) return;
     this.wants.push({ why, at });
     this.planExtra();
   }
@@ -461,6 +461,7 @@ export class AttentionService {
 
   // One fetch once GitHub's search has caught up with the latest change, which ends what's pending.
   private followUp(id: FeedId): void {
+    if (!this.port.backgroundRefreshes) return;
     this.followUps[id]?.();
     this.followUps[id] = this.port.setTimer(() => void this.refresh(id, true).catch(() => {}), SETTLE_MS);
   }
