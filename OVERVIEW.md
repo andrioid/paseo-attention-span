@@ -60,7 +60,7 @@ It doesn't read your GitHub notifications. It searches GitHub for what needs you
 
 ## Your data
 
-- **GitHub:** it reads through `gh`, limited to what you've configured. The default 15-minute refresh uses about 7% of the hourly API allowance. I checked.
+- **GitHub:** it reads through `gh`, limited to what you've configured. The default 15-minute refresh uses about 7% of the hourly API allowance, and at most about 28% with the extra refreshes after your sessions' turns, while your CI runs and when you open it. I checked.
 - **Local:** a cache and your dismissals live in `~/.config/paseo-attention-span/state.json`. That's it.
 - **Updates:** about twice a day it asks Paseo whether there's a newer version. Nothing installs until you tap Update.
 - **Agent providers:** a session's prompt carries the item's context (comments, review threads, CI logs) to whichever provider your agent profile uses.
