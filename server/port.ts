@@ -24,6 +24,9 @@ export interface Port {
     sessions(paseo: Paseo): Promise<{ agents: PaseoAgentEntry[]; workspaces: SessionWorkspaceEntry[] }>;
   };
   store: Store;
+  // Live refreshes beyond the schedule: after my sessions' turns, while my CI runs, when the screen opens [FRESH-01].
+  // Previews turn them off: their made-up GitHub starts over on every live fetch and its checks never finish.
+  extraRefreshes: boolean;
   now(): number;
   // Runs `run` once after `ms`; calling the answer cancels it.
   setTimer(run: () => void, ms: number): () => void;
@@ -49,6 +52,7 @@ export function realPort(store: Store): Port {
       },
     },
     store,
+    extraRefreshes: true,
     now: Date.now,
     setTimer,
   };

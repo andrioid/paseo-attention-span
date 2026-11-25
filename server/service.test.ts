@@ -58,6 +58,7 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
       sessions: vi.fn<Port["paseo"]["sessions"]>(async () => ({ agents: [], workspaces: [] })),
     },
     store,
+    extraRefreshes: true,
     now: () => now,
     setTimer: (run, ms) => {
       const timer = { at: now + ms, run };
