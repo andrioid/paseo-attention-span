@@ -50,7 +50,7 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
   } as Partial<Store> as Store;
   const port: Port = {
     github,
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },
+    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: [] }) },
     store,
     now: () => now,
     setTimer: (run, ms) => {
@@ -444,7 +444,7 @@ describe("kept worktrees", () => {
 
   it("ATT-22: a worktree that stays keeps its row, saying why, until it's archived anywhere", async () => {
     const h = harness();
-    h.paseo.archive = async () => ({ ok: true, kept: [kept] });
+    h.paseo.archive = async () => ({ ok: true, kept: [kept], archivedAgents: [], archivedWorkspaces: [] });
     await h.start();
     const { view } = await h.service.archive(paseo, [target], false);
     expect(view.kept).toEqual([{ workspaceId: "w1", name: "Fix VAT", reason: "session", detail: "Fix flaky test", agentId: "a2", itemKey: KEY, title: "Fix VAT", repo: REPO, number: 101, kind: "pr", at: expect.any(String) }]);
@@ -455,15 +455,15 @@ describe("kept worktrees", () => {
 
   it("ATT-22: tried again, a kept row goes once its worktree does, or stays with the new reason; Dismiss leaves the worktree", async () => {
     const h = harness();
-    const archive = vi.fn<Port["paseo"]["archive"]>(async () => ({ ok: true, kept: [kept] }));
+    const archive = vi.fn<Port["paseo"]["archive"]>(async () => ({ ok: true, kept: [kept], archivedAgents: [], archivedWorkspaces: [] }));
     h.paseo.archive = archive;
     await h.start();
     await h.service.archive(paseo, [target], false);
-    archive.mockResolvedValueOnce({ ok: true, kept: [{ ...kept, reason: "refused", detail: "busy", agentId: undefined, sessionIds: [] }] });
+    archive.mockResolvedValueOnce({ ok: true, kept: [{ ...kept, reason: "refused", detail: "busy", agentId: undefined, sessionIds: [] }], archivedAgents: [], archivedWorkspaces: [] });
     const again = await h.service.archiveWorktree(paseo, "w1", true, ["t1"]);
     expect(archive).toHaveBeenLastCalledWith(paseo, [], true, ["t1"], ["w1"]);
     expect(again.view.kept).toMatchObject([{ workspaceId: "w1", reason: "refused", detail: "busy", itemKey: KEY }]);
-    archive.mockResolvedValueOnce({ ok: true, kept: [] });
+    archive.mockResolvedValueOnce({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: [] });
     expect((await h.service.archiveWorktree(paseo, "w1", false)).view.kept).toEqual([]);
     await h.service.archive(paseo, [target], false);
     expect((await h.service.dismissKept("w1")).kept).toEqual([]);
@@ -472,7 +472,7 @@ describe("kept worktrees", () => {
   it("ATT-22: a worktree Paseo archived while an archive still ran gets no kept row afterwards", async () => {
     const h = harness();
     let finish!: () => void;
-    h.paseo.archive = () => new Promise((resolve) => (finish = () => resolve({ ok: true, kept: [kept] })));
+    h.paseo.archive = () => new Promise((resolve) => (finish = () => resolve({ ok: true, kept: [kept], archivedAgents: [], archivedWorkspaces: [] })));
     await h.start();
     const archiving = h.service.archive(paseo, [target], false);
     await settle();

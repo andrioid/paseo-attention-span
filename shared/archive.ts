@@ -130,9 +130,10 @@ export function keptText(kept: Pick<KeptWorktree, "reason" | "detail">): string 
 
 // What archiving answers. A refusal keeps the row and says why, or names the unsaved work and open terminals to confirm,
 // with the terminals' ids for the confirm to send back and the worktrees that would go, by name, for the sheet's title.
-// Success says which worktrees stayed, and why.
+// Success says which worktrees stayed, and why, and which agents and workspaces it archived, for the screen to write as
+// gone [FRESH-04].
 export type ArchiveResult =
-  | { ok: true; kept: KeptWorktree[] }
+  | { ok: true; kept: KeptWorktree[]; archivedAgents: string[]; archivedWorkspaces: string[] }
   | { ok: false; reason: "working"; message: string }
   | { ok: false; reason: "unsaved"; sessions: UnsavedSession[]; terminals: string[]; leaving: string[] };
 

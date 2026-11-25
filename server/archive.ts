@@ -192,6 +192,10 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
     if (session.worktreeOnly || agents.get(session.agentId)?.archivedAt) continue;
     await paseo.agents.ref(session.agentId).archive();
   }
+  // What's archived now, said back so the screen shows it gone at once [FRESH-04]: the sub-agents (one that failed and
+  // stayed open stopped the archive above) and the sessions, archived here or before.
+  const archivedAgents = [...subAgents.map((agent) => agent.id), ...sessions.flatMap((session) => (session.worktreeOnly ? [] : [session.agentId]))];
+  const archivedWorkspaces: string[] = [];
   // The sessions are put away either way; a worktree that wouldn't go stays, saying why. Its terminals are listed once more
   // right before it goes: one that opened while the sessions were archived wasn't on the sheet, so the worktree stays.
   for (const { workspace } of leaving) {
@@ -205,7 +209,8 @@ export async function archiveSessions(paseo: Paseo, agentIds: string[], confirm:
       .then((result) => (result.error ? String(result.error) : null))
       .catch((error: Error) => error.message);
     if (failed) keep(workspace, { reason: "refused", detail: failed });
+    else archivedWorkspaces.push(workspace.id);
   }
-  return { ok: true, kept };
+  return { ok: true, kept, archivedAgents, archivedWorkspaces };
 }
 

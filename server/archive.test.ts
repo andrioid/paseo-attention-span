@@ -120,7 +120,7 @@ describe("archive safety", () => {
 
   it("ATT-22: a clean single session archives its agent and its own worktree", async () => {
     const { paseo, archivedAgents, archivedWorkspaces } = paseoFor([{ id: "a1", workspaceId: "w1" }], [worktree({ workspaceDirectory: clone() })]);
-    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [] });
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [], archivedAgents: ["a1"], archivedWorkspaces: ["w1"] });
     expect(archivedAgents).toEqual(["a1"]);
     expect(archivedWorkspaces).toEqual(["w1"]);
   });
@@ -137,7 +137,7 @@ describe("archive safety", () => {
       leaving: ["Split invoice PDF"],
     });
     expect(archivedAgents).toEqual([]);
-    expect(await archiveSessions(paseo, ["a1"], true)).toEqual({ ok: true, kept: [] });
+    expect(await archiveSessions(paseo, ["a1"], true)).toEqual({ ok: true, kept: [], archivedAgents: ["a1"], archivedWorkspaces: ["w1"] });
     expect(archivedAgents).toEqual(["a1"]);
   });
 
@@ -149,7 +149,7 @@ describe("archive safety", () => {
 
   it("ATT-22: a local checkout's workspace is never archived", async () => {
     const { paseo, archivedAgents, archivedWorkspaces } = paseoFor([{ id: "a1", workspaceId: "w1" }], [{ id: "w1", workspaceKind: "local_checkout" }]);
-    await archiveSessions(paseo, ["a1"], false);
+    expect(await archiveSessions(paseo, ["a1"], false)).toMatchObject({ archivedAgents: ["a1"], archivedWorkspaces: [] });
     expect(archivedAgents).toEqual(["a1"]);
     expect(archivedWorkspaces).toEqual([]);
   });
@@ -165,6 +165,8 @@ describe("archive safety", () => {
     expect(await archiveSessions(shared.paseo, ["a1"], false)).toEqual({
       ok: true,
       kept: [{ workspaceId: "w1", name: "Round prices", reason: "session", detail: "Fix flaky test", agentId: "a2", sessionIds: ["a1"] }],
+      archivedAgents: ["a1"],
+      archivedWorkspaces: [],
     });
     expect(shared.archivedAgents).toEqual(["a1"]);
     expect(shared.archivedWorkspaces).toEqual([]);
@@ -180,7 +182,9 @@ describe("archive safety", () => {
       ],
       [worktree({ workspaceDirectory: clone() }), { id: "w2", workspaceKind: "worktree" }],
     );
-    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [] });
+    const outcome = await archiveSessions(paseo, ["a1"], false);
+    expect(outcome).toMatchObject({ ok: true, kept: [], archivedWorkspaces: ["w1"] });
+    expect(outcome.ok && outcome.archivedAgents.sort()).toEqual(["a1", "elsewhere", "nested", "review"]);
     expect(archivedAgents.sort()).toEqual(["a1", "elsewhere", "nested", "review"]);
     // A sub-agent in another workspace is archived, and that workspace stays.
     expect(archivedWorkspaces).toEqual(["w1"]);
@@ -243,7 +247,7 @@ describe("archive safety", () => {
       ],
       [worktree({ workspaceDirectory: clone() })],
     );
-    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [] });
+    expect(await archiveSessions(paseo, ["a1"], false)).toMatchObject({ ok: true, kept: [] });
     expect(archivedAgents.sort()).toEqual(["a1", "review"]);
   });
 
@@ -299,7 +303,7 @@ describe("archive safety", () => {
       leaving: ["b"],
     });
     expect(archivedAgents).toEqual([]);
-    expect(await archiveSessions(paseo, ["a1"], true, ["t1", "t2"])).toEqual({ ok: true, kept: [] });
+    expect(await archiveSessions(paseo, ["a1"], true, ["t1", "t2"])).toEqual({ ok: true, kept: [], archivedAgents: ["a1"], archivedWorkspaces: ["w1"] });
     expect(archivedAgents).toEqual(["a1"]);
     expect(archivedWorkspaces).toEqual(["w1"]);
   });
@@ -332,6 +336,8 @@ describe("archive safety", () => {
     expect(await archiveSessions(paseo, ["a1"], true, ["t1"])).toEqual({
       ok: true,
       kept: [{ workspaceId: "w1", name: "b", reason: "terminal", detail: "t2 shell", sessionIds: ["a1"] }],
+      archivedAgents: ["a1"],
+      archivedWorkspaces: [],
     });
     expect(archivedAgents).toEqual(["a1"]);
     expect(archivedWorkspaces).toEqual([]);
@@ -342,7 +348,7 @@ describe("archive safety", () => {
     paseo.terminals.list = (async () => {
       throw new Error("no terminals");
     }) as typeof paseo.terminals.list;
-    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [] });
+    expect(await archiveSessions(paseo, ["a1"], false)).toMatchObject({ ok: true, kept: [], archivedWorkspaces: ["w1"] });
     expect(archivedWorkspaces).toEqual(["w1"]);
   });
 
@@ -364,7 +370,12 @@ describe("archive safety", () => {
     paseo.workspaces.archive = (async () => {
       throw new Error("busy");
     }) as typeof paseo.workspaces.archive;
-    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({ ok: true, kept: [{ workspaceId: "w1", name: "b", reason: "refused", detail: "busy", sessionIds: ["a1"] }] });
+    expect(await archiveSessions(paseo, ["a1"], false)).toEqual({
+      ok: true,
+      kept: [{ workspaceId: "w1", name: "b", reason: "refused", detail: "busy", sessionIds: ["a1"] }],
+      archivedAgents: ["a1"],
+      archivedWorkspaces: [],
+    });
     expect(archivedAgents).toEqual(["a1"]);
   });
 
@@ -372,7 +383,7 @@ describe("archive safety", () => {
     const work = clone();
     const { paseo, archivedAgents, archivedWorkspaces } = paseoFor([], [worktree({ workspaceDirectory: work, title: "Cache tax tables" })], ["t1"]);
     expect(await archiveSessions(paseo, [], false, [], ["w1"])).toMatchObject({ ok: false, reason: "unsaved", sessions: [{ title: "Cache tax tables", terminals: ["t1 shell"] }] });
-    expect(await archiveSessions(paseo, [], true, ["t1"], ["w1"])).toEqual({ ok: true, kept: [] });
+    expect(await archiveSessions(paseo, [], true, ["t1"], ["w1"])).toEqual({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: ["w1"] });
     expect(archivedAgents).toEqual([]);
     expect(archivedWorkspaces).toEqual(["w1"]);
   });

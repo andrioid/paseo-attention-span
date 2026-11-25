@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AttentionView, GithubColor, ItemDetails, Reviewer, ReviewerChoices, Target } from "../shared/attention";
-import type { KeptRow } from "../shared/archive";
+import type { ArchiveResult, KeptRow } from "../shared/archive";
+import { fixtureEntries } from "../shared/fixture-sessions";
+import { subAgentsOf } from "../shared/linked-sessions";
 import type { OthersChange } from "../shared/changes";
 import type { CoverageCheck, CoverageKind, IssueField, SetupStatus } from "../shared/setup";
 import { sameName } from "../shared/names";
@@ -445,11 +447,21 @@ export function fixturePort(store: Store, dir: string): Port {
       issues: async () => (quiet() ? {} : (fixture(new Date()).data.referenced ?? {})),
     },
     // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [] }) },
+    paseo: { projectRepos: async () => [], archive: async (_paseo, agentIds, _confirm, _terminals, worktrees) => fixtureArchive(agentIds, worktrees) },
     store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
     now: Date.now,
     setTimer,
   };
+}
+
+// Archiving the made-up sessions (shared/fixture-sessions.ts) says what Paseo would have archived: each with its sub-agents
+// and worktree, and a kept worktree tried again, whose row goes with it [ATT-22, FRESH-04].
+function fixtureArchive(agentIds: string[], worktrees: string[]): ArchiveResult {
+  const { agents } = fixtureEntries(Date.now());
+  const archivedAgents = [...agentIds, ...subAgentsOf(agents, agentIds).map((agent) => agent.id)];
+  const own = agents.filter((agent) => agentIds.includes(agent.id) && agent.workspaceId).map((agent) => agent.workspaceId!);
+  for (const id of worktrees) fixtureDismissKept(id);
+  return { ok: true, kept: [], archivedAgents, archivedWorkspaces: [...new Set([...own, ...worktrees])] };
 }
 
 // Wrap up rows whose worktree stayed, one for each reason [ATT-22].
