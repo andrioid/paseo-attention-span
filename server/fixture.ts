@@ -427,6 +427,13 @@ export function fixtureDetails(subject: { kind: "pr" | "issue"; repo: string; nu
   };
 }
 
+// The fixture as GitHub has it once every check on my PRs has reported, none still running [FRESH-01].
+export function checksDone({ data, details }: ReturnType<typeof fixture>): ReturnType<typeof fixture> {
+  const done = (pr: SearchResult["mine"]["nodes"][number]) =>
+    pr && "commits" in pr ? { ...pr, commits: { nodes: pr.commits.nodes.map(({ commit }) => ({ commit: { ...commit, statusCheckRollup: { state: "SUCCESS" } } })) } } : pr;
+  return { data: { ...data, mine: { nodes: data.mine.nodes.map(done) } }, details };
+}
+
 // What the service sees in previews: this made-up GitHub, no Paseo projects or sessions to archive, and state kept in
 // memory. config.json is still the file in `dir`, as the shooter edits it.
 export function fixturePort(store: Store, dir: string): Port {
@@ -446,8 +453,13 @@ export function fixturePort(store: Store, dir: string): Port {
       // Asked issues are as History found them [ATT-24].
       issues: async () => (quiet() ? {} : (fixture(new Date()).data.referenced ?? {})),
     },
-    // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup.
-    paseo: { projectRepos: async () => [], archive: async (_paseo, agentIds, _confirm, _terminals, worktrees) => fixtureArchive(agentIds, worktrees) },
+    // Previews have no Paseo agents, but archiving still acknowledges, so their screenshots can show the cleanup; their
+    // sessions are the made-up ones the client shows (shared/fixture-sessions.ts).
+    paseo: {
+      projectRepos: async () => [],
+      archive: async (_paseo, agentIds, _confirm, _terminals, worktrees) => fixtureArchive(agentIds, worktrees),
+      sessions: async () => fixtureEntries(Date.now()),
+    },
     store: { ...store, loadState: async () => State.parse({}), saveState: async () => {} },
     now: Date.now,
     setTimer,

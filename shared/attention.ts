@@ -418,6 +418,8 @@ export interface Attention {
   ownClosed?: Item[];
   // Issues Wrap up asks to close that the live refresh found closed since, or with a PR open for them [ATT-24].
   askOff?: string[];
+  // Checks still running on an open PR of mine: the live feed is fetched again every few minutes until none are [FRESH-01].
+  checksRunning?: boolean;
 }
 
 export interface Section {
@@ -517,6 +519,9 @@ export interface FeedStatus {
   fetchedAt: string | null;
   refreshing: boolean;
   error: string | null;
+  // When the server next refreshes it by itself, on its schedule or an extra refresh: the screen reads the view again
+  // shortly after [FRESH-01, FRESH-04].
+  nextAt?: string;
 }
 
 // The tabs whose items can be dismissed [ATT-08].

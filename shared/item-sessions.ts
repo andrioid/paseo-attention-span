@@ -1,6 +1,6 @@
 import { type AgentSummary, type SessionWorkspace, subAgentBusy } from "./attention";
 import { SessionKind } from "./config";
-import { linkedSessions, type PaseoAgentEntry, type PaseoWorkspaceEntry, subAgentsOf } from "./linked-sessions";
+import { linkedSessions, PARENT_AGENT_LABEL, type PaseoAgentEntry, type PaseoWorkspaceEntry, subAgentsOf } from "./linked-sessions";
 
 // The sessions on items, as the screen and the sidebar's count see them, from Paseo's lists [SES-03, SES-08, ATT-22].
 // Pure, so the rules test in node; the client fetches every page and hands them over.
@@ -76,4 +76,17 @@ export function sessionsFrom(
       ...(subAgents.length ? { subAgents: { count: subAgents.length, working: subAgents.some(subAgentBusy) } } : {}),
     };
   });
+}
+
+// The item a session is on, by the same rules as the screen's sessions: `agentId`'s own, or, for a sub-agent, its top
+// parent's, as a sub-agent's work is its session's [SES-08, FRESH-04]. Null when it's on none.
+export function itemOfSession(agentId: string, all: PaseoAgentEntry[], workspaces: SessionWorkspaceEntry[], branches = new Map<string, string>()): string | null {
+  const byId = new Map(all.map((agent) => [agent.id, agent]));
+  const seen = new Set<string>();
+  let id = agentId;
+  for (let parent = byId.get(id)?.labels?.[PARENT_AGENT_LABEL]; parent && !seen.has(parent); parent = byId.get(id)?.labels?.[PARENT_AGENT_LABEL]) {
+    seen.add(id);
+    id = parent;
+  }
+  return sessionsFrom(all, workspaces, branches).find((session) => session.id === id)?.itemKey ?? null;
 }

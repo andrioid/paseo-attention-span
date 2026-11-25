@@ -48,11 +48,11 @@ export default function contribute(server: PluginServerContext) {
 
   // The app asks for the list on load and every few minutes; its Paseo connection lets refreshes see my projects [NXT-08],
   // and its time zone sets History's weeks [HIS-01].
-  server.handle(rpc.getAttention, ({ refresh, cached, timeZone }, { paseo }) =>
+  server.handle(rpc.getAttention, ({ refresh, cached, timeZone, opened }, { paseo }) =>
     ready(() => {
       attention.connect(paseo);
       if (archived.waiting) void archived.notice(paseo);
-      return attention.get(refresh, cached, timeZone);
+      return attention.get(refresh, cached, timeZone, opened);
     }).then(shown),
   );
   server.handle(rpc.dismissItem, ({ key }) => ready(() => attention.dismiss(key)).then(shown));
@@ -66,8 +66,10 @@ export default function contribute(server: PluginServerContext) {
     const event = { agentId: agent.id, parentAgentId: agent.parentAgentId, archivedAt };
     void ready(() => archived.notice(paseo, event));
   });
-  server.on("agent.turn_ended", (_event, { paseo }) => {
+  // A turn in one of my items' sessions may have changed it on GitHub: the live feed follows [FRESH-04].
+  server.on("agent.turn_ended", ({ agent }, { paseo }) => {
     if (archived.waiting) void ready(() => archived.notice(paseo));
+    void ready(() => attention.turnEnded(paseo, agent));
   });
   server.handle(rpc.archiveSessions, ({ targets, confirm, terminals }, { paseo }) => ready(() => attention.archive(paseo, targets, confirm, terminals)).then((outcome) => ({ ...outcome, view: shown(outcome.view) })));
   server.handle(rpc.archiveWorktree, ({ workspaceId, confirm, terminals }, { paseo }) =>

@@ -1,6 +1,9 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { ArchiveResult } from "../shared/archive";
 import { githubRepoOf } from "../shared/config";
+import type { SessionWorkspaceEntry } from "../shared/item-sessions";
+import type { PaseoAgentEntry } from "../shared/linked-sessions";
+import { everyPage } from "../shared/paging";
 import { archiveSessions } from "./archive";
 import { type GitHub, gitHub } from "./fetch";
 import { graphql, graphqlResult } from "./gh";
@@ -17,6 +20,8 @@ export interface Port {
     projectRepos(paseo: Paseo): Promise<string[]>;
     // Archives sessions, and `worktrees` kept before, tried again on their own [ATT-22].
     archive(paseo: Paseo, agentIds: string[], confirm: boolean, terminals: string[], worktrees: string[]): Promise<ArchiveResult>;
+    // Every page of Paseo's agents and workspaces, as the client lists them, to tell whose turn just ended [FRESH-04].
+    sessions(paseo: Paseo): Promise<{ agents: PaseoAgentEntry[]; workspaces: SessionWorkspaceEntry[] }>;
   };
   store: Store;
   now(): number;
@@ -38,6 +43,10 @@ export function realPort(store: Store): Port {
         return [...new Set(projects.map((project) => githubRepoOf(project.projectKey)).filter((repo): repo is string => !!repo))].sort();
       },
       archive: archiveSessions,
+      sessions: async (paseo) => {
+        const [agents, workspaces] = await Promise.all([everyPage((page) => paseo.agents.list({ page })), everyPage((page) => paseo.workspaces.list({ page }))]);
+        return { agents: agents.map((entry) => entry.agent), workspaces };
+      },
     },
     store,
     now: Date.now,

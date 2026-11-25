@@ -4,7 +4,9 @@ import { AttentionConfig } from "../shared/config";
 import { historyWeeks } from "../shared/history-report";
 import { type Gh, type GitHub, gitHub, type ProbeResult } from "./fetch";
 import type { HistoryResult } from "./github-types";
-import { fixture, REPO } from "./fixture";
+import { PARENT_AGENT_LABEL } from "../shared/linked-sessions";
+import { paseoAgent, paseoWorkspace, startedAgent } from "../shared/test-builders";
+import { checksDone, fixture, REPO } from "./fixture";
 import type { Port } from "./port";
 import { AttentionService } from "./service";
 import { SETTLE_MS } from "./view";
@@ -50,7 +52,11 @@ function harness(config: Record<string, unknown> = {}, history?: GitHub["history
   } as Partial<Store> as Store;
   const port: Port = {
     github,
-    paseo: { projectRepos: async () => [], archive: async () => ({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: [] }) },
+    paseo: {
+      projectRepos: async () => [],
+      archive: async () => ({ ok: true, kept: [], archivedAgents: [], archivedWorkspaces: [] }),
+      sessions: vi.fn<Port["paseo"]["sessions"]>(async () => ({ agents: [], workspaces: [] })),
+    },
     store,
     now: () => now,
     setTimer: (run, ms) => {
@@ -132,6 +138,7 @@ describe("refreshes", () => {
 
   it("FRESH-01: the live feed refreshes every refreshMinutes, and asking in between answers from the cache", async () => {
     const { service, github, start, advance } = harness({ refreshMinutes: 10 });
+    github.live.mockImplementation(async (_config, at) => checksDone(fixture(at)));
     await start();
     await advance(9 * MINUTE);
     await service.get();
@@ -163,6 +170,109 @@ describe("refreshes", () => {
     await service.get();
     await service.get("live");
     expect(github.live).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("extra live refreshes", () => {
+  const paseo = {} as Parameters<AttentionService["turnEnded"]>[0];
+  const turn = (id: string, parentAgentId: string | null = null) => ({ id, parentAgentId });
+  // The service with no checks running, on an hourly schedule, so only what a test does refreshes it.
+  async function quiet(agents = [startedAgent("a1", KEY), paseoAgent("other")], workspaces: ReturnType<typeof paseoWorkspace>[] = []) {
+    const h = harness({ refreshMinutes: 60 });
+    h.github.live.mockImplementation(async (_config, at) => checksDone(fixture(at)));
+    vi.mocked(h.paseo.sessions).mockResolvedValue({ agents, workspaces });
+    await h.start();
+    return h;
+  }
+
+  it("FRESH-04: a turn in a session started on an item refreshes live once GitHub's search caught up; others' turns don't", async () => {
+    const { service, github, advance } = await quiet();
+    await service.turnEnded(paseo, turn("other"));
+    await advance(MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(1);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS - 1);
+    expect(github.live).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(github.live).toHaveBeenCalledTimes(2);
+  });
+
+  it("FRESH-04, SES-08: a sub-agent's turn counts for its session, and so does a session Paseo links to the item's PR", async () => {
+    const pr = paseoWorkspace("W1", "fix-vat", { githubRuntime: { pullRequest: { url: `https://github.com/${REPO}/pull/101` } } });
+    const agents = [startedAgent("a1", KEY), paseoAgent("sub", { labels: { [PARENT_AGENT_LABEL]: "a1" } }), paseoAgent("subsub", { labels: { [PARENT_AGENT_LABEL]: "sub" } }), paseoAgent("linked", { workspaceId: "W1" })];
+    for (const ended of [turn("subsub", "sub"), turn("linked")]) {
+      const { service, github, advance } = await quiet(agents, [pr]);
+      await service.turnEnded(paseo, ended);
+      await advance(SETTLE_MS);
+      expect(github.live).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it("FRESH-04: a turn whose session can't be looked up refreshes nothing", async () => {
+    const { service, github, paseo: port, advance } = await quiet();
+    vi.mocked(port.sessions).mockRejectedValue(new Error("Paseo is restarting"));
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(1);
+  });
+
+  it("FRESH-01, GH-01: extra refreshes come at most once in 5 minutes; one due sooner waits, and the ones waiting go as one", async () => {
+    const { service, github, advance } = await quiet();
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(MINUTE);
+    await service.turnEnded(paseo, turn("a1"));
+    // The last began at 0:30; it's 1:30.
+    await advance(5 * MINUTE - MINUTE - 1);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await advance(1);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    await advance(30 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-01, GH-01: ⟳ begun after a turn's refresh was due meets it, and doesn't count against the budget", async () => {
+    const { service, github, advance, jump } = await quiet();
+    await service.turnEnded(paseo, turn("a1"));
+    jump(SETTLE_MS);
+    await service.get("live");
+    await advance(10 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    await service.turnEnded(paseo, turn("a1"));
+    await advance(SETTLE_MS);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-01: while checks run on a PR of mine, the live feed refreshes every 5 minutes, until none do", async () => {
+    const { github, start, advance } = harness({ refreshMinutes: 60 });
+    await start();
+    await advance(5 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(2);
+    github.live.mockImplementation(async (_config, at) => checksDone(fixture(at)));
+    await advance(5 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+    await advance(30 * MINUTE);
+    expect(github.live).toHaveBeenCalledTimes(3);
+  });
+
+  it("FRESH-01: the screen opening answers from the cache at once, refreshing a live feed 5 minutes old behind it", async () => {
+    const { service, github, jump } = await quiet();
+    jump(5 * MINUTE - 1);
+    expect((await service.get(undefined, false, undefined, true)).feeds.live.refreshing).toBe(false);
+    jump(1);
+    const opened = await service.get(undefined, false, undefined, true);
+    expect(opened.feeds.live).toMatchObject({ refreshing: true, fetchedAt: new Date(START).toISOString() });
+    await settle();
+    expect(github.live).toHaveBeenCalledTimes(2);
+  });
+
+  it("FRESH-01, FRESH-04: the view says when the live feed next refreshes by itself, on its schedule or an extra refresh", async () => {
+    const { service } = await quiet();
+    expect((await service.get(undefined, true)).feeds.live.nextAt).toBe(new Date(START + 60 * MINUTE).toISOString());
+    await service.turnEnded(paseo, turn("a1"));
+    expect((await service.get(undefined, true)).feeds.live.nextAt).toBe(new Date(START + SETTLE_MS).toISOString());
   });
 });
 

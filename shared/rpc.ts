@@ -15,11 +15,12 @@ const done = z.object({ ok: z.literal(true) });
 
 // The cached view. Feeds older than their schedule are refreshed from GitHub first; `refresh` fetches that feed now (⟳);
 // `cached` skips GitHub altogether, for a view that only needs what the server already knows. `timeZone` is the device's
-// IANA zone, which History's weeks follow [HIS-01].
+// IANA zone, which History's weeks follow [HIS-01]. `opened` says the screen just opened: answered at once from memory,
+// with a live feed a few minutes old refreshed behind it [FRESH-01].
 export const getAttention = defineRpc({
   name: "attention.get",
   input: z
-    .object({ refresh: FeedId.optional(), cached: z.boolean().optional(), timeZone: z.string().optional() })
+    .object({ refresh: FeedId.optional(), cached: z.boolean().optional(), timeZone: z.string().optional(), opened: z.boolean().optional() })
     .refine((input) => !(input.refresh && input.cached), "refresh and cached don't go together"),
   output: view,
 });
