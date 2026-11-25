@@ -169,9 +169,10 @@ for (const prefix of wanted.layouts.filter((name) => !only || name === only)) {
     return { x, y, width: layout.viewport.width - x - (x - sidebar), height: Math.min(end - y, MAX_HEIGHT) };
   };
   const bandShot = (name, from, to) => capture(name, () => band(from, to));
-  // A phone's bottom sheet has no Escape; its × closes it.
+  // A phone's bottom sheet has no Escape; its × closes it. Matched exactly, as a sheet's "Close #152" or a card's "Close #152
+  // as completed" would otherwise match, and previews' GitHub writes now succeed [FRESH-04].
   const closeModal = async () => {
-    const close = page.getByRole("button", { name: /^close/i }).last();
+    const close = page.getByRole("button", { name: /^close$/i }).last();
     if (await close.isVisible().catch(() => false)) await close.click();
     else await page.keyboard.press("Escape");
     await settled();
